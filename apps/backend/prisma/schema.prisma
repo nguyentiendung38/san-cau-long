@@ -1,4 +1,4 @@
-// Prisma Schema for Courtify - Badminton Court Management System
+// Prisma Schema for TikShop Finance - TikTok Shop E-commerce Financial Management
 // Database: SQLite for development, PostgreSQL for production
 
 generator client {
@@ -288,4 +288,127 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 
   @@map("system_config")
+}
+
+// ============================================================================
+// TIKSHOP FINANCE MODELS — TikTok Shop E-commerce Financial Management
+// ============================================================================
+
+/// TikOrder - Orders from TikTok Shop
+model TikOrder {
+  id            String   @id @default(cuid())
+  orderCode     String   @unique   // Mã đơn hàng TikTok
+  platform      String   @default("TIKTOK_SHOP") // TIKTOK_SHOP
+  status        String   @default("PENDING")
+  // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURNED
+
+  customerName  String
+  customerPhone String?
+  shippingAddress String?
+
+  productName   String   // Tên sản phẩm chính
+  quantity      Int      @default(1)
+  sellingPrice  Float    // Giá bán cho khách
+  costPrice     Float    @default(0) // Giá vốn/nhập hàng
+
+  shippingFee   Float    @default(0) // Phí ship thu của khách
+  shippingCost  Float    @default(0) // Phí ship thực tế trả cho đơn vị vận chuyển
+  tikTokFee     Float    @default(0) // Hoa hồng TikTok Shop (%)
+  tikTokFeeAmt  Float    @default(0) // Hoa hồng TikTok Shop (số tiền)
+  adsCost       Float    @default(0) // Chi phí quảng cáo phân bổ cho đơn này
+
+  grossRevenue  Float    @default(0) // Doanh thu gộp = sellingPrice * quantity
+  netRevenue    Float    @default(0) // Doanh thu sau hoa hồng
+  grossProfit   Float    @default(0) // Lợi nhuận gộp = netRevenue - costPrice - shippingCost
+  netProfit     Float    @default(0) // Lợi nhuận ròng sau ads
+
+  paymentMethod String?  // COD, ONLINE
+  paidAt        DateTime?
+  shippedAt     DateTime?
+  deliveredAt   DateTime?
+
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tikProductId  String?
+  tikProduct    TikProduct? @relation(fields: [tikProductId], references: [id], onDelete: SetNull)
+
+  @@map("tik_orders")
+}
+
+/// TikExpense - Operating expenses for e-commerce
+model TikExpense {
+  id          String   @id @default(cuid())
+  category    String
+  // ADS (Quảng cáo), SHIPPING (Vận chuyển), COMMISSION (Hoa hồng TikTok),
+  // IMPORT (Nhập hàng), PACKAGING (Đóng gói), SALARY (Nhân sự),
+  // PLATFORM (Phí sàn), OTHER (Khác)
+
+  title       String   // Tên khoản chi
+  amount      Float    // Số tiền
+  currency    String   @default("VND")
+
+  periodFrom  DateTime? // Kỳ áp dụng từ
+  periodTo    DateTime? // Kỳ áp dụng đến
+  expenseDate DateTime  @default(now())
+
+  description String?  // Ghi chú chi tiết
+  reference   String?  // Số hóa đơn / mã tham chiếu
+  isPaid      Boolean  @default(true)
+  paidAt      DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tik_expenses")
+}
+
+/// TikProduct - Products sold on TikTok Shop
+model TikProduct {
+  id          String   @id @default(cuid())
+  sku         String?  @unique
+  name        String
+  description String?
+  category    String?
+
+  sellingPrice Float   // Giá bán
+  costPrice    Float   @default(0) // Giá vốn
+  weight       Float?  // Trọng lượng (gram)
+
+  stock        Int     @default(0) // Tồn kho hiện tại
+  minStock     Int     @default(5) // Cảnh báo khi dưới mức này
+  soldCount    Int     @default(0) // Tổng đã bán
+
+  imageUrl     String?
+  tikTokId     String? // ID sản phẩm trên TikTok Shop
+  isActive     Boolean @default(true)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  orders       TikOrder[]
+  warehouseItems TikWarehouse[]
+
+  @@map("tik_products")
+}
+
+/// TikWarehouse - Warehouse/inventory management
+model TikWarehouse {
+  id          String   @id @default(cuid())
+  tikProductId String
+  type        String
+  // IN (nhập kho), OUT (xuất kho), ADJUST (điều chỉnh), RETURN (hoàn trả)
+
+  quantity    Int      // Số lượng (dương = nhập, âm = xuất)
+  unitCost    Float    @default(0) // Đơn giá nhập
+  totalCost   Float    @default(0) // Thành tiền
+
+  note        String?
+  reference   String?  // Mã tham chiếu (đơn hàng, hóa đơn nhập...)
+  createdAt   DateTime @default(now())
+
+  tikProduct  TikProduct @relation(fields: [tikProductId], references: [id], onDelete: Cascade)
+
+  @@map("tik_warehouse")
 }

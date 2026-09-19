@@ -20,6 +20,10 @@ import VenuesPage from '@/pages/VenuesPage'
 // Layout
 import { AppLayout } from '@/components/layout/AppLayout'
 
+// AI Chatbot
+import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget'
+import PublicChatPage from '@/pages/PublicChatPage'
+
 function App() {
     const { isAuthenticated } = useAuthStore()
 
@@ -40,6 +44,12 @@ function App() {
                 <Route
                     path="/invoices/:id/print"
                     element={isAuthenticated ? <PrintInvoicePage /> : <Navigate to="/login" replace />}
+                />
+
+                {/* Public Chatbot page */}
+                <Route
+                    path="/dat-san"
+                    element={<PublicChatPage />}
                 />
 
                 {/* Protected routes */}
@@ -68,6 +78,7 @@ function App() {
                     }
                 />
             </Routes>
+            {isAuthenticated && <ChatBotWidget />}
             <Toaster />
         </>
     )

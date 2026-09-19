@@ -1,0 +1,17 @@
+{
+  "app": {
+    "appId": "2484352504530783142",
+    "title": "Sân Cầu Lông Hue",
+    "textColor": {
+      "light": "black",
+      "dark": "white"
+    },
+    "statusBar": "transparent",
+    "actionBarHidden": true,
+    "hideIOSSafeAreaBottom": true,
+    "hideAndroidBottomNavigationBar": false
+  },
+  "listCSS": [],
+  "listSyncJS": [],
+  "listAsyncJS": []
+}

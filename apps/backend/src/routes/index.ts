@@ -10,6 +10,8 @@ import serviceRoutes from './service.routes.js';
 import reportRoutes from './report.routes.js';
 import exportRoutes from './export.routes.js';
 import recurringBookingRoutes from './recurring-booking.routes.js';
+import chatbotRoutes from './chatbot.routes.js';
+import zaloRoutes from './zalo.routes.js';
 
 const router = Router();
 
@@ -34,5 +36,7 @@ router.use('/products', productRoutes);
 router.use('/services', serviceRoutes);
 router.use('/reports', reportRoutes);
 router.use('/export', exportRoutes);
+router.use('/chatbot', chatbotRoutes);
+router.use('/zalo', zaloRoutes);
 
 export default router;

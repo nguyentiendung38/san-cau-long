@@ -40,3 +40,5 @@ prisma/*.db-journal
 # Misc
 *.tgz
 .cache/
+
+apps/backend/prisma/prisma/dev.db
