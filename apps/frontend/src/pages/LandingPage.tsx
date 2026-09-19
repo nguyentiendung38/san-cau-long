@@ -178,7 +178,6 @@ export default function LandingPage() {
                     </div>
                 </div>
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 pt-8 border-t border-gray-800 text-sm text-center">
-                    &copy; 2026 Courtify. Bản quyền thuộc về Kteam.
                 </div>
             </footer>
         </div>
