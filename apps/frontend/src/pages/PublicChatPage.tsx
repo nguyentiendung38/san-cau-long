@@ -34,7 +34,7 @@ export default function PublicChatPage() {
                 {
                     id: 'welcome',
                     role: 'bot',
-                    content: 'Xin chào! 🏸 Tôi là **Courtify AI**, trợ lý đặt sân cầu lông thông minh.\n\nTôi có thể giúp bạn:\n• 📅 Đặt sân cầu lông\n• 🔍 Kiểm tra lịch trống\n• 💰 Xem bảng giá\n• 📋 Tra cứu lịch đặt\n\nHãy cho tôi biết bạn cần gì nhé!',
+                    content: 'Xin chào! 🏸 Tôi là **SÂN CẦU LÔNG HUE AI**, trợ lý đặt sân cầu lông thông minh.\n\nTôi có thể giúp bạn:\n• 📅 Đặt sân cầu lông\n• 🔍 Kiểm tra lịch trống\n• 💰 Xem bảng giá\n• 📋 Tra cứu lịch đặt\n\nHãy cho tôi biết bạn cần gì nhé!',
                     timestamp: new Date(),
                 },
             ])
@@ -137,7 +137,7 @@ export default function PublicChatPage() {
                 <div className="absolute inset-0 z-0">
                     <img 
                         src="https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=2070&auto=format&fit=crop" 
-                        alt="Sân cầu lông Courtify"
+                        alt="Sân cầu lông SÂN CẦU LÔNG HUE"
                         className="w-full h-full object-cover" 
                     />
                     <div className="absolute inset-0 bg-gradient-to-br from-green-900/95 via-green-800/90 to-emerald-900/95"></div>
@@ -148,7 +148,7 @@ export default function PublicChatPage() {
                         <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center shadow-lg">
                             <Sparkles className="w-6 h-6 text-green-600" />
                         </div>
-                        <span className="text-3xl font-bold tracking-tight">Courtify</span>
+                        <span className="text-3xl font-bold tracking-tight">SÂN CẦU LÔNG HUE</span>
                     </div>
 
                     <h1 className="text-5xl lg:text-6xl font-extrabold mb-6 leading-[1.15] tracking-tight">
@@ -183,7 +183,7 @@ export default function PublicChatPage() {
                 </div>
 
                 <div className="relative z-10 text-sm text-green-200/50 font-medium">
-                    &copy; 2026 Courtify. Powered by Gemini AI.
+                    &copy; 2026 SÂN CẦU LÔNG HUE. Powered by Gemini AI.
                 </div>
             </div>
 
@@ -196,7 +196,7 @@ export default function PublicChatPage() {
                             <Bot className="w-7 h-7 text-white" />
                         </div>
                         <div>
-                            <h3 className="text-white font-bold text-lg leading-tight tracking-wide">Courtify Assistant</h3>
+                            <h3 className="text-white font-bold text-lg leading-tight tracking-wide">SÂN CẦU LÔNG HUE Assistant</h3>
                             <div className="flex items-center gap-1.5 mt-0.5">
                                 <div className="w-2 h-2 rounded-full bg-green-300 animate-pulse" />
                                 <span className="text-green-100 text-sm font-medium">Trực tuyến</span>

@@ -82,12 +82,12 @@ export default function PrintInvoicePage() {
                 {/* Header */}
                 <div className="flex items-start justify-between border-b-2 border-gray-200 pb-6 mb-6">
                     <div>
-                        <h1 className="text-3xl font-bold text-primary-600">COURTIFY</h1>
-                        <p className="text-gray-600 mt-1">Hệ thống quản lý sân cầu lông</p>
+                        <h1 className="text-3xl font-bold text-primary-600">SÂN CẦU LÔNG HUE</h1>
+                        <p className="text-gray-600 mt-1">Quản lý sân cầu lông trường đại học kinh tế Huế</p>
                         <div className="mt-2 text-sm text-gray-500">
-                            <p>123 Phan Xích Long, Phú Nhuận, TP.HCM</p>
+                            <p>Trường Đại học Kinh tế Huế</p>
                             <p>Hotline: 028 1234 5678</p>
-                            <p>Email: info@courtify.vn</p>
+                            <p>Email: info@huecourt.vn</p>
                         </div>
                     </div>
                     <div className="text-right">

@@ -1,6 +1,8 @@
 import prisma from '../config/database.js';
 import { startOfDay, endOfDay, subDays, startOfMonth, endOfMonth, format } from 'date-fns';
 
+const prismaClient = prisma as any;
+
 export interface FinanceDashboardStats {
     // Doanh thu
     revenue: number;
@@ -108,11 +110,11 @@ export class FinanceService {
 
         // Revenue hiện tại
         const [currentRevenue, prevRevenue] = await Promise.all([
-            prisma.tikOrder.aggregate({
+            prismaClient.tikOrder.aggregate({
                 where: { createdAt: dateFilter, status: { notIn: ['CANCELLED', 'RETURNED'] } },
                 _sum: { grossRevenue: true },
             }),
-            prisma.tikOrder.aggregate({
+            prismaClient.tikOrder.aggregate({
                 where: { createdAt: prevDateFilter, status: { notIn: ['CANCELLED', 'RETURNED'] } },
                 _sum: { grossRevenue: true },
             }),
@@ -120,21 +122,21 @@ export class FinanceService {
 
         // Order count
         const [currentOrders, prevOrders] = await Promise.all([
-            prisma.tikOrder.count({
+            prismaClient.tikOrder.count({
                 where: { createdAt: dateFilter, status: { notIn: ['CANCELLED', 'RETURNED'] } },
             }),
-            prisma.tikOrder.count({
+            prismaClient.tikOrder.count({
                 where: { createdAt: prevDateFilter, status: { notIn: ['CANCELLED', 'RETURNED'] } },
             }),
         ]);
 
         // Expenses
         const [currentExpense, prevExpense] = await Promise.all([
-            prisma.tikExpense.aggregate({
+            prismaClient.tikExpense.aggregate({
                 where: { expenseDate: dateFilter, isPaid: true },
                 _sum: { amount: true },
             }),
-            prisma.tikExpense.aggregate({
+            prismaClient.tikExpense.aggregate({
                 where: { expenseDate: prevDateFilter, isPaid: true },
                 _sum: { amount: true },
             }),
@@ -142,18 +144,18 @@ export class FinanceService {
 
         // Net profit
         const [currentProfit, prevProfit] = await Promise.all([
-            prisma.tikOrder.aggregate({
+            prismaClient.tikOrder.aggregate({
                 where: { createdAt: dateFilter, status: { notIn: ['CANCELLED', 'RETURNED'] } },
                 _sum: { netProfit: true },
             }),
-            prisma.tikOrder.aggregate({
+            prismaClient.tikOrder.aggregate({
                 where: { createdAt: prevDateFilter, status: { notIn: ['CANCELLED', 'RETURNED'] } },
                 _sum: { netProfit: true },
             }),
         ]);
 
         // Pending orders
-        const pendingOrders = await prisma.tikOrder.count({
+        const pendingOrders = await prismaClient.tikOrder.count({
             where: { status: { in: ['PENDING', 'PROCESSING'] } },
         });
 
@@ -193,25 +195,25 @@ export class FinanceService {
             const end = endOfDay(date);
 
             const [revenue, expense, profitAgg, orderCount] = await Promise.all([
-                prisma.tikOrder.aggregate({
+                prismaClient.tikOrder.aggregate({
                     where: {
                         createdAt: { gte: start, lte: end },
                         status: { notIn: ['CANCELLED', 'RETURNED'] },
                     },
                     _sum: { grossRevenue: true },
                 }),
-                prisma.tikExpense.aggregate({
+                prismaClient.tikExpense.aggregate({
                     where: { expenseDate: { gte: start, lte: end }, isPaid: true },
                     _sum: { amount: true },
                 }),
-                prisma.tikOrder.aggregate({
+                prismaClient.tikOrder.aggregate({
                     where: {
                         createdAt: { gte: start, lte: end },
                         status: { notIn: ['CANCELLED', 'RETURNED'] },
                     },
                     _sum: { netProfit: true },
                 }),
-                prisma.tikOrder.count({
+                prismaClient.tikOrder.count({
                     where: {
                         createdAt: { gte: start, lte: end },
                         status: { notIn: ['CANCELLED', 'RETURNED'] },
@@ -255,7 +257,7 @@ export class FinanceService {
                 break;
         }
 
-        const grouped = await prisma.tikExpense.groupBy({
+        const grouped = await prismaClient.tikExpense.groupBy({
             by: ['category'],
             where: { expenseDate: { gte: start, lte: end }, isPaid: true },
             _sum: { amount: true },
@@ -274,7 +276,7 @@ export class FinanceService {
      * Đơn hàng mới nhất
      */
     async getRecentOrders(limit = 5): Promise<RecentOrder[]> {
-        const orders = await prisma.tikOrder.findMany({
+        const orders = await prismaClient.tikOrder.findMany({
             orderBy: { createdAt: 'desc' },
             take: limit,
         });

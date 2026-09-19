@@ -70,19 +70,19 @@ export default function LoginPage() {
                 {/* Logo */}
                 <div className="flex items-center gap-3 relative z-10">
                     <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur">
-                        <span className="text-white font-bold text-xl">C</span>
+                        <span className="text-white font-bold text-xl">H</span>
                     </div>
-                    <span className="text-2xl font-bold text-white">Courtify</span>
+                    <span className="text-2xl font-bold text-white">SÂN CẦU LÔNG HUE</span>
                 </div>
 
                 {/* Content */}
                 <div className="relative z-10">
                     <h1 className="text-4xl font-bold text-white mb-4">
-                        Quản lý sân cầu lông<br />chuyên nghiệp
+                        Quản lý sân cầu lông<br />trường đại học kinh tế Huế
                     </h1>
                     <p className="text-white/80 text-lg max-w-md">
                         Hệ thống toàn diện cho việc quản lý đặt sân, khách hàng,
-                        thanh toán và báo cáo doanh thu.
+                        thanh toán và báo cáo doanh thu cho cơ sở thể thao của trường.
                     </p>
                 </div>
 
@@ -109,9 +109,9 @@ export default function LoginPage() {
                     {/* Mobile logo */}
                     <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
                         <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center">
-                            <span className="text-white font-bold text-xl">C</span>
+                            <span className="text-white font-bold text-xl">H</span>
                         </div>
-                        <span className="text-2xl font-bold text-primary-500">Courtify</span>
+                        <span className="text-2xl font-bold text-primary-500">SÂN CẦU LÔNG HUE</span>
                     </div>
 
                     <div className="mb-8">

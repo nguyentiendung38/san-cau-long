@@ -13,7 +13,7 @@ export default function LandingPage() {
                                 <Sparkles className="w-5 h-5 text-white -rotate-12" />
                             </div>
                             <span className="text-2xl font-bold bg-gradient-to-r from-green-700 to-emerald-500 bg-clip-text text-transparent">
-                                Courtify
+                                SÂN CẦU LÔNG HUE
                             </span>
                         </div>
                         <div className="hidden md:flex space-x-8">
@@ -62,7 +62,7 @@ export default function LandingPage() {
                             </span>
                         </h1>
                         <p className="text-lg text-gray-600 mb-10 leading-relaxed max-w-xl">
-                            Courtify cung cấp hệ thống sân cầu lông đạt chuẩn quốc tế. Đặt sân dễ dàng chưa từng có với Trợ lý AI thông minh hoạt động 24/7.
+                            Quản lý sân cầu lông trường đại học kinh tế Huế cung cấp hệ thống đặt sân hiện đại, dễ sử dụng và hỗ trợ khách hàng nhanh chóng với Trợ lý AI 24/7.
                         </p>
                         
                         <div className="flex flex-col sm:flex-row gap-4">
@@ -89,7 +89,7 @@ export default function LandingPage() {
             <div id="features" className="py-24 bg-gray-50">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="text-center mb-16">
-                        <h2 className="text-3xl font-bold text-gray-900 mb-4">Vì sao chọn Courtify?</h2>
+                        <h2 className="text-3xl font-bold text-gray-900 mb-4">Vì sao chọn SÂN CẦU LÔNG HUE?</h2>
                         <p className="text-gray-600 max-w-2xl mx-auto">Chúng tôi mang đến trải nghiệm liền mạch từ lúc đặt sân đến khi bạn bước lên sân thi đấu.</p>
                     </div>
                     
@@ -156,9 +156,9 @@ export default function LandingPage() {
                             <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
                                 <Sparkles className="w-4 h-4 text-white" />
                             </div>
-                            <span className="text-xl font-bold text-white">Courtify</span>
+                            <span className="text-xl font-bold text-white">SÂN CẦU LÔNG HUE</span>
                         </div>
-                        <p className="mb-6 max-w-sm">Nền tảng quản lý và đặt sân cầu lông hiện đại nhất Việt Nam. Trải nghiệm thể thao thông minh thời đại AI.</p>
+                        <p className="mb-6 max-w-sm">Nền tảng quản lý và đặt sân cầu lông trường đại học kinh tế Huế, hiện đại, nhanh chóng và tiện lợi cho người dùng.</p>
                     </div>
                     <div>
                         <h4 className="text-white font-bold mb-4">Liên Hệ</h4>

@@ -21,6 +21,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { venueApi, Venue } from '@/services/venue.service';
+import { pricingRuleApi, PricingRule } from '@/services/inventory.service';
 import { useToast } from '@/hooks/use-toast';
 
 interface TabProps {
@@ -186,6 +187,18 @@ export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('venue');
     const [isVenueModalOpen, setIsVenueModalOpen] = useState(false);
     const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
+    const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+    const [editingPricingRule, setEditingPricingRule] = useState<PricingRule | null>(null);
+    const [pricingForm, setPricingForm] = useState({
+        venueId: '',
+        name: '',
+        description: '',
+        dayOfWeek: '',
+        startTime: '',
+        endTime: '',
+        pricePerHour: 150000,
+        priority: 0,
+    });
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -195,7 +208,13 @@ export default function SettingsPage() {
         queryFn: () => venueApi.getAll({ isActive: true }),
     });
 
+    const { data: pricingRulesData, isLoading: loadingPricingRules } = useQuery({
+        queryKey: ['pricing-rules'],
+        queryFn: () => pricingRuleApi.getAll({ isActive: true }),
+    });
+
     const venues = venuesData?.data || [];
+    const pricingRules = pricingRulesData?.data || [];
 
     // Create/Update venue mutation
     const saveMutation = useMutation({
@@ -255,6 +274,87 @@ export default function SettingsPage() {
 
     const handleSaveVenue = async (data: Partial<Venue>) => {
         await saveMutation.mutateAsync(data);
+    };
+
+    const resetPricingForm = () => {
+        const firstVenueId = venues[0]?.id || '';
+        setPricingForm({
+            venueId: firstVenueId,
+            name: '',
+            description: '',
+            dayOfWeek: '',
+            startTime: '',
+            endTime: '',
+            pricePerHour: 150000,
+            priority: 0,
+        });
+    };
+
+    const savePricingRule = async () => {
+        if (!pricingForm.venueId || !pricingForm.name.trim()) {
+            toast({
+                title: 'Thiếu thông tin',
+                description: 'Vui lòng chọn cơ sở và nhập tên khung giá',
+                variant: 'error',
+            });
+            return;
+        }
+
+        const payload = {
+            venueId: pricingForm.venueId,
+            name: pricingForm.name.trim(),
+            description: pricingForm.description.trim() || undefined,
+            dayOfWeek: pricingForm.dayOfWeek || undefined,
+            startTime: pricingForm.startTime || undefined,
+            endTime: pricingForm.endTime || undefined,
+            pricePerHour: Number(pricingForm.pricePerHour) || 0,
+            priority: Number(pricingForm.priority) || 0,
+        };
+
+        if (editingPricingRule) {
+            await pricingRuleApi.update(editingPricingRule.id, payload);
+            toast({ title: 'Thành công', description: 'Đã cập nhật khung giá', variant: 'success' });
+        } else {
+            await pricingRuleApi.create(payload);
+            toast({ title: 'Thành công', description: 'Đã thêm khung giá mới', variant: 'success' });
+        }
+
+        queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
+        setEditingPricingRule(null);
+        setIsPricingModalOpen(false);
+        resetPricingForm();
+    };
+
+    const removePricingRule = async (rule: PricingRule) => {
+        if (!confirm(`Bạn có chắc muốn xóa "${rule.name}"?`)) return;
+
+        try {
+            await pricingRuleApi.delete(rule.id);
+            queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
+            toast({ title: 'Đã xóa', description: 'Đã xóa khung giá thành công', variant: 'success' });
+        } catch {
+            toast({ title: 'Lỗi', description: 'Không thể xóa khung giá', variant: 'error' });
+        }
+    };
+
+    const openPricingModal = (rule?: PricingRule) => {
+        if (rule) {
+            setEditingPricingRule(rule);
+            setPricingForm({
+                venueId: rule.venueId,
+                name: rule.name,
+                description: rule.description || '',
+                dayOfWeek: rule.dayOfWeek || '',
+                startTime: rule.startTime || '',
+                endTime: rule.endTime || '',
+                pricePerHour: rule.pricePerHour,
+                priority: rule.priority,
+            });
+        } else {
+            setEditingPricingRule(null);
+            resetPricingForm();
+        }
+        setIsPricingModalOpen(true);
     };
 
     const tabs = [
@@ -411,35 +511,50 @@ export default function SettingsPage() {
                         <div className="bg-background-secondary border border-border rounded-xl p-6">
                             <div className="flex items-center justify-between mb-6">
                                 <h3 className="text-lg font-semibold text-foreground">Bảng giá</h3>
-                                <Button className="gap-2">
+                                <Button className="gap-2" onClick={() => openPricingModal()}>
                                     <Plus className="w-4 h-4" />
                                     Thêm khung giá
                                 </Button>
                             </div>
 
-                            <div className="space-y-3">
-                                {[
-                                    { name: 'Giá mặc định', time: 'Tất cả khung giờ', price: 150000 },
-                                    { name: 'Giờ cao điểm tối', time: '17:00 - 21:00', price: 200000 },
-                                    { name: 'Cuối tuần', time: 'Thứ 7 - Chủ Nhật', price: 180000 },
-                                ].map((rule, i) => (
-                                    <div key={i} className="flex items-center justify-between p-4 border border-border rounded-xl">
-                                        <div>
-                                            <h4 className="font-medium text-foreground">{rule.name}</h4>
-                                            <p className="text-sm text-foreground-secondary">{rule.time}</p>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <span className="font-semibold text-primary-500">{formatCurrency(rule.price)}/giờ</span>
-                                            <Button variant="ghost" size="sm">
-                                                <Edit2 className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" className="text-red-400">
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
+                            {loadingPricingRules ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+                                </div>
+                            ) : pricingRules.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <DollarSign className="w-12 h-12 mx-auto mb-4 text-foreground-muted opacity-50" />
+                                    <p className="text-foreground-secondary">Chưa có khung giá nào</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {pricingRules.map((rule) => {
+                                        const timeRange = rule.dayOfWeek
+                                            ? `Ngày: ${rule.dayOfWeek}`
+                                            : rule.startTime && rule.endTime
+                                                ? `${rule.startTime} - ${rule.endTime}`
+                                                : 'Tất cả khung giờ';
+
+                                        return (
+                                            <div key={rule.id} className="flex items-center justify-between p-4 border border-border rounded-xl">
+                                                <div>
+                                                    <h4 className="font-medium text-foreground">{rule.name}</h4>
+                                                    <p className="text-sm text-foreground-secondary">{timeRange}</p>
+                                                </div>
+                                                <div className="flex items-center gap-4">
+                                                    <span className="font-semibold text-primary-500">{formatCurrency(rule.pricePerHour)}/giờ</span>
+                                                    <Button variant="ghost" size="sm" onClick={() => openPricingModal(rule)}>
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button variant="ghost" size="sm" className="text-red-400" onClick={() => removePricingRule(rule)}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -519,6 +634,116 @@ export default function SettingsPage() {
                 venue={editingVenue}
                 onSave={handleSaveVenue}
             />
+
+            {isPricingModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-xl rounded-2xl border border-border bg-background-secondary p-6 shadow-2xl">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-semibold text-foreground">
+                                {editingPricingRule ? 'Sửa khung giá' : 'Thêm khung giá'}
+                            </h3>
+                            <button onClick={() => { setIsPricingModalOpen(false); setEditingPricingRule(null); }} className="p-2 hover:bg-background-tertiary rounded-lg">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Cơ sở *</label>
+                                <select
+                                    value={pricingForm.venueId}
+                                    onChange={(e) => setPricingForm(prev => ({ ...prev, venueId: e.target.value }))}
+                                    className="w-full rounded-lg border border-border bg-background-tertiary px-3 py-2 text-foreground"
+                                >
+                                    <option value="">Chọn cơ sở</option>
+                                    {venues.map((venue) => (
+                                        <option key={venue.id} value={venue.id}>{venue.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Tên khung giá *</label>
+                                <Input
+                                    value={pricingForm.name}
+                                    onChange={(e) => setPricingForm(prev => ({ ...prev, name: e.target.value }))}
+                                    placeholder="Giá mặc định"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Mô tả</label>
+                                <Input
+                                    value={pricingForm.description}
+                                    onChange={(e) => setPricingForm(prev => ({ ...prev, description: e.target.value }))}
+                                    placeholder="Ví dụ: Áp dụng từ 17:00 đến 21:00"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Ngày trong tuần</label>
+                                    <select
+                                        value={pricingForm.dayOfWeek}
+                                        onChange={(e) => setPricingForm(prev => ({ ...prev, dayOfWeek: e.target.value }))}
+                                        className="w-full rounded-lg border border-border bg-background-tertiary px-3 py-2 text-foreground"
+                                    >
+                                        <option value="">Tất cả</option>
+                                        <option value="MONDAY">Thứ Hai</option>
+                                        <option value="TUESDAY">Thứ Ba</option>
+                                        <option value="WEDNESDAY">Thứ Tư</option>
+                                        <option value="THURSDAY">Thứ Năm</option>
+                                        <option value="FRIDAY">Thứ Sáu</option>
+                                        <option value="SATURDAY">Thứ Bảy</option>
+                                        <option value="SUNDAY">Chủ Nhật</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Ưu tiên</label>
+                                    <Input
+                                        type="number"
+                                        value={pricingForm.priority}
+                                        onChange={(e) => setPricingForm(prev => ({ ...prev, priority: Number(e.target.value) || 0 }))}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Giờ bắt đầu</label>
+                                    <Input
+                                        type="time"
+                                        value={pricingForm.startTime}
+                                        onChange={(e) => setPricingForm(prev => ({ ...prev, startTime: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Giờ kết thúc</label>
+                                    <Input
+                                        type="time"
+                                        value={pricingForm.endTime}
+                                        onChange={(e) => setPricingForm(prev => ({ ...prev, endTime: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Giá / giờ</label>
+                                <Input
+                                    type="number"
+                                    value={pricingForm.pricePerHour}
+                                    onChange={(e) => setPricingForm(prev => ({ ...prev, pricePerHour: Number(e.target.value) || 0 }))}
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                                <Button variant="ghost" onClick={() => setIsPricingModalOpen(false)}>Hủy</Button>
+                                <Button onClick={savePricingRule}>{editingPricingRule ? 'Cập nhật' : 'Thêm mới'}</Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

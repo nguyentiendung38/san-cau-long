@@ -60,6 +60,37 @@ export interface CreateServiceInput {
     unit?: string;
 }
 
+export interface PricingRule {
+    id: string;
+    venueId: string;
+    name: string;
+    description?: string | null;
+    dayOfWeek?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    pricePerHour: number;
+    priority: number;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+    venue?: {
+        id: string;
+        name: string;
+    };
+}
+
+export interface CreatePricingRuleInput {
+    venueId: string;
+    name: string;
+    description?: string | null;
+    dayOfWeek?: string | null;
+    startTime?: string | null;
+    endTime?: string | null;
+    pricePerHour: number;
+    priority?: number;
+    isActive?: boolean;
+}
+
 // Product API
 export const productApi = {
     async getAll(params?: {
@@ -161,5 +192,49 @@ export const serviceApi = {
 
     async delete(id: string): Promise<void> {
         await api.delete(`/services/${id}`);
+    },
+};
+
+export const pricingRuleApi = {
+    async getAll(params?: {
+        venueId?: string;
+        isActive?: boolean;
+        search?: string;
+        page?: number;
+        limit?: number;
+    }): Promise<PaginatedResponse<PricingRule>> {
+        const queryParams = new URLSearchParams();
+        if (params?.venueId) queryParams.append('venueId', params.venueId);
+        if (params?.isActive !== undefined) queryParams.append('isActive', String(params.isActive));
+        if (params?.search) queryParams.append('search', params.search);
+        if (params?.page) queryParams.append('page', String(params.page));
+        if (params?.limit) queryParams.append('limit', String(params.limit));
+
+        const response = await api.get<ApiResponse<PricingRule[]> & { pagination: PaginatedResponse<PricingRule>['pagination'] }>(
+            `/pricing-rules?${queryParams}`
+        );
+        return {
+            data: response.data.data || [],
+            pagination: response.data.pagination,
+        };
+    },
+
+    async getById(id: string): Promise<PricingRule> {
+        const response = await api.get<ApiResponse<PricingRule>>(`/pricing-rules/${id}`);
+        return response.data.data!;
+    },
+
+    async create(input: CreatePricingRuleInput): Promise<PricingRule> {
+        const response = await api.post<ApiResponse<PricingRule>>('/pricing-rules', input);
+        return response.data.data!;
+    },
+
+    async update(id: string, input: Partial<CreatePricingRuleInput> & { isActive?: boolean }): Promise<PricingRule> {
+        const response = await api.put<ApiResponse<PricingRule>>(`/pricing-rules/${id}`, input);
+        return response.data.data!;
+    },
+
+    async delete(id: string): Promise<void> {
+        await api.delete(`/pricing-rules/${id}`);
     },
 };

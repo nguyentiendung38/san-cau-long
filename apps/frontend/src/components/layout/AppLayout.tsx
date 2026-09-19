@@ -51,9 +51,9 @@ export function AppLayout({ children }: AppLayoutProps) {
                 {/* Logo */}
                 <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
                     <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                        <span className="text-white font-bold text-lg">C</span>
+                        <span className="text-white font-bold text-lg">H</span>
                     </div>
-                    <span className="text-xl font-bold text-primary-500">Courtify</span>
+                    <span className="text-xl font-bold text-primary-500">SÂN CẦU LÔNG HUE</span>
                 </div>
 
                 {/* Navigation */}
@@ -110,7 +110,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     {/* Mobile logo */}
                     <div className="md:hidden flex items-center gap-2">
                         <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                            <span className="text-white font-bold text-lg">C</span>
+                            <span className="text-white font-bold text-lg">H</span>
                         </div>
                     </div>
 
@@ -126,7 +126,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <div className="flex items-center gap-2 md:gap-4">
                         {/* Venue selector - hidden on mobile */}
                         <Button variant="secondary" size="sm" className="hidden sm:flex gap-2">
-                            <span className="hidden lg:inline">Courtify Phú Nhuận</span>
+                            <span className="hidden lg:inline">Sân cầu lông UEH</span>
                             <span className="lg:hidden">Cơ sở</span>
                             <ChevronDown className="w-4 h-4" />
                         </Button>

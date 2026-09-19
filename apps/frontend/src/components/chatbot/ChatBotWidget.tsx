@@ -48,7 +48,7 @@ export function ChatBotWidget() {
                     id: 'welcome',
                     role: 'bot',
                     content:
-                        'Xin chào! 🏸 Tôi là **Courtify AI**, trợ lý đặt sân cầu lông thông minh.\n\nTôi có thể giúp bạn:\n• 📅 Đặt sân cầu lông\n• 🔍 Kiểm tra lịch trống\n• 💰 Xem bảng giá\n• 📋 Tra cứu lịch đặt\n\nHãy cho tôi biết bạn cần gì nhé!',
+                        'Xin chào! 🏸 Tôi là **SÂN CẦU LÔNG HUE AI**, trợ lý đặt sân cầu lông thông minh.\n\nTôi có thể giúp bạn:\n• 📅 Đặt sân cầu lông\n• 🔍 Kiểm tra lịch trống\n• 💰 Xem bảng giá\n• 📋 Tra cứu lịch đặt\n\nHãy cho tôi biết bạn cần gì nhé!',
                     timestamp: new Date(),
                 },
             ])
@@ -189,7 +189,7 @@ export function ChatBotWidget() {
                                 <Bot className="w-5 h-5 text-white" />
                             </div>
                             <div>
-                                <h3 className="text-white font-semibold text-sm leading-tight">Courtify AI</h3>
+                                <h3 className="text-white font-semibold text-sm leading-tight">SÂN CẦU LÔNG HUE AI</h3>
                                 <div className="flex items-center gap-1">
                                     <div className="w-1.5 h-1.5 rounded-full bg-green-300 animate-pulse" />
                                     <span className="text-green-100 text-xs">Trực tuyến</span>
