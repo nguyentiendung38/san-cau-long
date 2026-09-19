@@ -5,11 +5,11 @@
 Hệ thống quản lý sân cầu lông giúp bạn quản lý toàn bộ hoạt động kinh doanh của sân, bao gồm:
 
 - Quản lý cơ sở và sân
-- Đặt sân và lịch làm việc
+- Quản lý lịch đặt sân
 - Quản lý khách hàng
-- Quản lý giá, dịch vụ và hàng hóa
+- Quản lý bảng giá, dịch vụ và sản phẩm
 - Tạo hóa đơn, thanh toán và doanh thu
-- Báo cáo hoạt động
+- Xem báo cáo hoạt động
 - Cài đặt hệ thống và bảo mật
 
 Tên hệ thống: SÂN CẦU LÔNG HUE
@@ -18,23 +18,21 @@ Tên hệ thống: SÂN CẦU LÔNG HUE
 
 ## 2. Tài khoản đăng nhập mặc định
 
-Sau khi cài đặt và khởi động hệ thống, bạn có thể đăng nhập bằng các tài khoản demo sau:
+Sau khi cài đặt và khởi động hệ thống, bạn có thể đăng nhập bằng tài khoản demo sau:
 
 - Admin: admin@courtify.vn / admin123
 - Manager: manager@courtify.vn / manager123
 - Staff: staff@courtify.vn / staff123
 
 Khuyến nghị:
-- Người quản lý dùng Admin hoặc Manager
-- Nhân viên trực tiếp dùng Staff
+- Admin hoặc Manager dùng để setup ban đầu
+- Staff dùng để thao tác giao dịch hàng ngày
 
 ---
 
-## 3. Cách chạy hệ thống
+## 3. Cách chạy dự án
 
-### 3.1 Cài đặt dependencies
-
-Tại thư mục gốc dự án:
+### 3.1 Cài đặt dependency ở gốc dự án
 
 ```bash
 npm install
@@ -48,6 +46,10 @@ npm install
 npm run dev
 ```
 
+Backend chạy ở:
+
+- http://localhost:3000
+
 ### 3.3 Chạy frontend
 
 ```bash
@@ -56,138 +58,131 @@ npm install
 npm run dev
 ```
 
-### 3.4 Truy cập giao diện
+Frontend chạy ở:
 
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:3000
+- http://localhost:5173
 
-Nếu bạn đang dùng cấu hình local hoặc Docker, hãy kiểm tra file `docker-compose.yml` và file môi trường `.env` để chắc chắn port và cấu hình khớp với máy của bạn.
+### 3.4 Chạy bằng Docker (nếu cần)
 
----
-
-## 4. Luồng vận hành đúng cho người mới
-
-Để vận hành hệ thống hiệu quả, nên làm theo thứ tự sau:
-
-1. Đăng nhập
-2. Thiết lập cơ sở
-3. Thiết lập sân
-4. Thiết lập bảng giá
-5. Quản lý khách hàng
-6. Đặt sân / lịch
-7. Check-in / check-out
-8. Tạo hóa đơn
-9. Quản lý kho và dịch vụ
-10. Xem báo cáo
-11. Cài đặt hệ thống
-
-Đây là quy trình chuẩn nhất để không bị rối trong khi vận hành.
+```bash
+docker-compose up --build
+```
 
 ---
 
-## 5. Hướng dẫn từng chức năng chính
+## 4. Cấu hình database
 
-### 5.1 Dashboard
+### 4.1 File môi trường
 
-Trang Dashboard là màn hình tổng quan đầu tiên sau khi đăng nhập.
+Vào thư mục `apps/backend`, tạo file `.env` từ `.env.example`:
 
-Nó hiển thị:
+```bash
+cd apps/backend
+copy .env.example .env
+```
 
-- Doanh thu ngày / tuần / tháng
-- Số lượng booking
-- Số lượng khách hàng
-- Tình trạng sân
-- Biểu đồ doanh thu
-- Thống kê nhanh
+Nội dung mẫu:
 
-Mục đích:
-- Theo dõi hoạt động mỗi ngày
-- Kiểm tra doanh thu và xu hướng tăng giảm
-- Phát hiện vấn đề sớm
+```env
+NODE_ENV=development
+DATABASE_URL="file:./prisma/dev.db"
+JWT_SECRET="dev-jwt-secret"
+JWT_EXPIRES_IN="15m"
+JWT_REFRESH_SECRET="dev-refresh-secret"
+JWT_REFRESH_EXPIRES_IN="7d"
+PORT=3000
+CORS_ORIGIN="http://localhost:5173"
+FRONTEND_URL="http://localhost:5173"
+DEFAULT_PAGE_SIZE=20
+MAX_PAGE_SIZE=100
+GEMINI_API_KEY="YOUR_GEMINI_API_KEY_HERE"
+```
 
-Nên xem Dashboard mỗi ngày trước khi bắt đầu ca làm việc.
+### 4.2 Database mặc định
 
-### 5.2 Quản lý cơ sở
+Dự án dùng SQLite trong môi trường phát triển, file database được tạo ở:
 
-Vào phần Cơ sở hoặc Settings → Thông tin cơ sở.
+- apps/backend/prisma/dev.db
 
-Ở đây bạn có thể:
+### 4.3 Khởi tạo database Prisma
 
-- Thêm cơ sở mới
-- Sửa thông tin cơ sở
-- Cập nhật địa chỉ, số điện thoại, email
-- Thiết lập giờ mở cửa / đóng cửa
+```bash
+cd apps/backend
+npx prisma generate
+npx prisma db push
+```
 
-Nên làm trước khi thêm sân hoặc nhận khách.
+Nếu cần dữ liệu mẫu ban đầu:
 
-### 5.3 Quản lý sân
+```bash
+npm run db:seed
+```
 
-Vào menu Sân / Courts.
+### 4.4 Các lệnh Prisma hữu ích
+
+```bash
+npx prisma studio
+npx prisma migrate dev
+npx prisma db push
+npm run db:seed
+```
+
+---
+
+## 5. Cách sử dụng hệ thống theo đúng thứ tự
+
+### Bước 1: Đăng nhập
+
+- Vào giao diện web
+- Đăng nhập bằng tài khoản Admin hoặc Manager
+- Sau khi đăng nhập, hệ thống sẽ vào Dashboard
+
+### Bước 2: Thiết lập cơ sở và sân
+
+Vào phần Cơ sở / Settings → Thông tin cơ sở và phần sân.
 
 Bạn cần:
 
-- Chọn cơ sở tương ứng
-- Thêm sân mới
-- Gán tên sân
-- Thiết lập mô tả
-- Đặt trạng thái hoạt động
+- Thêm cơ sở mới
+- Cập nhật địa chỉ, số điện thoại, email
+- Thiết lập giờ mở/đóng cửa
+- Thêm sân cho cơ sở
 
-Ví dụ:
+Nếu chưa có sân thì không thể đặt lịch được.
 
-- Sân A1
-- Sân A2
-- Sân VIP
-- Sân ngoài trời
+### Bước 3: Thiết lập bảng giá
 
-Nếu chưa có sân, hệ thống sẽ không thể nhận đặt sân được.
-
-### 5.4 Bảng giá
-
-Vào menu Settings → Bảng giá.
-
-Đây là phần quan trọng nhất về giá.
+Vào Settings → Bảng giá.
 
 Bạn có thể:
 
-- Thêm khung giá mới
-- Sửa khung giá cũ
+- Thêm khung giá
+- Sửa khung giá
 - Xóa khung giá không còn dùng
-- Chọn giá theo ngày trong tuần
-- Chọn giá theo khung giờ như 17:00 - 21:00
-- Thiết lập ưu tiên nếu có nhiều khung giá chồng nhau
+- Thiết lập giá mặc định, giờ cao điểm, cuối tuần
 
-Ví dụ khung giá:
+Ví dụ:
 
 - Giá mặc định: 150.000đ/giờ
 - Giờ cao điểm: 200.000đ/giờ
 - Cuối tuần: 180.000đ/giờ
 
-Mẹo:
-- Luôn thiết lập bảng giá trước khi hoạt động chính thức
-- Nếu không thiết lập, hệ thống có thể dùng giá mặc định không phù hợp
-
-### 5.5 Quản lý khách hàng
+### Bước 4: Quản lý khách hàng
 
 Vào menu Khách hàng.
 
 Bạn có thể:
 
-- Thêm khách mới
-- Tìm kiếm khách cũ
+- Thêm khách hàng mới
+- Tìm khách cũ
 - Xem lịch sử đặt sân
-- Xem tổng số tiền đã sử dụng
-- Xem thông tin cá nhân
+- Xem tổng chi tiêu
 
-Mục tiêu:
-- Quản lý khách quen tốt hơn
-- Tạo lịch sử giao dịch thuận tiện
-- Theo dõi doanh thu theo khách hàng
+### Bước 5: Đặt sân và quản lý lịch
 
-### 5.6 Đặt sân
+Vào mục Lịch đặt sân / Calendar.
 
-Vào menu Lịch đặt sân / Calendar.
-
-Bạn cần:
+Bạn làm:
 
 - Chọn cơ sở
 - Chọn ngày
@@ -204,189 +199,169 @@ Các trạng thái booking thường gặp:
 - Hoàn thành
 - Đã hủy
 
-Nên kiểm tra lịch đặt hàng ngày để tránh xung khung giờ hoặc sai lịch.
-
-### 5.7 Lịch cố định / recurring booking
-
-Nếu sân có khách đặt theo lịch cố định (ví dụ mỗi tuần vào thứ 2, 4, 6), hệ thống hỗ trợ tạo lịch lặp lại.
-
-Bạn có thể:
-
-- Tạo lịch lặp đều theo tuần
-- Thiết lập thời gian cố định
-- Sử dụng cho các nhóm chơi định kỳ
-
-Dùng cho trường hợp: câu lạc bộ, nhóm bạn, học sinh, sinh viên hay khách quen có lịch cố định.
-
-### 5.8 Check-in và Check-out
+### Bước 6: Check-in và Check-out
 
 Khi khách đến sân:
 
-- Vào lịch đặt sân
-- Chọn booking cần xử lý
+- Chọn booking
 - Click Check-in
 
-Khi khách kết thúc:
+Khi khách chơi xong:
 
 - Click Check-out
-- Hệ thống sẽ cập nhật trạng thái và chuẩn bị thanh toán
+- Chuẩn bị thanh toán
 
-Mục đích:
-- Đảm bảo tính chính xác về thời gian chơi
-- Dễ theo dõi công việc trong ca
+### Bước 7: Quản lý kho và dịch vụ
 
-### 5.9 Quản lý kho và dịch vụ
+Vào mục Kho & Dịch vụ.
 
-Vào menu Kho & Dịch vụ.
-
-Phần này gồm:
+Có 2 phần chính:
 
 - Sản phẩm: vợt, giày, đồ uống, phụ kiện
-- Dịch vụ: thuê vợt, thuê giày, huấn luyện viên, phụ phí thêm
+- Dịch vụ: thuê vợt, thuê giày, huấn luyện viên, dịch vụ đi kèm
 
-Bạn có thể:
+Mục đích:
+- Bán thêm cho khách
+- Quản lý tồn kho
+- Tăng doanh thu
 
-- Thêm sản phẩm / dịch vụ mới
-- Chỉnh sửa giá
-- Xóa nếu không còn dùng
-- Theo dõi hàng tồn kho
+### Bước 8: Tạo hóa đơn
 
-Nếu có sale phụ trợ, phần này rất quan trọng để tăng doanh thu.
+Sau khi check-out, bạn thực hiện:
 
-### 5.10 Hóa đơn
-
-Sau khi check-out, bạn sẽ tạo hóa đơn cho khách.
-
-Trong hóa đơn, bạn có thể:
-
-- Xem từng booking
-- Thêm dịch vụ
-- Thêm sản phẩm
+- Xem thông tin booking
+- Thêm sản phẩm / dịch vụ nếu có
 - Chọn phương thức thanh toán
 - Xác nhận thanh toán
 - In hóa đơn
 
-Nên làm ngay sau khi khách hoàn tất giờ chơi, tránh quên hoặc sai số tiền.
+### Bước 9: Xem báo cáo doanh thu
 
-### 5.11 Báo cáo doanh thu
+Vào mục Báo cáo.
 
-Vào menu Báo cáo.
+Theo dõi:
 
-Ở đây bạn xem:
-
-- Doanh thu theo ngày, tuần, tháng
-- Lợi nhuận
+- Doanh thu ngày/tuần/tháng
 - Chi phí
-- Số lượng đơn
+- Lợi nhuận
+- Số lượng booking
 - Xu hướng tăng trưởng
 
-Mục đích:
-- Review hiệu quả hoạt động
-- Kiểm tra doanh thu thực tế
-- Dùng cho quản lý và quyết định kinh doanh
-
-### 5.12 Cài đặt hệ thống
+### Bước 10: Cài đặt hệ thống
 
 Vào Settings.
 
 Dùng để:
 
-- Quản lý cơ sở
-- Cài đặt giờ hoạt động
-- Sửa bảng giá
-- Tùy chọn thông báo
-- Quản lý bảo mật
-
-Đây là nơi bạn cấu hình hệ thống lâu dài.
+- Cập nhật thông tin cơ sở
+- Bảng giá
+- Giờ hoạt động
+- Thông báo
+- Bảo mật
 
 ---
 
-## 6. Quy trình làm việc chuẩn của nhân viên
+## 6. Quy trình làm việc chuẩn cho người mới
 
 ### Mỗi ngày
 
-1. Đăng nhập vào hệ thống
+1. Đăng nhập
 2. Vào Dashboard kiểm tra tổng quan
 3. Kiểm tra lịch đặt hôm nay
-4. Xem sân nào còn trống
-5. Xác nhận lịch đặt
-6. Check-in khi khách đến
-7. Check-out khi khách ra về
-8. Tạo hóa đơn
-9. Kiểm tra kho nếu có bán thêm đồ/dịch vụ
-10. Xem báo cáo cuối ngày
+4. Xác nhận booking
+5. Check-in khi khách đến
+6. Check-out khi khách ra về
+7. Tạo hóa đơn
+8. Xem báo cáo cuối ca
 
 ### Mỗi tuần
 
 - Kiểm tra bảng giá
-- Cập nhật sản phẩm / dịch vụ
-- Xem doanh thu tuần
-- Xác nhận cơ sở và sân còn hoạt động bình thường
+- Kiểm tra tồn kho
+- Kiểm tra doanh thu tuần
+- Cập nhật cơ sở / sân nếu cần
 
 ### Mỗi tháng
 
 - Review báo cáo doanh thu
-- Kiểm tra sản phẩm gần hết hàng
-- Cập nhật cấu hình hệ thống nếu cần
+- Cập nhật cấu hình hệ thống
+- Kiểm tra dữ liệu khách hàng và san
 
 ---
 
-## 7. Mẹo vận hành hiệu quả
+## 7. Cách sử dụng database trong dự án
 
-- Chạy hệ thống theo đúng thứ tự: cơ sở → sân → bảng giá → lịch → thanh toán
-- Luôn cập nhật sân và giá trước khi mở cửa
-- Kiểm tra booking tránh trùng giờ
-- Đảm bảo hóa đơn được tạo đúng sau khi check-out
-- Nên kiểm tra báo cáo hàng ngày để phát hiện vấn đề sớm
-- Nếu có khách quen, lưu thông tin khách hàng để quản lý dễ hơn
+### 7.1 Các bảng chính
 
----
+- `users`: tài khoản người dùng
+- `venues`: cơ sở sân
+- `courts`: sân chơi
+- `customers`: khách hàng
+- `bookings`: lịch đặt sân
+- `pricing_rules`: bảng giá
+- `services`: dịch vụ đi kèm
+- `products`: sản phẩm / vật dụng
+- `invoices`: hóa đơn
+- `invoice_items`: chi tiết hóa đơn
 
-## 8. Tài khoản và quyền hạn
+### 7.2 Xem database trực tiếp
 
-Hệ thống phân quyền theo role:
+```bash
+cd apps/backend
+npx prisma studio
+```
 
-- SUPER_ADMIN: quyền tối cao
-- ADMIN: quản trị cơ bản
-- MANAGER: quản lý vận hành
-- STAFF: nhân viên trực tiếp
+### 7.3 Reset dữ liệu mẫu
 
-Nếu bạn là người mới, nên ưu tiên tài khoản Admin hoặc Manager để thao tác setup ban đầu.
+Nếu cần tạo lại dữ liệu demo:
 
----
+```bash
+cd apps/backend
+npm run db:seed
+```
 
-## 9. Lưu ý quan trọng
+> Lưu ý: reset dữ liệu sẽ xóa dữ liệu hiện tại và tạo lại dữ liệu mẫu.
 
-- Không nên xóa dữ liệu hệ thống bừa bãi khi chưa chắc chắn
-- Khi sửa bảng giá, phải kiểm tra ảnh hưởng đến các booking đã có
-- Hãy backup dữ liệu nếu hệ thống đang chạy thực tế
-- Thường xuyên kiểm tra trạng thái sân và lịch đặt để tránh trùng lịch
+### 7.4 Khi thay đổi schema
 
----
-
-## 10. Kết luận
-
-Hệ thống quản lý sân cầu lông này được thiết kế để quản lý từ đầu đến cuối quy trình kinh doanh:
-
-- Khách hàng
-- Lịch đặt sân
-- Giá và khung giờ
-- Dịch vụ và sản phẩm
-- Hóa đơn và doanh thu
-- Báo cáo quản trị
-
-Nếu bạn làm đúng thứ tự trên, hệ thống sẽ chạy rất trơn tru và dễ quản lý.
+```bash
+cd apps/backend
+npx prisma generate
+npx prisma db push
+```
 
 ---
 
-## 11. Tóm tắt nhanh
+## 8. Lưu ý quan trọng
 
-Nếu bạn chỉ cần nhớ 5 bước quan trọng nhất:
+- Database dev mặc định là SQLite, không phải PostgreSQL
+- Khi chạy local, dữ liệu được lưu trong `apps/backend/prisma/dev.db`
+- Nếu cần backup, sao chép file `dev.db`
+- Không nên xóa dữ liệu hệ thống khi chưa chắc chắn
+- Khi sửa bảng giá hoặc lịch đặt, cần kiểm tra kỹ để tránh sai thông tin
 
-1. Đăng nhập
-2. Thiết lập cơ sở và sân
-3. Thiết lập bảng giá
-4. Quản lý booking và check-in
-5. Tạo hóa đơn và xem báo cáo
+---
 
-Đây là quy trình tối thiểu để vận hành hệ thống một cách hiệu quả.
+## 9. Tóm tắt nhanh
+
+```bash
+cd apps/backend
+npm install
+npx prisma generate
+npx prisma db push
+npm run db:seed
+npm run dev
+```
+
+```bash
+cd apps/frontend
+npm install
+npm run dev
+```
+
+Sau đó truy cập:
+
+- Frontend: http://localhost:5173
+- Backend: http://localhost:3000
+
+Đăng nhập bằng tài khoản demo và bắt đầu vận hành hệ thống.
