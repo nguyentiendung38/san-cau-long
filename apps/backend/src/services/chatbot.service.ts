@@ -5,16 +5,17 @@ import { format, addDays, startOfDay } from 'date-fns';
 // ============================================================
 // KHỞI TẠO GEMINI AI
 // ============================================================
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
-
 let genAI: GoogleGenerativeAI | null = null;
 
 function getGenAI(): GoogleGenerativeAI {
+    // Đọc key động mỗi lần gọi để đảm bảo nhận đúng giá trị từ .env
+    const apiKey = process.env.GEMINI_API_KEY || '';
+    if (!apiKey) {
+        throw new Error('GEMINI_API_KEY chưa được cấu hình trong .env');
+    }
+    // Tạo lại instance nếu chưa có hoặc key thay đổi
     if (!genAI) {
-        if (!GEMINI_API_KEY) {
-            throw new Error('GEMINI_API_KEY chưa được cấu hình trong .env');
-        }
-        genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+        genAI = new GoogleGenerativeAI(apiKey);
     }
     return genAI;
 }
@@ -476,7 +477,7 @@ export async function processChat(
     const ai = getGenAI();
 
     const model = ai.getGenerativeModel({
-        model: 'gemini-3.6-flash',
+        model: 'gemini-1.5-pro',
         tools,
         systemInstruction: SYSTEM_PROMPT,
     });
