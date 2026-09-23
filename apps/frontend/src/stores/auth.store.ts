@@ -20,6 +20,8 @@ interface AuthState {
     updateTokens: (accessToken: string, refreshToken: string) => void
 }
 
+const AUTH_STORAGE_KEY = 'courtify-auth'
+
 export const useAuthStore = create<AuthState>()(
     persist(
         (set) => ({
@@ -44,6 +46,17 @@ export const useAuthStore = create<AuthState>()(
                     refreshToken: null,
                     isAuthenticated: false,
                 })
+
+                try {
+                    useAuthStore.persist?.clearStorage()
+                } catch {
+                    // no-op: fallback below
+                }
+
+                if (typeof window !== 'undefined') {
+                    window.localStorage.removeItem(AUTH_STORAGE_KEY)
+                    window.sessionStorage.removeItem(AUTH_STORAGE_KEY)
+                }
             },
 
             updateTokens: (accessToken, refreshToken) => {
@@ -51,7 +64,7 @@ export const useAuthStore = create<AuthState>()(
             },
         }),
         {
-            name: 'courtify-auth',
+            name: AUTH_STORAGE_KEY,
             partialize: (state) => ({
                 user: state.user,
                 accessToken: state.accessToken,
