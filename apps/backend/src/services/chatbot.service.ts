@@ -477,7 +477,7 @@ export async function processChat(
     const ai = getGenAI();
 
     const model = ai.getGenerativeModel({
-        model: 'gemini-1.5-pro',
+        model: 'gemini-3.6-flash',
         tools,
         systemInstruction: SYSTEM_PROMPT,
     });

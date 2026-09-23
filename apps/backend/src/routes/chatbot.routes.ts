@@ -96,7 +96,7 @@ router.get('/status', (req: Request, res: Response) => {
         success: true,
         data: {
             isAvailable: hasApiKey,
-            model: 'gemini-1.5-pro',
+            model: 'gemini-3.6-flash',
             message: hasApiKey
                 ? 'Chatbot AI sẵn sàng phục vụ 🏸'
                 : 'Chưa cấu hình GEMINI_API_KEY',
