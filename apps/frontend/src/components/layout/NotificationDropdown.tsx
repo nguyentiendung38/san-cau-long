@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Bell, Check, Clock, X, ChevronRight } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
+import { bookingRequestApi } from '@/services/booking.service';
 
 interface Notification {
     id: string;
@@ -21,64 +23,31 @@ interface Notification {
     };
 }
 
-// Mock notifications - in real app, this would come from API
-const mockNotifications: Notification[] = [
-    {
-        id: '1',
-        type: 'info',
-        title: 'Đặt sân mới',
-        message: 'Nguyễn Văn A đã đặt Sân A1 lúc 18:00',
-        time: '5 phút trước',
-        read: false,
-        link: '/calendar',
-        data: { bookingId: 'booking-001' },
-    },
-    {
-        id: '2',
-        type: 'warning',
-        title: 'Sắp check-in',
-        message: 'Trần Thị B có lịch lúc 14:00 - Sân A2',
-        time: '15 phút trước',
-        read: false,
-        link: '/calendar',
-        data: { bookingId: 'booking-002' },
-    },
-    {
-        id: '3',
-        type: 'success',
-        title: 'Thanh toán thành công',
-        message: 'Hóa đơn #INV-2026-001234 đã được thanh toán',
-        time: '1 giờ trước',
-        read: true,
-        link: '/invoices',
-        data: { invoiceId: 'INV-2026-001234' },
-    },
-    {
-        id: '4',
-        type: 'error',
-        title: 'Hủy đặt sân',
-        message: 'Lê Văn C đã hủy lịch đặt lúc 20:00',
-        time: '2 giờ trước',
-        read: true,
-        link: '/calendar',
-        data: { bookingId: 'booking-003' },
-    },
-    {
-        id: '5',
-        type: 'warning',
-        title: 'Tồn kho thấp',
-        message: 'Cầu lông Yonex AS-50 còn 5 sản phẩm',
-        time: '3 giờ trước',
-        read: false,
-        link: '/inventory',
-    },
-];
+
 
 export function NotificationDropdown() {
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
-    const [notifications, setNotifications] = useState(mockNotifications);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const [readIds, setReadIds] = useState<Set<string>>(new Set());
+
+    const { data: bookingRequests } = useQuery({
+        queryKey: ['booking-requests'],
+        queryFn: () => bookingRequestApi.getAll(),
+        refetchInterval: 60000,
+    });
+
+    const notifications: Notification[] = (bookingRequests || [])
+        .filter((req: any) => req.status === 'PENDING')
+        .map((req: any) => ({
+            id: req.id,
+            type: 'info',
+            title: 'Yêu cầu đặt sân mới',
+            message: `${req.name} (${req.phone}) muốn đặt ngày ${formatDate(req.date)} từ ${req.startTime}-${req.endTime}`,
+            time: new Date(req.createdAt).toLocaleString('vi-VN'),
+            read: readIds.has(req.id),
+            link: '/booking-requests',
+        }));
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -95,35 +64,23 @@ export function NotificationDropdown() {
 
     const handleNotificationClick = (notification: Notification) => {
         // Mark as read
-        setNotifications(prev =>
-            prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
-        );
+        setReadIds(prev => {
+            const next = new Set(prev);
+            next.add(notification.id);
+            return next;
+        });
 
         // Close dropdown
         setIsOpen(false);
 
         // Navigate to the relevant page
         if (notification.link) {
-            // Build query params if needed
-            const params = new URLSearchParams();
-            if (notification.data?.bookingId) {
-                params.set('booking', notification.data.bookingId);
-            }
-            if (notification.data?.invoiceId) {
-                params.set('invoice', notification.data.invoiceId);
-            }
-            if (notification.data?.customerId) {
-                params.set('customer', notification.data.customerId);
-            }
-
-            const queryString = params.toString();
-            const url = queryString ? `${notification.link}?${queryString}` : notification.link;
-            navigate(url);
+            navigate(notification.link);
         }
     };
 
     const markAllAsRead = () => {
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        setReadIds(new Set(notifications.map(n => n.id)));
     };
 
     const getTypeIcon = (type: Notification['type']) => {
@@ -266,3 +223,4 @@ export function NotificationDropdown() {
         </div>
     );
 }
+

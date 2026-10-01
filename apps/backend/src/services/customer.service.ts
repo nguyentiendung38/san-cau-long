@@ -153,25 +153,15 @@ export class CustomerService {
 
     async delete(id: string) {
         const existing = await prisma.customer.findUnique({
-            where: { id },
-            include: { _count: { select: { bookings: true, invoices: true } } },
+            where: { id }
         });
 
         if (!existing) {
             throw new AppError(404, 'Không tìm thấy khách hàng');
         }
 
-        // Soft delete if has related data
-        if (existing._count.bookings > 0 || existing._count.invoices > 0) {
-            await prisma.customer.update({
-                where: { id },
-                data: { isActive: false },
-            });
-            return { message: 'Khách hàng đã được vô hiệu hóa' };
-        }
-
         await prisma.customer.delete({ where: { id } });
-        return { message: 'Đã xóa khách hàng thành công' };
+        return { message: 'Đã xóa tài khoản khỏi CSDL' };
     }
 
     async addPoints(id: string, points: number, reason: string) {

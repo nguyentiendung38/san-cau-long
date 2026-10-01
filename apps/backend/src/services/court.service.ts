@@ -86,23 +86,18 @@ export class CourtService {
     async delete(id: string) {
         const existing = await prisma.court.findUnique({
             where: { id },
-            include: { _count: { select: { bookings: true } } },
         });
 
         if (!existing) {
             throw new AppError(404, 'Không tìm thấy sân');
         }
 
-        // If has bookings, just deactivate
-        if (existing._count.bookings > 0) {
-            await prisma.court.update({
-                where: { id },
-                data: { status: 'INACTIVE' },
-            });
-            return { message: 'Sân đã được vô hiệu hóa (có lịch đặt liên kết)' };
-        }
-
+        // Xóa cascade thủ công
+        await prisma.invoiceItem.deleteMany({ where: { booking: { courtId: id } } });
+        await prisma.booking.deleteMany({ where: { courtId: id } });
+        await prisma.bookingRequest.deleteMany({ where: { courtId: id } });
         await prisma.court.delete({ where: { id } });
+        
         return { message: 'Đã xóa sân thành công' };
     }
 

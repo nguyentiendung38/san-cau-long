@@ -1,4 +1,4 @@
-import api, { ApiResponse } from './api';
+﻿import api, { ApiResponse } from './api';
 
 export interface Venue {
     id: string;
@@ -89,6 +89,10 @@ export const venueApi = {
     async delete(id: string): Promise<void> {
         await api.delete(`/venues/${id}`);
     },
+    async getAvailability(venueId: string, date: string): Promise<{ courts: Court[]; bookings: any[] }> {
+        const response = await api.get('/venues/' + venueId + '/availability?date=' + date);
+        return response.data.data;
+    }
 };
 
 export const courtApi = {
@@ -113,3 +117,7 @@ export const courtApi = {
 };
 
 export default { venueApi, courtApi };
+
+
+
+

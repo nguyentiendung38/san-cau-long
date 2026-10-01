@@ -33,6 +33,16 @@ export interface UpdatePricingRuleInput {
 }
 
 export class PricingRuleService {
+    private validateTimeRange(startTime?: string | null, endTime?: string | null) {
+        if ((startTime && !endTime) || (!startTime && endTime)) {
+            throw new AppError(400, 'Vui lòng nhập đủ giờ bắt đầu và giờ kết thúc');
+        }
+
+        if (startTime && endTime && startTime >= endTime) {
+            throw new AppError(400, 'Giờ bắt đầu phải nhỏ hơn giờ kết thúc');
+        }
+    }
+
     async findAll(params: PricingRuleQueryParams = {}) {
         const { venueId, isActive, search, page = 1, limit = 20 } = params;
 
@@ -110,6 +120,12 @@ export class PricingRuleService {
             throw new AppError(400, 'Vui lòng nhập tên khung giá');
         }
 
+        if (!Number.isFinite(Number(input.pricePerHour)) || Number(input.pricePerHour) < 0) {
+            throw new AppError(400, 'Giá phải là số và không được âm');
+        }
+
+        this.validateTimeRange(input.startTime, input.endTime);
+
         const rule = await prisma.pricingRule.create({
             data: {
                 venueId: input.venueId,
@@ -139,6 +155,14 @@ export class PricingRuleService {
 
         if (!existing) {
             throw new AppError(404, 'Không tìm thấy khung giá');
+        }
+
+        const startTime = input.startTime !== undefined ? input.startTime : existing.startTime;
+        const endTime = input.endTime !== undefined ? input.endTime : existing.endTime;
+        this.validateTimeRange(startTime, endTime);
+
+        if (input.pricePerHour !== undefined && (!Number.isFinite(Number(input.pricePerHour)) || Number(input.pricePerHour) < 0)) {
+            throw new AppError(400, 'Giá phải là số và không được âm');
         }
 
         const rule = await prisma.pricingRule.update({

@@ -72,13 +72,13 @@ export default function LoginPage() {
                     <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur">
                         <span className="text-white font-bold text-xl">H</span>
                     </div>
-                    <span className="text-2xl font-bold text-white">SÂN CẦU LÔNG HUE</span>
+                    <span className="text-2xl font-bold text-white">SÂN CẦU LÔNG HUẾ</span>
                 </div>
 
                 {/* Content */}
                 <div className="relative z-10">
                     <h1 className="text-4xl font-bold text-white mb-4">
-                        Quản lý sân cầu lông<br />trường đại học kinh tế Huế
+                        Quản Lý Sân Cầu Lông của<br />Trường Đại Học Kinh Tế Huế
                     </h1>
                     <p className="text-white/80 text-lg max-w-md">
                         Hệ thống toàn diện cho việc quản lý đặt sân, khách hàng,
@@ -111,7 +111,7 @@ export default function LoginPage() {
                         <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center">
                             <span className="text-white font-bold text-xl">H</span>
                         </div>
-                        <span className="text-2xl font-bold text-primary-500">SÂN CẦU LÔNG HUE</span>
+                        <span className="text-2xl font-bold text-primary-500">SÂN CẦU LÔNG HUẾ</span>
                     </div>
 
                     <div className="mb-8">

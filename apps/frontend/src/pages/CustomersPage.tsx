@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Search,
@@ -12,7 +13,8 @@ import {
     ChevronRight,
     X,
     Edit2,
-    Trash2
+    Trash2,
+    Eye
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -40,6 +42,7 @@ function getMembershipLabel(tier?: string): string {
 }
 
 export default function CustomersPage() {
+    const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTier, setSelectedTier] = useState<string>('');
     const [page, setPage] = useState(1);
@@ -259,6 +262,13 @@ export default function CustomersPage() {
 
                                     {/* Actions */}
                                     <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => navigate(`/customers/${customer.id}`)}
+                                            className="p-2 hover:bg-background-tertiary rounded-lg transition-colors"
+                                            title="Xem chi tiết"
+                                        >
+                                            <Eye className="w-4 h-4 text-primary-500" />
+                                        </button>
                                         <button
                                             onClick={() => openEditModal(customer)}
                                             className="p-2 hover:bg-background-tertiary rounded-lg transition-colors"

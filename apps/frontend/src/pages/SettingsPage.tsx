@@ -15,13 +15,15 @@ import {
     MapPin,
     Phone,
     Mail,
-    Loader2
+    Loader2,
+    Users
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { venueApi, Venue } from '@/services/venue.service';
 import { pricingRuleApi, PricingRule } from '@/services/inventory.service';
+import { customerApi } from '@/services/customer.service';
 import { useToast } from '@/hooks/use-toast';
 
 interface TabProps {
@@ -201,8 +203,30 @@ export default function SettingsPage() {
     });
     const { toast } = useToast();
     const queryClient = useQueryClient();
+    const { data: registeredUsersData, isLoading: loadingRegisteredUsers } = useQuery({
+        queryKey: ['registered-users'],
+        queryFn: () => customerApi.getAll({ registeredOnly: true, limit: 50 }),
+        enabled: activeTab === 'registered_users',
+    });
 
-    // Fetch venues
+    const deleteCustomerMutation = useMutation({
+        mutationFn: (id: string) => customerApi.delete(id),
+        onSuccess: () => {
+            toast({ title: 'Đã xóa tài khoản khỏi CSDL' });
+            queryClient.invalidateQueries({ queryKey: ['registered-users'] });
+        },
+        onError: () => {
+            toast({ title: 'Lỗi khi xóa tài khoản', variant: 'error' });
+        }
+    });
+
+    const handleDeleteCustomer = (user: any) => {
+        if (confirm(`Bạn có chắc muốn xóa vĩnh viễn tài khoản của ${user.name} khỏi CSDL?`)) {
+            deleteCustomerMutation.mutate(user.id);
+        }
+    };
+
+        // Fetch venues
     const { data: venuesData, isLoading: loadingVenues } = useQuery({
         queryKey: ['venues'],
         queryFn: () => venueApi.getAll({ isActive: true }),
@@ -363,6 +387,7 @@ export default function SettingsPage() {
         { id: 'pricing', icon: DollarSign, label: 'Bảng giá' },
         { id: 'notifications', icon: Bell, label: 'Thông báo' },
         { id: 'security', icon: Shield, label: 'Bảo mật' },
+        { id: 'registered_users', icon: Users, label: 'Danh sách tài khoản' },
     ];
 
     return (
@@ -579,6 +604,59 @@ export default function SettingsPage() {
                                     </div>
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Registered Users */}
+                    {activeTab === 'registered_users' && (
+                        <div className="bg-background-secondary border border-border rounded-xl p-6">
+                            <h3 className="text-lg font-semibold text-foreground mb-6">Tài khoản khách hàng</h3>
+                            
+                            {loadingRegisteredUsers ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+                                </div>
+                            ) : !registeredUsersData?.data?.length ? (
+                                <div className="text-center py-12">
+                                    <Users className="w-12 h-12 mx-auto mb-4 text-foreground-muted opacity-50" />
+                                    <p className="text-foreground-secondary">Chưa có khách hàng nào đăng ký tài khoản</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-5 gap-4 pb-2 border-b border-border text-sm font-medium text-foreground-secondary">
+                                        <div className="col-span-2">Khách hàng</div>
+                                        <div>Số điện thoại</div>
+                                        <div>Ngày đăng ký</div>
+                                        <div className="text-right">Thao tác</div>
+                                    </div>
+                                    {registeredUsersData.data.map((user: any) => (
+                                        <div key={user.id} className="grid grid-cols-5 gap-4 py-3 border-b border-border/50 items-center text-sm">
+                                            <div className="col-span-2 flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-full bg-primary-500/20 flex items-center justify-center font-bold text-primary-500">
+                                                    {user.name.charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="font-medium text-foreground">{user.name}</p>
+                                                    <p className="text-xs text-foreground-muted">{user.email || 'Chưa cập nhật email'}</p>
+                                                </div>
+                                            </div>
+                                            <div className="text-foreground">{user.phone}</div>
+                                            <div className="text-foreground-secondary">
+                                                {new Date(user.createdAt).toLocaleDateString('vi-VN')}
+                                            </div>
+                                            <div className="text-right flex justify-end">
+                                                <button
+                                                    onClick={() => handleDeleteCustomer(user)}
+                                                    className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                    title="Xóa tài khoản"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )}
 

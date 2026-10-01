@@ -5,7 +5,7 @@ import { authenticate, authorize } from '../middleware/auth.js';
 const router = Router();
 
 // Get courts by venue
-router.get('/venue/:venueId', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/venue/:venueId', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const courts = await courtService.findByVenue(req.params.venueId);
         res.json({
@@ -31,7 +31,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response, next: NextF
 });
 
 // Get court availability
-router.get('/:id/availability', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:id/availability', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { date } = req.query;
         const targetDate = date ? new Date(date as string) : new Date();

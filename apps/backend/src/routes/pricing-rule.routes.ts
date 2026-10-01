@@ -53,7 +53,7 @@ router.get('/:id', authenticate, async (req: Request, res: Response, next: NextF
     }
 });
 
-router.post('/', authenticate, authorize('ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+router.post('/', authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const validated = pricingRuleSchema.parse(req.body);
         const rule = await pricingRuleService.create(validated);
@@ -63,7 +63,7 @@ router.post('/', authenticate, authorize('ADMIN', 'MANAGER'), async (req: Reques
     }
 });
 
-router.put('/:id', authenticate, authorize('ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+router.put('/:id', authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
     try {
         const validated = updatePricingRuleSchema.parse(req.body);
         const rule = await pricingRuleService.update(req.params.id, validated);
@@ -73,7 +73,7 @@ router.put('/:id', authenticate, authorize('ADMIN', 'MANAGER'), async (req: Requ
     }
 });
 
-router.delete('/:id', authenticate, authorize('ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'ADMIN'), async (req: Request, res: Response, next: NextFunction) => {
     try {
         await pricingRuleService.delete(req.params.id);
         res.json({ success: true, message: 'Đã xóa khung giá' });

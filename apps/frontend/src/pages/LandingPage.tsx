@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Calendar, MapPin, Sparkles, ArrowRight, ShieldCheck, Clock, Zap } from 'lucide-react'
+import { Calendar, MapPin, Sparkles, ArrowRight, ShieldCheck, Clock, Zap, Bot } from 'lucide-react'
 
 export default function LandingPage() {
     return (
@@ -183,3 +183,5 @@ export default function LandingPage() {
         </div>
     )
 }
+
+

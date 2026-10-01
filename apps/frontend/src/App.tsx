@@ -22,7 +22,13 @@ import { AppLayout } from '@/components/layout/AppLayout'
 
 // AI Chatbot
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget'
-import PublicChatPage from '@/pages/PublicChatPage'
+import PortalPage from '@/pages/PortalPage'
+import RegisterPage from '@/pages/RegisterPage'
+import PortalLoginPage from '@/pages/PortalLoginPage'
+import PortalForgotPasswordPage from '@/pages/PortalForgotPasswordPage'
+
+import BookingRequestsPage from '@/pages/BookingRequestsPage'
+import ExploreContentPage from '@/pages/ExploreContentPage'
 
 function App() {
     const { isAuthenticated } = useAuthStore()
@@ -46,10 +52,25 @@ function App() {
                     element={isAuthenticated ? <PrintInvoicePage /> : <Navigate to="/login" replace />}
                 />
 
-                {/* Public Chatbot page */}
+                {/* Alobo Clone Portal */}
                 <Route
-                    path="/dat-san"
-                    element={<PublicChatPage />}
+                    path="/portal"
+                    element={<PortalPage />}
+                />
+                
+                <Route
+                    path="/register"
+                    element={<RegisterPage />}
+                />
+
+                <Route
+                    path="/client-login"
+                    element={<PortalLoginPage />}
+                />
+
+                <Route
+                    path="/client-forgot-password"
+                    element={<PortalForgotPasswordPage />}
                 />
 
                 {/* Protected routes */}
@@ -61,6 +82,7 @@ function App() {
                                 <Routes>
                                     <Route path="/" element={<DashboardPage />} />
                                     <Route path="/calendar" element={<BookingCalendarPage />} />
+                                    <Route path="/booking-requests" element={<BookingRequestsPage />} />
                                     <Route path="/customers" element={<CustomersPage />} />
                                     <Route path="/customers/:id" element={<CustomerDetailPage />} />
                                     <Route path="/courts" element={<CourtsPage />} />
@@ -69,6 +91,7 @@ function App() {
                                     <Route path="/venues" element={<VenuesPage />} />
                                     <Route path="/reports" element={<ReportsPage />} />
                                     <Route path="/settings" element={<SettingsPage />} />
+                                    <Route path="/explore-content" element={<ExploreContentPage />} />
                                     <Route path="*" element={<Navigate to="/" replace />} />
                                 </Routes>
                             </AppLayout>

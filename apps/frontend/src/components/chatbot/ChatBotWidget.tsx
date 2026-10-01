@@ -181,7 +181,7 @@ export function ChatBotWidget() {
         <>
             {/* ======================== CHAT WINDOW ======================== */}
             {isOpen && (
-                <div className="fixed bottom-20 right-4 z-50 w-[380px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-8rem)] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
+                <div className="fixed bottom-[150px] md:bottom-24 right-4 md:right-6 z-[60] w-[380px] max-w-[calc(100vw-2rem)] h-[560px] max-h-[calc(100vh-10rem)] bg-white rounded-2xl shadow-2xl border border-gray-200 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-300">
                     {/* Header */}
                     <div className="bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-3 flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-2.5">
@@ -326,7 +326,7 @@ export function ChatBotWidget() {
             {/* ======================== FLOATING BUTTON ======================== */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`fixed bottom-4 right-4 z-50 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-110 ${
+                className={`fixed bottom-[84px] md:bottom-6 right-4 md:right-6 z-[60] w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-110 ${
                     isOpen
                         ? 'bg-gray-600 hover:bg-gray-700 rotate-0'
                         : 'bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'

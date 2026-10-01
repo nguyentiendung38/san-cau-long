@@ -48,11 +48,9 @@ api.interceptors.response.use(
                 } catch {
                     // Refresh failed, logout
                     useAuthStore.getState().logout()
-                    window.location.href = '/login'
                 }
             } else {
                 useAuthStore.getState().logout()
-                window.location.href = '/login'
             }
         }
 

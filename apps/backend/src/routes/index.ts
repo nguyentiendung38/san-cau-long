@@ -13,6 +13,8 @@ import exportRoutes from './export.routes.js';
 import recurringBookingRoutes from './recurring-booking.routes.js';
 import chatbotRoutes from './chatbot.routes.js';
 import zaloRoutes from './zalo.routes.js';
+import bookingRequestRoutes from './booking-request.routes.js';
+import exploreContentRoutes from './explore-content.routes.js';
 
 const router = Router();
 
@@ -30,6 +32,7 @@ router.use('/auth', authRoutes);
 router.use('/venues', venueRoutes);
 router.use('/courts', courtRoutes);
 router.use('/bookings', bookingRoutes);
+router.use('/booking-requests', bookingRequestRoutes);
 router.use('/recurring-bookings', recurringBookingRoutes);
 router.use('/customers', customerRoutes);
 router.use('/invoices', invoiceRoutes);
@@ -40,5 +43,8 @@ router.use('/reports', reportRoutes);
 router.use('/export', exportRoutes);
 router.use('/chatbot', chatbotRoutes);
 router.use('/zalo', zaloRoutes);
+router.use('/explore-contents', exploreContentRoutes);
+import portalAuthRoutes from './portal-auth.routes.js';
+router.use('/portal-auth', portalAuthRoutes);
 
 export default router;

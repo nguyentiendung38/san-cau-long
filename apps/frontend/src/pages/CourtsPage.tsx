@@ -46,7 +46,7 @@ export default function CourtsPage() {
     const [formData, setFormData] = useState<CourtFormData>({
         name: '',
         description: '',
-        surfaceType: 'Synthetic',
+        surfaceType: 'Sàn PVC',
         isIndoor: true,
         status: 'ACTIVE',
     });
@@ -118,7 +118,7 @@ export default function CourtsPage() {
         setFormData({
             name: '',
             description: '',
-            surfaceType: 'Synthetic',
+            surfaceType: 'Sàn PVC',
             isIndoor: true,
             status: 'ACTIVE',
         });
@@ -130,7 +130,7 @@ export default function CourtsPage() {
         setFormData({
             name: court.name,
             description: court.description || '',
-            surfaceType: court.surfaceType || 'Synthetic',
+            surfaceType: court.surfaceType || 'Sàn PVC',
             isIndoor: court.isIndoor,
             status: court.status,
         });
@@ -333,10 +333,8 @@ export default function CourtsPage() {
                                         onChange={(e) => setFormData({ ...formData, surfaceType: e.target.value })}
                                         className="w-full px-3 py-2 bg-background-tertiary border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
                                     >
-                                        <option value="Synthetic">Sàn nhựa tổng hợp</option>
-                                        <option value="Wooden">Sàn gỗ</option>
-                                        <option value="Synthetic Pro">Synthetic Pro</option>
-                                        <option value="PVC">PVC</option>
+                                        <option value="Sàn PVC">Sàn PVC</option>
+                                        <option value="Sàn gỗ">Sàn gỗ</option>
                                     </select>
                                 </div>
 

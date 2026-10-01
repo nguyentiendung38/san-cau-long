@@ -30,5 +30,13 @@
     "engines": {
         "node": ">=18.0.0",
         "npm": ">=9.0.0"
+    },
+    "allowScripts": {
+        "@parcel/watcher@2.6.0": true,
+        "@prisma/client@5.22.0": true,
+        "@prisma/engines@5.22.0": true,
+        "esbuild@0.21.5": true,
+        "esbuild@0.27.3": true,
+        "prisma@5.22.0": true
     }
 }

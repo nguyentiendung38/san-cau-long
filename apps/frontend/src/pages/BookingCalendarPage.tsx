@@ -8,6 +8,7 @@ import {
     Repeat
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
+import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { bookingApi, Booking } from '@/services/booking.service';
 import { venueApi, Venue } from '@/services/venue.service';
@@ -15,6 +16,8 @@ import { useToast } from '@/hooks/use-toast';
 import { ViewToggle, CalendarViewMode, MiniCalendar, WeekView, ListView } from '@/components/calendar';
 import { RecurringBookingModal, BookingDetailPanel, NewBookingModal, EditBookingModal } from '@/components/booking';
 import { recurringBookingApi, RecurringBookingInput } from '@/services/recurring-booking.service';
+import { invoiceApi, Invoice } from '@/services/invoice.service';
+import { InvoiceDetailPanel } from '@/components/invoice/InvoiceDetailPanel';
 
 // Time slots from 6:00 to 23:00
 const TIME_SLOTS = Array.from({ length: 18 }, (_, i) => {
@@ -77,6 +80,8 @@ export default function BookingCalendarPage() {
     const [showNewBookingModal, setShowNewBookingModal] = useState(false);
     const [showEditBookingModal, setShowEditBookingModal] = useState(false);
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+    const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+    const [showInvoicePanel, setShowInvoicePanel] = useState(false);
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -93,14 +98,12 @@ export default function BookingCalendarPage() {
         }
     }, [venuesData, selectedVenueId]);
 
+    const formattedDate = format(selectedDate, 'yyyy-MM-dd');
+
     // Fetch calendar data
     const { data: calendarData, isLoading } = useQuery({
-        queryKey: ['calendar', selectedVenueId, selectedDate.toISOString().split('T')[0]],
-        queryFn: () => bookingApi.getCalendarData(
-            selectedVenueId,
-            selectedDate.toISOString().split('T')[0],
-            selectedDate.toISOString().split('T')[0]
-        ),
+        queryKey: ['calendar', selectedVenueId, formattedDate],
+        queryFn: () => bookingApi.getCalendarData(selectedVenueId, formattedDate, formattedDate),
         enabled: !!selectedVenueId,
     });
 
@@ -119,14 +122,53 @@ export default function BookingCalendarPage() {
 
     // Check-out mutation
     const checkOutMutation = useMutation({
-        mutationFn: (id: string) => bookingApi.checkOut(id),
-        onSuccess: () => {
-            toast({ title: 'Check-out thành công!' });
+        mutationFn: async (id: string) => {
+            // Find the booking details from our grid
+            const booking = calendarData?.bookings.find((b: Booking) => b.id === id);
+            if (!booking) throw new Error('Booking not found');
+
+            let invoice;
+            try {
+                // 1. Create Invoice via invoiceApi
+                invoice = await invoiceApi.create({
+                    customerId: booking.customer?.id,
+                    bookingIds: [booking.id],
+                    paymentMethod: 'CASH', // Default
+                });
+            } catch (error: any) {
+                // If invoice already exists for this booking (409 Conflict)
+                if (error?.response?.status === 409 || error?.status === 409) {
+                    const fullBooking: any = await bookingApi.getById(id);
+                    if (fullBooking.invoiceItem?.invoice) {
+                        invoice = fullBooking.invoiceItem.invoice;
+                    } else {
+                        throw error;
+                    }
+                } else {
+                    throw error;
+                }
+            }
+
+            // 2. Mark booking as COMPLETED
+            if (booking.status === 'IN_PROGRESS') {
+                await bookingApi.checkOut(id);
+            }
+
+            return invoice;
+        },
+        onSuccess: (invoice) => {
+            toast({ title: 'Đã tạo hóa đơn và check-out!' });
             queryClient.invalidateQueries({ queryKey: ['calendar'] });
             setSelectedBooking(null);
+            
+            // Show invoice panel for payment/printing
+            if (invoice) {
+                setSelectedInvoice(invoice);
+                setShowInvoicePanel(true);
+            }
         },
-        onError: () => {
-            toast({ title: 'Lỗi khi check-out', variant: 'error' });
+        onError: (error: any) => {
+            toast({ title: error?.response?.data?.message || 'Lỗi khi check-out', variant: 'error' });
         },
     });
 
@@ -489,6 +531,30 @@ export default function BookingCalendarPage() {
                     setShowEditBookingModal(false);
                     setEditingBooking(null);
                     queryClient.invalidateQueries({ queryKey: ['calendar'] });
+                }}
+            />
+
+            {/* Invoice Detail Panel for Check-out */}
+            <InvoiceDetailPanel
+                isOpen={showInvoicePanel}
+                invoice={selectedInvoice as any}
+                onClose={() => {
+                    setShowInvoicePanel(false);
+                    setSelectedInvoice(null);
+                }}
+                onPrint={(id) => {
+                    window.open(`/invoices/${id}/print`, '_blank');
+                }}
+                onMarkPaid={async (id) => {
+                    try {
+                        await invoiceApi.pay(id);
+                        toast({ title: 'Đã xác nhận thanh toán!' });
+                        // Cập nhật trạng thái hóa đơn ngay lập tức
+                        setSelectedInvoice(prev => prev ? { ...prev, status: 'PAID' } : null);
+                        queryClient.invalidateQueries({ queryKey: ['calendar'] });
+                    } catch (error) {
+                        toast({ title: 'Lỗi khi thanh toán', variant: 'error' });
+                    }
                 }}
             />
         </div>

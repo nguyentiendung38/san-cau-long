@@ -176,7 +176,7 @@ export class AuthService {
         }
 
         // Delete old refresh token
-        await prisma.refreshToken.delete({
+        await prisma.refreshToken.deleteMany({
             where: { id: storedToken.id },
         });
 

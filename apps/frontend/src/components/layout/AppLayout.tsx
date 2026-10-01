@@ -11,7 +11,7 @@ import {
     Search,
     ChevronDown,
     Package,
-    Building2
+    Building2, ClipboardList, Compass
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
@@ -27,12 +27,14 @@ interface AppLayoutProps {
 const navigation = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Lịch đặt sân', href: '/calendar', icon: Calendar },
+    { name: 'Yêu cầu đặt sân', href: '/booking-requests', icon: ClipboardList },
     { name: 'Khách hàng', href: '/customers', icon: Users },
     { name: 'Quản lý sân', href: '/courts', icon: Grid3X3 },
     { name: 'Quản lý cơ sở', href: '/venues', icon: Building2 },
     { name: 'Hóa đơn', href: '/invoices', icon: FileText },
     { name: 'Kho & Dịch vụ', href: '/inventory', icon: Package },
     { name: 'Báo cáo', href: '/reports', icon: BarChart3 },
+    { name: 'Nội dung Khám phá', href: '/explore-content', icon: Compass },
 ]
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -126,7 +128,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <div className="flex items-center gap-2 md:gap-4">
                         {/* Venue selector - hidden on mobile */}
                         <Button variant="secondary" size="sm" className="hidden sm:flex gap-2">
-                            <span className="hidden lg:inline">Sân cầu lông UEH</span>
+                            <span className="hidden lg:inline">Sân cầu lông HUE</span>
                             <span className="lg:hidden">Cơ sở</span>
                             <ChevronDown className="w-4 h-4" />
                         </Button>

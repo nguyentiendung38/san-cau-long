@@ -28,7 +28,7 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  venues        VenueStaff[]
+  venues        VenueStaff[] //cơ sở, nhân viên cơ sở
   bookings      Booking[]     @relation("CreatedByUser")
   refreshTokens RefreshToken[]
 
@@ -121,6 +121,7 @@ model Customer {
   totalBookings   Int       @default(0)
   totalSpent      Float     @default(0)
   points          Int       @default(0)
+  passwordHash    String?
   isActive        Boolean   @default(true)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -129,6 +130,17 @@ model Customer {
   invoices Invoice[]
 
   @@map("customers")
+}
+
+/// OTP Record - For authentication
+model OtpRecord {
+  id        String   @id @default(cuid())
+  email     String
+  otp       String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@map("otp_records")
 }
 
 /// Booking - Court reservation
@@ -411,4 +423,43 @@ model TikWarehouse {
   tikProduct  TikProduct @relation(fields: [tikProductId], references: [id], onDelete: Cascade)
 
   @@map("tik_warehouse")
+}
+/// BookingRequest - Online booking requests from Portal
+model BookingRequest {
+    id        String   @id @default(cuid())
+    venueId   String
+    courtId   String?
+    name      String
+    phone     String
+    date      DateTime
+    startTime String
+    endTime   String
+    notes     String?
+    status    String   @default("PENDING") // PENDING, APPROVED, REJECTED
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@map("booking_requests")
+}
+
+
+
+/// ExploreContent - Quản lý nội dung trang Khám phá (Portal)
+model ExploreContent {
+    id          String   @id @default(cuid())
+    type        String   // EVENT, MEMBERSHIP, COURSE, NEWS, DEAL, PASS
+    title       String
+    description String?
+    imageUrl    String?
+    price       String?  // Giá tiền (text để linh hoạt)
+    badge       String?  // Tag hiển thị ("Phổ biến", "HOT"...)
+    metadata    String?  // JSON string cho các field đặc thù theo type
+    isActive    Boolean  @default(true)
+    sortOrder   Int      @default(0)
+    startDate   DateTime?
+    endDate     DateTime?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    @@map("explore_contents")
 }

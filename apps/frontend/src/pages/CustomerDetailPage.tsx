@@ -42,6 +42,7 @@ export default function CustomerDetailPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<'history' | 'points' | 'notes'>('history');
+    const [pointsInput, setPointsInput] = useState('');
 
     const { data: customer, isLoading, error } = useQuery({
         queryKey: ['customer', id],
@@ -58,6 +59,18 @@ export default function CustomerDetailPage() {
         },
         onError: () => {
             toast({ title: 'Lỗi khi xóa khách hàng', variant: 'error' });
+        },
+    });
+
+    const pointsMutation = useMutation({
+        mutationFn: (points: number) => customerApi.addPoints(customer!.id, points),
+        onSuccess: () => {
+            toast({ title: 'Đã cập nhật điểm thành công' });
+            queryClient.invalidateQueries({ queryKey: ['customer', id] });
+            setPointsInput('');
+        },
+        onError: () => {
+            toast({ title: 'Lỗi khi cập nhật điểm', variant: 'error' });
         },
     });
 
@@ -237,12 +250,38 @@ export default function CustomerDetailPage() {
                     )}
 
                     {activeTab === 'points' && (
-                        <div className="py-8 text-center text-foreground-muted">
-                            <Gift className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                            <h3 className="font-medium text-foreground mb-2">Lịch sử điểm</h3>
-                            <p className="text-sm">
-                                Điểm hiện tại: <strong className="text-yellow-500">{customer.points?.toLocaleString() || 0}</strong>
-                            </p>
+                        <div className="py-8 max-w-sm mx-auto">
+                            <div className="text-center mb-6">
+                                <Gift className="w-12 h-12 mx-auto mb-4 text-yellow-500 opacity-50" />
+                                <h3 className="font-medium text-foreground mb-2">Quản lý điểm</h3>
+                                <p className="text-sm">
+                                    Điểm hiện tại: <strong className="text-yellow-500 text-lg">{customer.points?.toLocaleString() || 0}</strong>
+                                </p>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground-secondary mb-1">
+                                        Số điểm cần cộng/trừ
+                                    </label>
+                                    <input 
+                                        type="number"
+                                        placeholder="VD: 100 hoặc -50"
+                                        className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                        value={pointsInput}
+                                        onChange={(e) => setPointsInput(e.target.value)}
+                                    />
+                                    <p className="text-xs text-foreground-muted mt-1">Dùng số âm (vd: -10) để trừ điểm</p>
+                                </div>
+                                <Button 
+                                    className="w-full"
+                                    disabled={!pointsInput || isNaN(Number(pointsInput))}
+                                    isLoading={pointsMutation.isPending}
+                                    onClick={() => pointsMutation.mutate(Number(pointsInput))}
+                                >
+                                    Cập nhật điểm
+                                </Button>
+                            </div>
                         </div>
                     )}
 

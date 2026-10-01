@@ -1,11 +1,11 @@
-import { Router, Request, Response, NextFunction } from 'express';
+﻿import { Router, Request, Response, NextFunction } from 'express';
 import { venueService } from '../services/venue.service.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = Router();
 
-// Get all venues (paginated)
-router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// Get all venues (paginated) - PUBLIC
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { search, isActive, page, limit } = req.query;
 
@@ -25,13 +25,48 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
     }
 });
 
-// Get venue by ID
-router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+// Get venue by ID - PUBLIC
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const venue = await venueService.findById(req.params.id);
         res.json({
             success: true,
             data: venue,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Get venue availability by date - PUBLIC
+router.get('/:id/availability', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { date } = req.query;
+        const targetDate = date ? new Date(date as string) : new Date();
+        const startOfDay = new Date(targetDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(targetDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const { PrismaClient } = await import('@prisma/client');
+        const prisma = new PrismaClient();
+
+        const courts = await prisma.court.findMany({
+            where: { venueId: req.params.id, status: { not: 'INACTIVE' } },
+            orderBy: { sortOrder: 'asc' }
+        });
+
+        const bookings = await prisma.booking.findMany({
+            where: {
+                courtId: { in: courts.map((c: any) => c.id) },
+                date: { gte: startOfDay, lte: endOfDay },
+                status: { not: 'CANCELLED' }
+            }
+        });
+
+        res.json({
+            success: true,
+            data: { courts, bookings }
         });
     } catch (error) {
         next(error);
@@ -61,7 +96,7 @@ router.post(
             const venue = await venueService.create(req.body);
             res.status(201).json({
                 success: true,
-                message: 'Tạo cơ sở thành công',
+                message: 'Táº¡o cÆ¡ sá»Ÿ thĂ nh cĂ´ng',
                 data: venue,
             });
         } catch (error) {
@@ -80,7 +115,7 @@ router.put(
             const venue = await venueService.update(req.params.id, req.body);
             res.json({
                 success: true,
-                message: 'Cập nhật cơ sở thành công',
+                message: 'Cáº­p nháº­t cÆ¡ sá»Ÿ thĂ nh cĂ´ng',
                 data: venue,
             });
         } catch (error) {
@@ -108,3 +143,4 @@ router.delete(
 );
 
 export default router;
+

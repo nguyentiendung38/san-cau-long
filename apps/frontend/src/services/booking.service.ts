@@ -149,3 +149,40 @@ export const bookingApi = {
 };
 
 export default bookingApi;
+
+export interface BookingRequest {
+    id: string;
+    venueId: string;
+    courtId?: string;
+    name: string;
+    phone: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    notes?: string;
+    status: string;
+    createdAt: string;
+}
+
+export const bookingRequestApi = {
+    async createPublic(input: Partial<BookingRequest>): Promise<BookingRequest> {
+        const response = await api.post<ApiResponse<BookingRequest>>('/booking-requests/public', input);
+        return response.data.data!;
+    },
+    async getMyRequests(phone: string): Promise<any[]> {
+        const response = await api.get<ApiResponse<any[]>>(`/booking-requests/public/my-requests?phone=${phone}`);
+        return response.data.data!;
+    },
+    async getAll(venueId?: string): Promise<BookingRequest[]> {
+        const url = venueId ? `/booking-requests?venueId=${venueId}` : '/booking-requests';
+        const response = await api.get<ApiResponse<BookingRequest[]>>(url);
+        return response.data.data!;
+    },
+    async updateStatus(id: string, status: string): Promise<BookingRequest> {
+        const response = await api.put<ApiResponse<BookingRequest>>(`/booking-requests/${id}/status`, { status });
+        return response.data.data!;
+    },
+    async delete(id: string): Promise<void> {
+        await api.delete(`/booking-requests/${id}`);
+    }
+};
