@@ -90,7 +90,7 @@ export default function BookingRequestsPage() {
                                         <span className={`font-semibold ${req.paymentMethod === 'MOMO' ? 'text-pink-500' : 'text-foreground-secondary'}`}>
                                             {req.paymentMethod === 'DEPOSIT_TRANSFER'
                                                 ? `Thanh toán QR · ${req.paymentStatus === 'PAID' ? 'Đã xác nhận' : 'Chờ kiểm tra'}`
-                                                : `MoMo online · ${req.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chờ thanh toán'}`}
+                                                : `MoMo online · ${req.paymentStatus === 'PAID' ? 'đã thanh toán qua momo' : 'Chờ thanh toán'}`}
                                         </span>
                                         {req.paymentProof && (
                                             <a href={req.paymentProof} target="_blank" rel="noreferrer" className="text-primary-400 underline font-medium">

@@ -190,9 +190,16 @@ export function BookingDetailPanel({
                                 <DollarSign className="w-5 h-5 text-foreground-muted" />
                                 <div>
                                     <p className="text-sm text-foreground-secondary">Thành tiền</p>
-                                    <p className="font-semibold text-primary-500 text-lg">
-                                        {formatCurrency(booking.totalAmount)}
-                                    </p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-semibold text-primary-500 text-lg">
+                                            {formatCurrency(booking.totalAmount)}
+                                        </p>
+                                        {booking.invoiceItem?.invoice?.paymentStatus === 'PAID' && (
+                                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-pink-500/10 text-pink-500 border border-pink-500/20">
+                                                ✅ ĐÃ THANH TOÁN MOMO
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -261,7 +268,7 @@ export function BookingDetailPanel({
                                 isLoading={isLoading}
                             >
                                 <CheckCircle className="w-4 h-4 mr-2" />
-                                Check-out & Thanh toán
+                                {booking.invoiceItem?.invoice?.paymentStatus === 'PAID' ? 'Check-out & In hóa đơn' : 'Check-out & Thanh toán'}
                             </Button>
                         )}
 
@@ -276,7 +283,7 @@ export function BookingDetailPanel({
                             </Button>
                         )}
 
-                        {canCancel && (
+                        {canCancel && booking.invoiceItem?.invoice?.paymentStatus !== 'PAID' && (
                             <Button
                                 variant="destructive"
                                 className="w-full"

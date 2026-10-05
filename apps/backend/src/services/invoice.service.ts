@@ -17,6 +17,9 @@ export interface CreateInvoiceInput {
     discount?: number;
     discountType?: 'PERCENTAGE' | 'FIXED';
     paymentMethod?: string;
+    paymentStatus?: string;
+    paidAmount?: number;
+    paidAt?: Date;
     notes?: string;
 }
 
@@ -107,7 +110,7 @@ export class InvoiceService {
     }
 
     async create(input: CreateInvoiceInput) {
-        const { customerId, bookingIds, productItems, serviceItems, discount, discountType, paymentMethod, notes } = input;
+        const { customerId, bookingIds, productItems, serviceItems, discount, discountType, paymentMethod, paymentStatus, paidAmount, paidAt, notes } = input;
 
         // Calculate subtotal
         let subtotal = 0;
@@ -215,8 +218,10 @@ export class InvoiceService {
                 subtotal,
                 discount: discountAmount,
                 total,
-                paymentStatus: 'PENDING',
+                paymentStatus: paymentStatus || 'PENDING',
                 paymentMethod,
+                paidAmount: paidAmount || 0,
+                paidAt: paidAt || null,
                 notes,
                 items: {
                     create: items,

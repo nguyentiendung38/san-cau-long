@@ -344,6 +344,7 @@ export default function SettingsPage() {
         }
 
         queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
+        queryClient.invalidateQueries({ queryKey: ['venue'] });
         setEditingPricingRule(null);
         setIsPricingModalOpen(false);
         resetPricingForm();
@@ -355,6 +356,7 @@ export default function SettingsPage() {
         try {
             await pricingRuleApi.delete(rule.id);
             queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
+            queryClient.invalidateQueries({ queryKey: ['venue'] });
             toast({ title: 'Đã xóa', description: 'Đã xóa khung giá thành công', variant: 'success' });
         } catch {
             toast({ title: 'Lỗi', description: 'Không thể xóa khung giá', variant: 'error' });

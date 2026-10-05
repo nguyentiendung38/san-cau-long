@@ -163,8 +163,7 @@ export default function BookingCalendarPage() {
             
             // Show invoice panel for payment/printing
             if (invoice) {
-                setSelectedInvoice(invoice);
-                setShowInvoicePanel(true);
+                window.location.href = `/admin/finances?invoice=${invoice.id}`;
             }
         },
         onError: (error: any) => {

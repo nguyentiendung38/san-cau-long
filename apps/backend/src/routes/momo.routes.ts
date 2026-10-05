@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import * as crypto from 'node:crypto';
 import * as https from 'node:https';
+import prisma from '../config/database.js';
 import { BookingRequestService } from '../services/booking-request.service.js';
 
 const router = Router();
@@ -9,7 +10,8 @@ const bookingRequestService = new BookingRequestService();
 const accessKey = process.env.MOMO_ACCESS_KEY || 'F8BBA842ECF85';
 const secretKey = process.env.MOMO_SECRET_KEY || 'K951B6PE1waDMi640xX08PD3vg6EkVlz';
 const partnerCode = process.env.MOMO_PARTNER_CODE || 'MOMO';
-const redirectUrl = process.env.MOMO_REDIRECT_URL || 'http://localhost:5173/portal?payment=success';
+// Thay đổi redirectUrl trỏ về backend để browser kích hoạt callback cập nhật trạng thái (do MoMo server ko gọi được localhost IPN)
+const redirectUrl = process.env.MOMO_REDIRECT_URL || 'http://localhost:3000/api/momo/callback';
 const ipnUrl = process.env.MOMO_IPN_URL || 'http://localhost:3000/api/momo/callback';
 const momoApiHost = process.env.MOMO_API_HOST || 'test-payment.momo.vn';
 const momoApiPath = process.env.MOMO_API_PATH || '/v2/gateway/api/create';
@@ -18,14 +20,26 @@ const requestType = process.env.MOMO_REQUEST_TYPE || 'captureWallet';
 router.post('/create-payment', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { amount, orderId, requestType: reqTypeFromBody } = req.body;
-        const safeAmount = Number(amount) || 0;
         const safeOrderId = String(orderId || '').trim();
+        
+        if (!safeOrderId) {
+            return res.status(400).json({ success: false, message: 'Thiếu orderId' });
+        }
+
+        const booking = await prisma.bookingRequest.findUnique({ where: { id: safeOrderId } });
+        if (!booking) {
+            return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu đặt sân' });
+        }
+
+        const realAmount = Number(booking.paymentAmount);
+        const safeAmount = realAmount > 0 ? realAmount : (Number(amount) || 0);
+
         // 'payWithMethod' cho phép MoMo hiển thị tất cả phương thức: QR, ATM, Credit Card
         // 'captureWallet' chỉ hiện QR MoMo Wallet
         const activeRequestType = reqTypeFromBody || 'payWithMethod';
 
-        if (!safeOrderId || safeAmount <= 0) {
-            return res.status(400).json({ success: false, message: 'Thiếu orderId hoặc amount không hợp lệ' });
+        if (safeAmount <= 0) {
+            return res.status(400).json({ success: false, message: 'Amount không hợp lệ' });
         }
 
         const requestId = `${partnerCode}${Date.now()}`;
@@ -96,13 +110,12 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
 
 router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { resultCode, orderInfo } = req.query;
+        const { resultCode, orderId: queryOrderId } = req.query;
         if (resultCode !== '0') {
             return res.redirect('http://localhost:5173/portal?payment=failed');
         }
         
-        const parts = (orderInfo as string).split(' ');
-        const orderId = parts[parts.length - 1];
+        const orderId = queryOrderId as string;
         
         if (orderId) {
             try {

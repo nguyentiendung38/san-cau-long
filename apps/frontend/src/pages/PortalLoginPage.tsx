@@ -23,7 +23,11 @@ export default function PortalLoginPage() {
             const res = await portalAuthApi.login({ identifier: email, password });
             
             localStorage.setItem('portalUserToken', res.data.token);
-            localStorage.setItem('portalUser', res.data.customer.name);
+            localStorage.setItem('portalUser', JSON.stringify({
+                id: res.data.customer.id,
+                name: res.data.customer.name,
+                email: res.data.customer.email || ''
+            }));
             localStorage.setItem('portalUserId', res.data.customer.id);
             if (res.data.customer.phone) {
                 localStorage.setItem('portalUserPhone', res.data.customer.phone);

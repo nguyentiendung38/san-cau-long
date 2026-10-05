@@ -168,7 +168,7 @@ export class BookingService {
             }
         }
 
-        const pricePerHour = bestRule?.pricePerHour || 150000;
+        const pricePerHour = bestRule?.pricePerHour || 50000;
         const total = pricePerHour * duration;
 
         return {
@@ -471,6 +471,9 @@ export class BookingService {
                 court: {
                     select: { id: true, name: true },
                 },
+                invoiceItem: {
+                    include: { invoice: { select: { paymentStatus: true } } }
+                }
             },
             orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         });

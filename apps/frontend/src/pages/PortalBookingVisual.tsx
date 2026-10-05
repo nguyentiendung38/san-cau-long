@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { venueApi, Venue, Court } from '@/services/venue.service';
 import { bookingRequestApi } from '@/services/booking.service';
@@ -40,7 +40,38 @@ export function PortalBookingVisual({ venue, onClose }: { venue: Venue; onClose:
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [paymentMethod, setPaymentMethod] = useState<'MOMO' | 'DEPOSIT_TRANSFER'>('MOMO');
-    const totalAmount = selectedCourt ? selectedSlots.length * 25000 : 0;
+    const totalAmount = useMemo(() => {
+        if (!selectedCourt || selectedSlots.length === 0 || !venue) return 0;
+        const date = new Date(selectedDate);
+        const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        const dayOfWeek = days[date.getDay()];
+        let total = 0;
+        for (const slot of selectedSlots) {
+            const [h, m] = slot.split(':').map(Number);
+            let nextM = m + 30;
+            let nextH = h;
+            if (nextM >= 60) {
+                nextM = 0;
+                nextH++;
+            }
+            const slotStart = slot;
+            const slotEnd = String(nextH).padStart(2, '0') + ':' + String(nextM).padStart(2, '0');
+            let pricePerHour = 50000;
+            if (venue.pricingRules && venue.pricingRules.length > 0) {
+                const rules = [...venue.pricingRules].sort((a, b) => b.priority - a.priority);
+                for (const rule of rules) {
+                    const matchDay = !rule.dayOfWeek || rule.dayOfWeek === dayOfWeek;
+                    const matchTime = (!rule.startTime || rule.startTime <= slotStart) && (!rule.endTime || rule.endTime >= slotEnd);
+                    if (matchDay && matchTime) {
+                        pricePerHour = rule.pricePerHour;
+                        break;
+                    }
+                }
+            }
+            total += pricePerHour / 2;
+        }
+        return total;
+    }, [selectedCourt, selectedSlots, venue, selectedDate]);
     
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -282,7 +313,7 @@ export function PortalBookingVisual({ venue, onClose }: { venue: Venue; onClose:
                 <div className="bg-[#046c4e] rounded-t-2xl p-4 shadow-[0_-4px_15px_rgba(0,0,0,0.2)] shrink-0 z-50 text-white flex flex-col gap-3">
                     <div className="flex justify-between items-center px-1 font-bold text-base">
                         <span>Tổng giờ: {Math.floor((selectedSlots.length * 30) / 60)}h{(selectedSlots.length * 30) % 60 === 0 ? '00' : '30'}</span>
-                        <span>Tổng tiền: {(selectedSlots.length * 25000).toLocaleString('vi-VN')} đ</span>
+                        <span>Tổng tiền: {totalAmount.toLocaleString('vi-VN')} đ</span>
                     </div>
                     <button 
                         onClick={handleProceed}

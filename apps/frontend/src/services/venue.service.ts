@@ -1,5 +1,8 @@
 ﻿import api, { ApiResponse } from './api';
 
+export interface PricingRule { id: string; venueId: string; name: string; description?: string; dayOfWeek?: string; startTime?: string; endTime?: string; pricePerHour: number; priority: number; isActive: boolean;
+    pricingRules?: PricingRule[]; }
+
 export interface Venue {
     id: string;
     name: string;

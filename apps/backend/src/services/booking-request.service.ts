@@ -3,6 +3,11 @@ import { AppError } from '../middleware/error.js';
 
 export class BookingRequestService {
     async create(data: any) {
+        const { BookingService } = await import('./booking.service.js');
+        const bookingService = new BookingService();
+        const pricing = await bookingService.calculatePrice(data.courtId, new Date(data.date), data.startTime, data.endTime);
+        const paymentAmount = pricing.total;
+
         return prisma.bookingRequest.create({
             data: {
                 venueId: data.venueId,
@@ -15,7 +20,7 @@ export class BookingRequestService {
                 notes: data.notes,
                 status: 'PENDING',
                 paymentMethod: data.paymentMethod || 'DEPOSIT_TRANSFER',
-                paymentAmount: Number(data.paymentAmount || 0),
+                paymentAmount,
                 paymentProof: data.paymentProof,
             },
         });
@@ -80,15 +85,21 @@ export class BookingRequestService {
             // 4. Nếu thanh toán MoMo → tạo Invoice PAID ngay lập tức
             if (request.paymentMethod === 'MOMO') {
                 try {
-                    const { invoiceService } = await import('./invoice.service.js');
-                    await invoiceService.create({
-                        customerId: customer.id,
-                        bookingIds: [booking.id],
-                        paymentMethod: 'MOMO',
-                        paymentStatus: 'PAID',
-                        paidAmount: booking.totalAmount,
-                        notes: 'Thanh toán trực tuyến MoMo - Tự động',
-                    });
+                    const mod = await import('./invoice.service.js');
+                    const invoiceService = mod.invoiceService || (mod.default && mod.default.invoiceService);
+                    
+                    if (invoiceService) {
+                        await invoiceService.create({
+                            customerId: customer.id,
+                            bookingIds: [booking.id],
+                            paymentMethod: 'MOMO',
+                            paymentStatus: 'PAID',
+                            paidAmount: booking.totalAmount,
+                            notes: 'Thanh toán trực tuyến MoMo - Tự động',
+                        });
+                    } else {
+                        console.error('[MoMo] Khong the resolve invoiceService');
+                    }
                 } catch (invoiceErr) {
                     console.error('[MoMo] Lỗi tạo invoice tự động:', invoiceErr);
                 }
