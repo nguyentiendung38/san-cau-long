@@ -14,6 +14,9 @@ export class BookingRequestService {
                 endTime: data.endTime,
                 notes: data.notes,
                 status: 'PENDING',
+                paymentMethod: data.paymentMethod || 'DEPOSIT_TRANSFER',
+                paymentAmount: Number(data.paymentAmount || 0),
+                paymentProof: data.paymentProof,
             },
         });
     }
@@ -36,6 +39,13 @@ export class BookingRequestService {
         });
     }
 
+    async updatePaymentStatus(id: string, paymentStatus: string) {
+        return prisma.bookingRequest.update({
+            where: { id },
+            data: { paymentStatus },
+        });
+    }
+
     async updateStatus(id: string, status: string, userId?: string) {
         if (status === 'APPROVED') {
             const request = await prisma.bookingRequest.findUnique({ where: { id } });
@@ -55,9 +65,9 @@ export class BookingRequestService {
 
             // 2. Import BookingService dynamically to prevent circular dependencies
             const { bookingService } = await import('./booking.service.js');
-            
-            // 3. Auto create booking. If it overlaps, bookingService will throw AppError
-            await bookingService.create({
+
+            // 3. Auto create booking
+            const booking = await bookingService.create({
                 courtId: request.courtId!,
                 customerId: customer.id,
                 date: request.date,
@@ -66,6 +76,23 @@ export class BookingRequestService {
                 notes: `[Online] ${request.notes || ''}`,
                 createdById: userId,
             });
+
+            // 4. Nếu thanh toán MoMo → tạo Invoice PAID ngay lập tức
+            if (request.paymentMethod === 'MOMO') {
+                try {
+                    const { invoiceService } = await import('./invoice.service.js');
+                    await invoiceService.create({
+                        customerId: customer.id,
+                        bookingIds: [booking.id],
+                        paymentMethod: 'MOMO',
+                        paymentStatus: 'PAID',
+                        paidAmount: booking.totalAmount,
+                        notes: 'Thanh toán trực tuyến MoMo - Tự động',
+                    });
+                } catch (invoiceErr) {
+                    console.error('[MoMo] Lỗi tạo invoice tự động:', invoiceErr);
+                }
+            }
         }
 
         return prisma.bookingRequest.update({

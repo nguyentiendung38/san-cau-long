@@ -161,6 +161,10 @@ export interface BookingRequest {
     endTime: string;
     notes?: string;
     status: string;
+    paymentMethod?: 'MOMO' | 'DEPOSIT_TRANSFER';
+    paymentStatus?: 'PENDING' | 'PAID' | 'FAILED';
+    paymentAmount?: number;
+    paymentProof?: string;
     createdAt: string;
 }
 
@@ -170,7 +174,9 @@ export const bookingRequestApi = {
         return response.data.data!;
     },
     async getMyRequests(phone: string): Promise<any[]> {
-        const response = await api.get<ApiResponse<any[]>>(`/booking-requests/public/my-requests?phone=${phone}`);
+        const response = await api.get<ApiResponse<any[]>>(
+            `/booking-requests/public/my-requests?phone=${encodeURIComponent(phone.trim())}`
+        );
         return response.data.data!;
     },
     async getAll(venueId?: string): Promise<BookingRequest[]> {
@@ -182,7 +188,18 @@ export const bookingRequestApi = {
         const response = await api.put<ApiResponse<BookingRequest>>(`/booking-requests/${id}/status`, { status });
         return response.data.data!;
     },
+    async updatePaymentStatus(id: string, paymentStatus: 'PAID' | 'FAILED'): Promise<BookingRequest> {
+        const response = await api.patch<ApiResponse<BookingRequest>>(`/booking-requests/${id}/payment-status`, { paymentStatus });
+        return response.data.data!;
+    },
     async delete(id: string): Promise<void> {
         await api.delete(`/booking-requests/${id}`);
-    }
+    },
+    async createMomoPayment(requestId: string, amount: number): Promise<{ payUrl: string }> {
+        const response = await api.post<{ success: boolean; payUrl: string }>('/momo/create-payment', {
+            orderId: requestId,
+            amount,
+        });
+        return { payUrl: response.data.payUrl };
+    },
 };

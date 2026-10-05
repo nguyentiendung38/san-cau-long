@@ -205,7 +205,7 @@ export default function SettingsPage() {
     const queryClient = useQueryClient();
     const { data: registeredUsersData, isLoading: loadingRegisteredUsers } = useQuery({
         queryKey: ['registered-users'],
-        queryFn: () => customerApi.getAll({ registeredOnly: true, limit: 50 }),
+        queryFn: () => customerApi.getAll({ limit: 50 }),
         enabled: activeTab === 'registered_users',
     });
 

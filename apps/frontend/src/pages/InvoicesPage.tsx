@@ -360,7 +360,7 @@ export default function InvoicesPage() {
                                                         >
                                                             <Eye className="w-4 h-4 text-foreground-secondary" />
                                                         </button>
-                                                        {invoice.paymentStatus === 'PENDING' && (
+                                                        {invoice.paymentStatus === 'PENDING' && invoice.paymentMethod !== 'DEPOSIT_TRANSFER' && invoice.paymentMethod !== 'MOMO' && (
                                                             <>
                                                                 <button
                                                                     onClick={() => payMutation.mutate(invoice.id)}
@@ -377,6 +377,11 @@ export default function InvoicesPage() {
                                                                     <Ban className="w-4 h-4 text-red-400" />
                                                                 </button>
                                                             </>
+                                                        )}
+                                                        {invoice.paymentStatus === 'PENDING' && (invoice.paymentMethod === 'DEPOSIT_TRANSFER' || invoice.paymentMethod === 'MOMO') && (
+                                                            <span className="text-xs text-pink-400" title="Hóa đơn MoMo chỉ được cập nhật qua callback thanh toán">
+                                                                Chờ MoMo
+                                                            </span>
                                                         )}
                                                     </div>
                                                 </td>

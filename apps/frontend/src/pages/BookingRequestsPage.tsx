@@ -36,6 +36,15 @@ export default function BookingRequestsPage() {
         },
     });
 
+    const confirmDepositMutation = useMutation({
+        mutationFn: (id: string) => bookingRequestApi.updatePaymentStatus(id, 'PAID'),
+        onSuccess: () => {
+            toast({ title: 'Đã xác nhận thanh toán', variant: 'success' });
+            queryClient.invalidateQueries({ queryKey: ['booking-requests'] });
+        },
+        onError: () => toast({ title: 'Không thể xác nhận tiền cọc', variant: 'error' }),
+    });
+
     return (
         <div className="p-6 space-y-6 max-w-screen-xl mx-auto">
             <div>
@@ -78,6 +87,16 @@ export default function BookingRequestsPage() {
                                         <span className="flex items-center gap-1.5"><Phone className="w-4 h-4 text-foreground-muted" /> {req.phone}</span>
                                         <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4 text-foreground-muted" /> {format(new Date(req.date), 'dd/MM/yyyy')}</span>
                                         <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-foreground-muted" /> {req.startTime} - {req.endTime}</span>
+                                        <span className={`font-semibold ${req.paymentMethod === 'MOMO' ? 'text-pink-500' : 'text-foreground-secondary'}`}>
+                                            {req.paymentMethod === 'DEPOSIT_TRANSFER'
+                                                ? `Thanh toán QR · ${req.paymentStatus === 'PAID' ? 'Đã xác nhận' : 'Chờ kiểm tra'}`
+                                                : `MoMo online · ${req.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chờ thanh toán'}`}
+                                        </span>
+                                        {req.paymentProof && (
+                                            <a href={req.paymentProof} target="_blank" rel="noreferrer" className="text-primary-400 underline font-medium">
+                                                Xem bill cọc
+                                            </a>
+                                        )}
                                     </div>
                                     {req.notes && (
                                         <div className="text-sm text-foreground-secondary bg-background-tertiary p-3 rounded-lg border border-border mt-2">
@@ -89,6 +108,14 @@ export default function BookingRequestsPage() {
                                     </div>
                                 </div>
                                 <div className="flex flex-row md:flex-col gap-2 shrink-0 justify-end md:justify-center">
+                                    {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.paymentStatus === 'PENDING' && req.paymentProof && (
+                                        <button
+                                            onClick={() => confirmDepositMutation.mutate(req.id)}
+                                            className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
+                                        >
+                                            Xác nhận thanh toán
+                                        </button>
+                                    )}
                                     {req.status === 'PENDING' && (
                                         <>
                                             <button 

@@ -802,21 +802,58 @@ export default function PortalPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="text-gray-600 bg-white">
+                                    {/* T2 - T6 */}
                                     <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 font-medium" rowSpan={3}>T2 - T6</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-200">9h - 15h</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-200">45.000 đ</td>
-                                        <td className="py-3 px-2 border-b border-g200">50.000 đ</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 font-medium align-middle" rowSpan={4}>T2 - T6</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">9h - 15h</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">45.000 �</td>
+                                        <td className="py-3 px-2 border-b border-gray-200">50.000 �</td>
                                     </tr>
                                     <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-200">17h - 19h</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-200">90.000 đ</td>
-                                        <td className="py-3 px-2 border-b border-g200">95.000 đ</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">17h - 19h30</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">90.000 �</td>
+                                        <td className="py-3 px-2 border-b border-gray-200">95.000 �</td>
                                     </tr>
                                     <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200">19h - 21h30</td>
-                                        <td className="py-3 px-2 border-r border-gray-200">85.000 đ</td>
-                                        <td className="py-3 px-2">90.000 đ</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">19h30 - 21h30</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">85.000 �</td>
+                                        <td className="py-3 px-2 border-b border-gray-200">90.000 �</td>
+                                    </tr>
+                                    <tr className="border-b border-gray-200">
+                                        <td className="py-3 px-2 border-r border-gray-200">21h30 - 23h30</td>
+                                        <td className="py-3 px-2 border-r border-gray-200">55.000 �</td>
+                                        <td className="py-3 px-2">60.000 �</td>
+                                    </tr>
+
+                                    {/* T2 - CN */}
+                                    <tr className="border-b border-gray-200">
+                                        <td className="py-3 px-2 border-r border-gray-200 font-medium align-middle" rowSpan={2}>T2 - CN</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">5h - 9h</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">55.000 �</td>
+                                        <td className="py-3 px-2 border-b border-gray-200">60.000 �</td>
+                                    </tr>
+                                    <tr className="border-b border-gray-200">
+                                        <td className="py-3 px-2 border-r border-gray-200">15h - 17h</td>
+                                        <td className="py-3 px-2 border-r border-gray-200">60.000 �</td>
+                                        <td className="py-3 px-2">65.000 �</td>
+                                    </tr>
+
+                                    {/* T7 - CN */}
+                                    <tr className="border-b border-gray-200">
+                                        <td className="py-3 px-2 border-r border-gray-200 font-medium align-middle" rowSpan={3}>T7 - CN</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">9h - 15h</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">50.000 �</td>
+                                        <td className="py-3 px-2 border-b border-gray-200">55.000 �</td>
+                                    </tr>
+                                    <tr className="border-b border-gray-200">
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">17h - 21h30</td>
+                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">85.000 �</td>
+                                        <td className="py-3 px-2 border-b border-gray-200">87.500 �</td>
+                                    </tr>
+                                    <tr className="">
+                                        <td className="py-3 px-2 border-r border-gray-200">21h30 - 23h30</td>
+                                        <td className="py-3 px-2 border-r border-gray-200">50.000 �</td>
+                                        <td className="py-3 px-2">55.000 �</td>
                                     </tr>
                                 </tbody>
                         </table>

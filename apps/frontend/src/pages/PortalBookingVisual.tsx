@@ -39,6 +39,8 @@ export function PortalBookingVisual({ venue, onClose }: { venue: Venue; onClose:
         name: '', phone: '', notes: ''
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'MOMO' | 'DEPOSIT_TRANSFER'>('MOMO');
+    const totalAmount = selectedCourt ? selectedSlots.length * 25000 : 0;
     
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -128,28 +130,43 @@ export function PortalBookingVisual({ venue, onClose }: { venue: Venue; onClose:
 
         setIsSubmitting(true);
         try {
-            await bookingRequestApi.createPublic({
+            const bookingRequest = await bookingRequestApi.createPublic({
                 ...bookingForm,
                 venueId: venue.id,
                 courtId: selectedCourt.id,
                 date: selectedDate,
                 startTime,
-                endTime
+                endTime,
+                paymentMethod,
+                paymentAmount: totalAmount
             });
-            toast({ title: 'Gửi yêu cầu thành công!' });
             
             if (bookingForm.phone) {
                 localStorage.setItem('portalUserPhone', bookingForm.phone);
-                window.dispatchEvent(new Event('portal-phone-updated')); // Dispatch event to notify PortalPage
+                window.dispatchEvent(new Event('portal-phone-updated'));
                 queryClient.invalidateQueries({ queryKey: ['my-requests'] });
+            }
+
+            // Nếu chọn MoMo → redirect sang cổng thanh toán MoMo Sandbox
+            if (paymentMethod === 'MOMO') {
+                toast({ title: '🔄 Đang chuyển sang trang thanh toán MoMo...' });
+                const momoRes = await bookingRequestApi.createMomoPayment(bookingRequest.id, totalAmount);
+                if (momoRes.payUrl) {
+                    window.location.href = momoRes.payUrl;
+                    return;
+                } else {
+                    toast({ title: '❌ Không lấy được link MoMo, vui lòng thử lại', variant: 'error' });
+                }
+            } else {
+                toast({ title: '✅ Gửi yêu cầu thành công! Chờ admin xác nhận.' });
             }
 
             setBookings(prev => [...prev, { courtId: selectedCourt.id, startTime, endTime }]);
             setShowForm(false);
             setSelectedCourt(null);
             setSelectedSlots([]);
-        } catch (error) {
-            toast({ title: 'Lỗi', variant: 'error' });
+        } catch (error: any) {
+            toast({ title: `Lỗi: ${error?.response?.data?.message || 'Vui lòng thử lại'}`, variant: 'error' });
         } finally {
             setIsSubmitting(false);
         }
@@ -311,18 +328,52 @@ export function PortalBookingVisual({ venue, onClose }: { venue: Venue; onClose:
                             
                             <div className="space-y-1">
                                 <label className="text-sm font-medium text-gray-700">Họ và tên *</label>
-                                <input required type="text" value={bookingForm.name} onChange={e => setBookingForm({...bookingForm, name: e.target.value})} className="w-full border rounded-xl px-3 py-2" placeholder="VD: Nguyễn Văn A" />
+                                <input required type="text" value={bookingForm.name} onChange={e => setBookingForm({...bookingForm, name: e.target.value})} className="w-full border border-gray-300 rounded-xl px-3 py-2 bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="VD: Nguyễn Văn A" />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-sm font-medium text-gray-700">Số điện thoại *</label>
-                                <input required type="tel" value={bookingForm.phone} onChange={e => setBookingForm({...bookingForm, phone: e.target.value})} className="w-full border rounded-xl px-3 py-2" placeholder="VD: 0901234567" />
+                                <input required type="tel" value={bookingForm.phone} onChange={e => setBookingForm({...bookingForm, phone: e.target.value})} className="w-full border border-gray-300 rounded-xl px-3 py-2 bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500" placeholder="VD: 0901234567" />
                             </div>
                             <div className="space-y-1">
                                 <label className="text-sm font-medium text-gray-700">Ghi chú (Tùy chọn)</label>
-                                <textarea value={bookingForm.notes} onChange={e => setBookingForm({...bookingForm, notes: e.target.value})} className="w-full border rounded-xl px-3 py-2 resize-none" rows={2}></textarea>
+                                <textarea value={bookingForm.notes} onChange={e => setBookingForm({...bookingForm, notes: e.target.value})} className="w-full border border-gray-300 rounded-xl px-3 py-2 resize-none bg-white text-gray-900 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500" rows={2}></textarea>
                             </div>
-                            <button disabled={isSubmitting} type="submit" className="w-full bg-[#1a5b3a] text-white font-bold py-3 rounded-xl active:scale-95 transition-transform">
-                                {isSubmitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-gray-700">Phương thức thanh toán</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethod('MOMO')}
+                                        className={`py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+                                            paymentMethod === 'MOMO'
+                                                ? 'border-pink-500 bg-pink-50 text-pink-600'
+                                                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                                        }`}
+                                    >
+                                        MoMo
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethod('DEPOSIT_TRANSFER')}
+                                        className={`py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+                                            paymentMethod === 'DEPOSIT_TRANSFER'
+                                                ? 'border-[#1a5b3a] bg-green-50 text-[#1a5b3a]'
+                                                : 'border-gray-300 bg-white text-gray-600 hover:border-gray-400'
+                                        }`}
+                                    >
+                                        Chuyển khoản
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="rounded-xl bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-800">
+                                Tổng tiền: <span className="font-bold">{totalAmount.toLocaleString('vi-VN')} đ</span>
+                            </div>
+                            <button disabled={isSubmitting} type="submit" className={`w-full text-white font-bold py-3 rounded-xl active:scale-95 transition-all ${paymentMethod === 'MOMO' ? 'bg-[#ae2070] hover:bg-pink-700' : 'bg-[#1a5b3a] hover:bg-green-800'}`}>
+                                {isSubmitting
+                                    ? 'Đang xử lý...'
+                                    : paymentMethod === 'MOMO'
+                                        ? '💳 Thanh toán qua MoMo'
+                                        : '✅ Gửi yêu cầu đặt sân'}
                             </button>
                         </form>
                     </div>
