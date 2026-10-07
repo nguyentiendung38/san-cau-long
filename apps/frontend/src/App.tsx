@@ -23,12 +23,14 @@ import { AppLayout } from '@/components/layout/AppLayout'
 // AI Chatbot
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget'
 import PortalPage from '@/pages/PortalPage'
+import PortalBookingVisual from '@/pages/PortalBookingVisual'
 import RegisterPage from '@/pages/RegisterPage'
 import PortalLoginPage from '@/pages/PortalLoginPage'
 import PortalForgotPasswordPage from '@/pages/PortalForgotPasswordPage'
 
 import BookingRequestsPage from '@/pages/BookingRequestsPage'
 import ExploreContentPage from '@/pages/ExploreContentPage'
+import PortalLayout from '@/components/portal/PortalLayout'
 
 function App() {
     const { isAuthenticated } = useAuthStore()
@@ -53,18 +55,14 @@ function App() {
                 />
 
                 {/* Alobo Clone Portal */}
+                {/* Alobo Clone Portal Auth - No Bottom Nav */}
                 <Route
-                    path="/portal"
-                    element={<PortalPage />}
-                />
-                
-                <Route
-                    path="/register"
+                    path="/dang-ky"
                     element={<RegisterPage />}
                 />
 
                 <Route
-                    path="/client-login"
+                    path="/dang-nhap"
                     element={<PortalLoginPage />}
                 />
 
@@ -72,6 +70,22 @@ function App() {
                     path="/client-forgot-password"
                     element={<PortalForgotPasswordPage />}
                 />
+
+                {/* Alobo Clone Portal Layout */}
+                <Route element={<PortalLayout />}>
+                    <Route
+                        path="/trang-chu"
+                        element={<PortalPage />}
+                    />
+                    <Route
+                        path="/dat-lich/:venueId"
+                        element={<PortalBookingVisual />}
+                    />
+                    <Route
+                        path="/dat-lich/:venueId/:courtId"
+                        element={<PortalBookingVisual />}
+                    />
+                </Route>
 
                 {/* Protected routes */}
                 <Route

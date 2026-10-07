@@ -9,6 +9,11 @@ export interface CreateBookingInput {
     endTime: string;
     notes?: string;
     createdById?: string;
+    orderedItems?: string | null;
+    paymentMethod?: string;
+    paymentStatus?: string;
+    paymentAmount?: number;
+    paymentProof?: string;
 }
 
 export interface UpdateBookingInput {
@@ -301,6 +306,18 @@ export class BookingService {
             input.endTime
         );
 
+        let finalTotalAmount = pricing.total;
+        if (input.orderedItems) {
+            try {
+                const items = JSON.parse(input.orderedItems);
+                if (Array.isArray(items)) {
+                    finalTotalAmount += items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+                }
+            } catch (e) {
+                console.error('Failed to parse ordered items in booking create', e);
+            }
+        }
+
         // Create booking
         const booking = await prisma.booking.create({
             data: {
@@ -310,8 +327,13 @@ export class BookingService {
                 date: input.date,
                 startTime: input.startTime,
                 endTime: input.endTime,
-                totalAmount: pricing.total,
+                totalAmount: finalTotalAmount,
                 notes: input.notes,
+                orderedItems: input.orderedItems,
+                paymentMethod: input.paymentMethod || 'DEPOSIT_TRANSFER',
+                paymentStatus: input.paymentStatus || 'PENDING',
+                paymentAmount: input.paymentAmount,
+                paymentProof: input.paymentProof,
                 status: 'CONFIRMED', // Auto-confirm for staff bookings
             },
             include: {
@@ -423,8 +445,12 @@ export class BookingService {
             throw new AppError(404, 'Không tìm thấy lịch đặt sân');
         }
 
-        if (existing.status !== 'IN_PROGRESS') {
-            throw new AppError(400, 'Chỉ có thể check-out lịch đang diễn ra');
+        if (existing.status === 'COMPLETED') {
+            return existing; // Already checked out, return gracefully
+        }
+
+        if (existing.status !== 'IN_PROGRESS' && existing.status !== 'CONFIRMED') {
+            throw new AppError(400, 'Chỉ có thể check-out lịch đang diễn ra hoặc đã xác nhận');
         }
 
         const booking = await prisma.booking.update({

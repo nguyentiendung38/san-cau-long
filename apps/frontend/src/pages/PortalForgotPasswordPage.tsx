@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, XCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { portalAuthApi } from '@/services/portal-auth.service';
@@ -137,7 +137,7 @@ export default function PortalForgotPasswordPage() {
         try {
             await portalAuthApi.resetPassword({ email, otp: otpString, newPassword });
             alert('Đổi mật khẩu thành công! Vui lòng đăng nhập lại.');
-            navigate('/client-login');
+            navigate('/dang-nhap');
         } catch (error: any) {
             const msg = error.response?.data?.message || 'Mã OTP không đúng hoặc đã hết hạn';
             alert(msg);
@@ -151,7 +151,7 @@ export default function PortalForgotPasswordPage() {
             {/* Header */}
             <div className="flex items-center px-4 py-4 text-white relative">
                 <button 
-                    onClick={() => step === 2 ? setStep(1) : navigate('/client-login')}
+                    onClick={() => step === 2 ? setStep(1) : navigate('/dang-nhap')}
                     className="absolute left-4 p-2 hover:bg-white/10 rounded-full transition-colors"
                 >
                     <ChevronLeft className="w-6 h-6" />

@@ -6,7 +6,13 @@ export class BookingRequestService {
         const { BookingService } = await import('./booking.service.js');
         const bookingService = new BookingService();
         const pricing = await bookingService.calculatePrice(data.courtId, new Date(data.date), data.startTime, data.endTime);
-        const paymentAmount = pricing.total;
+        let paymentAmount = pricing.total;
+        
+        // C?ng thm ti?n d?ch v? (n?u c)
+        if (data.orderedItems && Array.isArray(data.orderedItems)) {
+            const itemsTotal = data.orderedItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+            paymentAmount += itemsTotal;
+        }
 
         return prisma.bookingRequest.create({
             data: {
@@ -22,6 +28,9 @@ export class BookingRequestService {
                 paymentMethod: data.paymentMethod || 'DEPOSIT_TRANSFER',
                 paymentAmount,
                 paymentProof: data.paymentProof,
+                orderedItems: data.orderedItems ? JSON.stringify(data.orderedItems) : null,
+                voucherCode: data.voucherCode,
+                discountAmount: data.discountAmount || 0,
             },
         });
     }
@@ -30,6 +39,10 @@ export class BookingRequestService {
         return prisma.bookingRequest.findMany({
             where: venueId ? { venueId } : {},
             orderBy: { createdAt: 'desc' },
+            include: {
+                venue: { select: { name: true } },
+                court: { select: { name: true } },
+            }
         });
     }
 
@@ -44,10 +57,14 @@ export class BookingRequestService {
         });
     }
 
-    async updatePaymentStatus(id: string, paymentStatus: string) {
+    async updatePaymentStatus(id: string, paymentStatus: string, paymentAmount?: number) {
+        const dataToUpdate: any = { paymentStatus };
+        if (paymentAmount !== undefined) {
+            dataToUpdate.paymentAmount = paymentAmount;
+        }
         return prisma.bookingRequest.update({
             where: { id },
-            data: { paymentStatus },
+            data: dataToUpdate,
         });
     }
 
@@ -79,7 +96,12 @@ export class BookingRequestService {
                 startTime: request.startTime,
                 endTime: request.endTime,
                 notes: `[Online] ${request.notes || ''}`,
+                orderedItems: request.orderedItems,
                 createdById: userId,
+                paymentMethod: request.paymentMethod,
+                paymentStatus: request.paymentStatus,
+                paymentAmount: request.paymentAmount,
+                paymentProof: request.paymentProof,
             });
 
             // 4. Nếu thanh toán MoMo → tạo Invoice PAID ngay lập tức
@@ -89,13 +111,29 @@ export class BookingRequestService {
                     const invoiceService = mod.invoiceService || (mod.default && mod.default.invoiceService);
                     
                     if (invoiceService) {
+                        let productItems = [];
+                        let serviceItems = [];
+                        if (request.orderedItems) {
+                            try {
+                                const items = JSON.parse(request.orderedItems);
+                                productItems = items.filter((i: any) => i.type === 'product').map((i: any) => ({ productId: i.id, quantity: i.quantity, unitPrice: i.price }));
+                                serviceItems = items.filter((i: any) => i.type === 'service').map((i: any) => ({ serviceId: i.id, quantity: i.quantity, unitPrice: i.price }));
+                            } catch (e) {
+                                console.error('Parse orderedItems error', e);
+                            }
+                        }
+
                         await invoiceService.create({
                             customerId: customer.id,
                             bookingIds: [booking.id],
+                            productItems,
+                            serviceItems,
                             paymentMethod: 'MOMO',
                             paymentStatus: 'PAID',
                             paidAmount: booking.totalAmount,
-                            notes: 'Thanh toán trực tuyến MoMo - Tự động',
+                            discount: request.discountAmount || 0,
+                            discountType: 'FIXED',
+                            notes: `Thanh toán trực tuyến MoMo - Tự động${request.voucherCode ? ` (Voucher: ${request.voucherCode})` : ''}`,
                         });
                     } else {
                         console.error('[MoMo] Khong the resolve invoiceService');

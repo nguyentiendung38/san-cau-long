@@ -62,7 +62,7 @@ export default function InventoryPage() {
             queryClient.invalidateQueries({ queryKey: ['products'] });
             setShowModal(false);
         },
-        onError: () => toast({ title: 'Lỗi khi thêm sản phẩm', variant: 'error' }),
+        onError: (error: any) => toast({ title: `Lỗi: ${error?.response?.data?.message || 'Không thể thêm sản phẩm'}`, variant: 'error' }),
     });
 
     const updateProductMutation = useMutation({
@@ -74,7 +74,7 @@ export default function InventoryPage() {
             setShowModal(false);
             setEditingItem(null);
         },
-        onError: () => toast({ title: 'Lỗi khi cập nhật', variant: 'error' }),
+        onError: (error: any) => toast({ title: `Lỗi: ${error?.response?.data?.message || 'Không thể cập nhật'}`, variant: 'error' }),
     });
 
     const deleteProductMutation = useMutation({
@@ -83,7 +83,7 @@ export default function InventoryPage() {
             toast({ title: 'Đã xóa sản phẩm!' });
             queryClient.invalidateQueries({ queryKey: ['products'] });
         },
-        onError: () => toast({ title: 'Lỗi khi xóa', variant: 'error' }),
+        onError: (error: any) => toast({ title: `Lỗi: ${error?.response?.data?.message || 'Không thể xóa'}`, variant: 'error' }),
     });
 
     const createServiceMutation = useMutation({
@@ -93,7 +93,7 @@ export default function InventoryPage() {
             queryClient.invalidateQueries({ queryKey: ['services'] });
             setShowModal(false);
         },
-        onError: () => toast({ title: 'Lỗi khi thêm dịch vụ', variant: 'error' }),
+        onError: (error: any) => toast({ title: `Lỗi: ${error?.response?.data?.message || 'Không thể thêm dịch vụ'}`, variant: 'error' }),
     });
 
     const updateServiceMutation = useMutation({

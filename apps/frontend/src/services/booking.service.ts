@@ -11,6 +11,12 @@ export interface Booking {
     status: 'PENDING' | 'CONFIRMED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
     totalAmount: number;
     notes?: string;
+    orderedItems?: string;
+    paymentMethod?: string;
+    paymentStatus?: string;
+    paymentAmount?: number;
+    paymentProof?: string;
+    invoiceItem?: any;
     isRecurring?: boolean;
     recurringGroup?: string;
     createdAt: string;
@@ -165,6 +171,11 @@ export interface BookingRequest {
     paymentStatus?: 'PENDING' | 'PAID' | 'FAILED';
     paymentAmount?: number;
     paymentProof?: string;
+    orderedItems?: string;
+    voucherCode?: string;
+    discountAmount?: number;
+    venue?: { name: string };
+    court?: { name: string };
     createdAt: string;
 }
 
@@ -188,8 +199,8 @@ export const bookingRequestApi = {
         const response = await api.put<ApiResponse<BookingRequest>>(`/booking-requests/${id}/status`, { status });
         return response.data.data!;
     },
-    async updatePaymentStatus(id: string, paymentStatus: 'PAID' | 'FAILED'): Promise<BookingRequest> {
-        const response = await api.patch<ApiResponse<BookingRequest>>(`/booking-requests/${id}/payment-status`, { paymentStatus });
+    async updatePaymentStatus(id: string, paymentStatus: 'PAID' | 'FAILED', paymentAmount?: number): Promise<BookingRequest> {
+        const response = await api.patch<ApiResponse<BookingRequest>>(`/booking-requests/${id}/payment-status`, { paymentStatus, paymentAmount });
         return response.data.data!;
     },
     async delete(id: string): Promise<void> {

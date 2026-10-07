@@ -7,12 +7,13 @@ const router = Router();
 // Get all customers (paginated)
 router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { search, membershipTier, isActive, page, limit } = req.query;
+        const { search, membershipTier, isActive, isRegistered, page, limit } = req.query;
 
         const result = await customerService.findAll({
             search: search as string,
             membershipTier: membershipTier as string,
             isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
+            isRegistered: isRegistered === 'true' ? true : isRegistered === 'false' ? false : undefined,
             page: page ? parseInt(page as string) : undefined,
             limit: limit ? parseInt(limit as string) : undefined,
         });

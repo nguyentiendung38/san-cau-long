@@ -1,4 +1,4 @@
-﻿import api, { ApiResponse } from './api';
+import api, { ApiResponse } from './api';
 
 export interface PricingRule { id: string; venueId: string; name: string; description?: string; dayOfWeek?: string; startTime?: string; endTime?: string; pricePerHour: number; priority: number; isActive: boolean;
     pricingRules?: PricingRule[]; }
@@ -27,6 +27,7 @@ export interface CreateVenueInput {
     phone?: string;
     email?: string;
     description?: string;
+    logo?: string;
     openTime: string;
     closeTime: string;
 }

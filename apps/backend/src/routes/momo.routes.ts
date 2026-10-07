@@ -112,7 +112,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
     try {
         const { resultCode, orderId: queryOrderId } = req.query;
         if (resultCode !== '0') {
-            return res.redirect('http://localhost:5173/portal?payment=failed');
+            return res.redirect('http://localhost:5173/co-so?payment=failed&tab=history');
         }
         
         const orderId = queryOrderId as string;
@@ -126,7 +126,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
             }
         }
         
-        return res.redirect('http://localhost:5173/portal?payment=success');
+        return res.redirect('http://localhost:5173/co-so?payment=success&tab=history');
     } catch (error) {
         next(error);
     }

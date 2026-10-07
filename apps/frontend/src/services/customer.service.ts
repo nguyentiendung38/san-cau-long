@@ -36,12 +36,14 @@ export const customerApi = {
     async getAll(params?: {
         search?: string;
         membershipTier?: string;
+        isRegistered?: boolean;
         page?: number;
         limit?: number;
     }): Promise<PaginatedResponse<Customer>> {
         const queryParams = new URLSearchParams();
         if (params?.search) queryParams.append('search', params.search);
         if (params?.membershipTier) queryParams.append('membershipTier', params.membershipTier);
+        if (params?.isRegistered !== undefined) queryParams.append('isRegistered', String(params.isRegistered));
         if (params?.page) queryParams.append('page', String(params.page));
         if (params?.limit) queryParams.append('limit', String(params.limit));
 

@@ -76,6 +76,7 @@ export default function BookingCalendarPage() {
     const [selectedVenueId, setSelectedVenueId] = useState<string>('');
     const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
     const [viewMode, setViewMode] = useState<CalendarViewMode>('day');
+    const [hideCompleted, setHideCompleted] = useState(false);
     const [showRecurringModal, setShowRecurringModal] = useState(false);
     const [showNewBookingModal, setShowNewBookingModal] = useState(false);
     const [showEditBookingModal, setShowEditBookingModal] = useState(false);
@@ -129,11 +130,27 @@ export default function BookingCalendarPage() {
 
             let invoice;
             try {
+                let productItems = [];
+                let serviceItems = [];
+                if (booking.orderedItems) {
+                    try {
+                        const items = JSON.parse(booking.orderedItems);
+                        productItems = items.filter((i: any) => i.type === 'product').map((i: any) => ({ productId: i.id, quantity: i.quantity, unitPrice: i.price }));
+                        serviceItems = items.filter((i: any) => i.type === 'service').map((i: any) => ({ serviceId: i.id, quantity: i.quantity, unitPrice: i.price }));
+                    } catch (e) {
+                        console.error('Failed to parse ordered items', e);
+                    }
+                }
+
                 // 1. Create Invoice via invoiceApi
                 invoice = await invoiceApi.create({
                     customerId: booking.customer?.id,
                     bookingIds: [booking.id],
-                    paymentMethod: 'CASH', // Default
+                    productItems,
+                    serviceItems,
+                    paymentMethod: booking.paymentMethod === 'DEPOSIT_TRANSFER' ? 'BANK_TRANSFER' : (booking.paymentMethod || 'CASH'),
+                    paymentStatus: booking.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
+                    depositAmount: (booking.paymentAmount || 0) > 0 ? booking.paymentAmount : undefined,
                 });
             } catch (error: any) {
                 // If invoice already exists for this booking (409 Conflict)
@@ -209,11 +226,12 @@ export default function BookingCalendarPage() {
 
         const map: Record<string, BookingSlot[]> = {};
         calendarData.bookings.forEach(booking => {
+            if (hideCompleted && booking.status === 'COMPLETED') return;
             if (!map[booking.courtId]) map[booking.courtId] = [];
             map[booking.courtId].push(getBookingSlot(booking));
         });
         return map;
-    }, [calendarData]);
+    }, [calendarData, hideCompleted]);
 
     const isToday = selectedDate.toDateString() === new Date().toDateString();
 
@@ -286,7 +304,18 @@ export default function BookingCalendarPage() {
                 </div>
 
                 {/* View toggle */}
-                <ViewToggle activeView={viewMode} onViewChange={setViewMode} />
+                <div className="flex items-center gap-4">
+                    <ViewToggle activeView={viewMode} onViewChange={setViewMode} />
+                    <label className="flex items-center gap-2 text-sm text-foreground-secondary cursor-pointer hover:text-foreground transition-colors">
+                        <input 
+                            type="checkbox" 
+                            className="rounded border-border text-primary-500 focus:ring-primary-500 bg-background-secondary w-4 h-4"
+                            checked={hideCompleted}
+                            onChange={(e) => setHideCompleted(e.target.checked)}
+                        />
+                        Ẩn lịch đã xong
+                    </label>
+                </div>
 
                 {/* Quick stats */}
                 <div className="flex items-center gap-4 text-sm">
@@ -453,7 +482,11 @@ export default function BookingCalendarPage() {
                                 <WeekView
                                     weekStartDate={selectedDate}
                                     courts={calendarData?.courts || []}
-                                    bookings={calendarData?.bookings || []}
+                                    bookings={
+                                        hideCompleted 
+                                            ? calendarData?.bookings.filter((b: any) => b.status !== 'COMPLETED') || []
+                                            : calendarData?.bookings || []
+                                    }
                                     onSlotClick={(_courtId, date, _time) => {
                                         setSelectedDate(date);
                                         setShowNewBookingModal(true);
@@ -465,7 +498,11 @@ export default function BookingCalendarPage() {
                             {/* List View */}
                             {viewMode === 'list' && (
                                 <ListView
-                                    bookings={calendarData?.bookings || []}
+                                    bookings={
+                                        hideCompleted 
+                                            ? calendarData?.bookings.filter((b: any) => b.status !== 'COMPLETED') || []
+                                            : calendarData?.bookings || []
+                                    }
                                     onBookingClick={setSelectedBooking}
                                 />
                             )}
@@ -481,6 +518,7 @@ export default function BookingCalendarPage() {
                 onClose={() => setSelectedBooking(null)}
                 onCheckIn={(id) => checkInMutation.mutate(id)}
                 onCheckOut={(id) => checkOutMutation.mutate(id)}
+                isLoading={checkInMutation.isPending || checkOutMutation.isPending || cancelMutation.isPending}
                 onCancel={(id) => cancelMutation.mutate(id)}
                 onEdit={(booking) => {
                     setEditingBooking(booking);

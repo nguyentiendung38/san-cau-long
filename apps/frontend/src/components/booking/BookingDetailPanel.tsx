@@ -61,7 +61,7 @@ export function BookingDetailPanel({
     const StatusIcon = statusConfig.icon;
 
     const canCheckIn = booking.status === 'CONFIRMED' || booking.status === 'PENDING';
-    const canCheckOut = booking.status === 'IN_PROGRESS';
+    const canCheckOut = booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED';
     const canCancel = booking.status !== 'CANCELLED' && booking.status !== 'COMPLETED';
     const canEdit = booking.status !== 'CANCELLED' && booking.status !== 'COMPLETED' && booking.status !== 'IN_PROGRESS';
 
@@ -189,7 +189,7 @@ export function BookingDetailPanel({
                             <div className="flex items-center gap-3 p-3">
                                 <DollarSign className="w-5 h-5 text-foreground-muted" />
                                 <div>
-                                    <p className="text-sm text-foreground-secondary">Thành tiền</p>
+                                    <p className="text-sm text-foreground-secondary">Tổng hóa đơn</p>
                                     <div className="flex items-center gap-2">
                                         <p className="font-semibold text-primary-500 text-lg">
                                             {formatCurrency(booking.totalAmount)}
@@ -200,6 +200,18 @@ export function BookingDetailPanel({
                                             </span>
                                         )}
                                     </div>
+                                    {(booking.paymentAmount || 0) > 0 && booking.invoiceItem?.invoice?.paymentStatus !== 'PAID' && (
+                                        <div className="mt-2 pt-2 border-t border-border/50 text-sm">
+                                            <div className="flex items-center justify-between text-green-600 font-medium">
+                                                <span>Đã cọc (Khách chuyển khoản):</span>
+                                                <span>- {formatCurrency(booking.paymentAmount!)}</span>
+                                            </div>
+                                            <div className="flex items-center justify-between text-error font-bold mt-1">
+                                                <span>Cần thu thêm:</span>
+                                                <span className="text-base">{formatCurrency(Math.max(0, booking.totalAmount - booking.paymentAmount!))}</span>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

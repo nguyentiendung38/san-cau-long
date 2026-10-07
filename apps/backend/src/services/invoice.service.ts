@@ -19,6 +19,7 @@ export interface CreateInvoiceInput {
     paymentMethod?: string;
     paymentStatus?: string;
     paidAmount?: number;
+    depositAmount?: number;
     paidAt?: Date;
     notes?: string;
 }
@@ -110,7 +111,18 @@ export class InvoiceService {
     }
 
     async create(input: CreateInvoiceInput) {
-        const { customerId, bookingIds, productItems, serviceItems, discount, discountType, paymentMethod, paymentStatus, paidAmount, paidAt, notes } = input;
+        const { customerId, bookingIds, productItems, serviceItems, discount, discountType, paymentMethod, paymentStatus, paidAmount, depositAmount, paidAt, notes } = input;
+
+        // Check for existing invoice
+        if (bookingIds && bookingIds.length > 0) {
+            const existingInvoiceItem = await prisma.invoiceItem.findFirst({
+                where: { bookingId: { in: bookingIds } },
+                include: { invoice: true }
+            });
+            if (existingInvoiceItem) {
+                throw new AppError(409, 'Hóa đơn cho lịch đặt này đã tồn tại');
+            }
+        }
 
         // Calculate subtotal
         let subtotal = 0;
@@ -221,6 +233,7 @@ export class InvoiceService {
                 paymentStatus: paymentStatus || 'PENDING',
                 paymentMethod,
                 paidAmount: paidAmount || 0,
+                depositAmount: depositAmount || 0,
                 paidAt: paidAt || null,
                 notes,
                 items: {

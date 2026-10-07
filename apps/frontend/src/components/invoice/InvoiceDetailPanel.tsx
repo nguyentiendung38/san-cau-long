@@ -41,6 +41,8 @@ interface Invoice {
     subtotal: number;
     discount: number;
     total: number;
+    paidAmount?: number;
+    depositAmount?: number;
     paymentMethod?: string;
     notes?: string;
     bookingId?: string;
@@ -206,6 +208,22 @@ export function InvoiceDetailPanel({
                                 <span className="text-foreground">Tổng cộng</span>
                                 <span className="text-primary-500">{formatCurrency(invoice.total)}</span>
                             </div>
+                            {((invoice.depositAmount || 0) > 0 || (invoice.paidAmount || 0) > 0) && invoice.status !== 'PAID' && (
+                                <>
+                                    <div className="border-t border-border pt-2">
+                                        {(invoice.depositAmount || 0) > 0 && (
+                                            <div className="flex justify-between text-sm text-green-600 font-medium">
+                                                <span>Khách đã cọc (chuyển khoản)</span>
+                                                <span>- {formatCurrency(invoice.depositAmount!)}</span>
+                                            </div>
+                                        )}
+                                        <div className="flex justify-between text-base font-bold text-red-500 mt-1">
+                                            <span>Còn cần thu thêm</span>
+                                            <span>{formatCurrency(Math.max(0, invoice.total - (invoice.depositAmount || invoice.paidAmount || 0)))}</span>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
 

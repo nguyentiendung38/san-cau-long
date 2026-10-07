@@ -66,6 +66,7 @@ model Venue {
   courts         Court[]
   staff          VenueStaff[]
   pricingRules   PricingRule[]
+  operatingHours OperatingHour[]
   services       Service[]
   products       Product[]
   BookingRequest BookingRequest[]
@@ -165,6 +166,7 @@ model Booking {
 
   totalAmount Float   @default(0)
   notes       String?
+  orderedItems String?
 
   checkedInAt  DateTime?
   checkedOutAt DateTime?
@@ -251,6 +253,7 @@ model Invoice {
   paymentStatus String    @default("PENDING") // PENDING, PAID, PARTIAL, REFUNDED
   paymentMethod String? // CASH, BANK_TRANSFER, MOMO, ZALO_PAY, CARD
   paidAmount    Float     @default(0)
+  depositAmount Float     @default(0)
   paidAt        DateTime?
   notes         String?
   createdAt     DateTime  @default(now())
@@ -450,6 +453,9 @@ model BookingRequest {
   paymentAmount  Float    @default(0)
   paymentProof   String?
   paymentOrderId String?
+  orderedItems   String?  // JSON string storing requested products/services
+  voucherCode    String?
+  discountAmount Float    @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -477,4 +483,34 @@ model ExploreContent {
   updatedAt   DateTime  @updatedAt
 
   @@map("explore_contents")
+}
+
+model Voucher {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  discountType  String    @default("PERCENTAGE")
+  discountValue Float
+  minOrderValue Float?
+  maxDiscount   Float?
+  usageLimit    Int?
+  usageCount    Int       @default(0)
+  startDate     DateTime?
+  endDate       DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model OperatingHour {
+  id        String   @id @default(cuid())
+  venueId   String
+  startTime String
+  endTime   String
+  daysOfWeek String   // JSON array of integers [0,1,2,3,4,5,6]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  @@map("operating_hours")
 }

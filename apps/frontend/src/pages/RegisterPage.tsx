@@ -107,7 +107,7 @@ export default function RegisterPage() {
                 name: res.data.customer.name,
                 email: res.data.customer.email
             }));
-            navigate('/portal');
+            navigate('/trang-chu');
         } catch (error: any) {
             const msg = error.response?.data?.message || 'Mã OTP không đúng hoặc đã hết hạn';
             alert(msg);
@@ -121,7 +121,7 @@ export default function RegisterPage() {
             {/* Header */}
             <div className="flex items-center px-4 py-4 text-white relative">
                 <button 
-                    onClick={() => step === 2 ? setStep(1) : navigate('/portal')}
+                    onClick={() => step === 2 ? setStep(1) : navigate('/trang-chu')}
                     className="absolute left-4 p-2 hover:bg-white/10 rounded-full transition-colors"
                 >
                     <ChevronLeft className="w-6 h-6" />

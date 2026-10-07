@@ -65,7 +65,7 @@ export class ReportService {
 
         // Count active customers
         const activeCustomers = await prisma.customer.count({
-            where: { isActive: true },
+            where: { isActive: true, passwordHash: { not: null } },
         });
 
         // Count total active courts and courts currently in use
@@ -184,7 +184,7 @@ export class ReportService {
 
     async getTopCustomers(limit = 10): Promise<TopCustomer[]> {
         const customers = await prisma.customer.findMany({
-            where: { isActive: true },
+            where: { isActive: true, passwordHash: { not: null } },
             orderBy: { totalSpent: 'desc' },
             take: limit,
             select: {

@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const ALL_TYPES: ExploreContentType[] = ['EVENT', 'MEMBERSHIP', 'COURSE', 'NEWS', 'DEAL', 'PASS'];
 
-const EMPTY_FORM: ExploreContentInput = {
+const EMPTY_FORM: ExploreContentInput & { actionText?: string; actionUrl?: string } = {
     type: 'EVENT',
     title: '',
     description: '',
@@ -24,6 +24,8 @@ const EMPTY_FORM: ExploreContentInput = {
     sortOrder: 0,
     startDate: '',
     endDate: '',
+    actionText: '',
+    actionUrl: '',
 };
 
 export default function ExploreContentPage() {
@@ -32,7 +34,7 @@ export default function ExploreContentPage() {
     const [filterType, setFilterType] = useState<ExploreContentType | 'all'>('all');
     const [showModal, setShowModal] = useState(false);
     const [editItem, setEditItem] = useState<ExploreContent | null>(null);
-    const [form, setForm] = useState<ExploreContentInput>(EMPTY_FORM);
+    const [form, setForm] = useState<ExploreContentInput & { actionText?: string; actionUrl?: string }>(EMPTY_FORM);
     const [deleteConfirm, setDeleteConfirm] = useState<ExploreContent | null>(null);
 
     const { data: items = [], isLoading } = useQuery({
@@ -85,6 +87,16 @@ export default function ExploreContentPage() {
 
     const openEdit = (item: ExploreContent) => {
         setEditItem(item);
+        let actionText = '';
+        let actionUrl = '';
+        if (item.metadata) {
+            try {
+                const meta = JSON.parse(item.metadata);
+                actionText = meta.actionText || '';
+                actionUrl = meta.actionUrl || '';
+            } catch(e) {}
+        }
+        
         setForm({
             type: item.type,
             title: item.title,
@@ -96,6 +108,8 @@ export default function ExploreContentPage() {
             sortOrder: item.sortOrder,
             startDate: item.startDate ? item.startDate.slice(0, 10) : '',
             endDate: item.endDate ? item.endDate.slice(0, 10) : '',
+            actionText,
+            actionUrl,
         });
         setShowModal(true);
     };
@@ -109,11 +123,20 @@ export default function ExploreContentPage() {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!form.title.trim()) return;
+        
+        const metadataObj: any = {};
+        if (form.actionText) metadataObj.actionText = form.actionText;
+        if (form.actionUrl) metadataObj.actionUrl = form.actionUrl;
+
         const payload = {
             ...form,
             startDate: form.startDate || undefined,
             endDate: form.endDate || undefined,
+            metadata: Object.keys(metadataObj).length > 0 ? metadataObj : undefined,
         };
+        // Clean up UI-only properties
+        delete (payload as any).actionText;
+        delete (payload as any).actionUrl;
         if (editItem) {
             updateMutation.mutate({ id: editItem.id, data: payload });
         } else {
@@ -128,8 +151,8 @@ export default function ExploreContentPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Nội dung Khám phá</h1>
-                    <p className="text-sm text-gray-500 mt-1">Quản lý nội dung hiển thị trên trang Khám phá của Portal khách hàng</p>
+                    <h1 className="text-2xl font-bold text-foreground">Nội dung Khám phá</h1>
+                    <p className="text-sm text-foreground-secondary mt-1">Quản lý nội dung hiển thị trên trang Khám phá của Portal khách hàng</p>
                 </div>
                 <button
                     onClick={openCreate}
@@ -145,7 +168,7 @@ export default function ExploreContentPage() {
                 <button
                     onClick={() => setFilterType('all')}
                     className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors ${
-                        filterType === 'all' ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                        filterType === 'all' ? 'bg-foreground text-background border-foreground' : 'bg-background-secondary text-foreground-secondary border-border hover:border-border'
                     }`}
                 >
                     Tất cả ({items.length})
@@ -155,7 +178,7 @@ export default function ExploreContentPage() {
                         key={type}
                         onClick={() => setFilterType(type)}
                         className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-colors flex items-center gap-1.5 ${
-                            filterType === type ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                            filterType === type ? 'bg-green-600 text-white border-green-600' : 'bg-background-secondary text-foreground-secondary border-border hover:border-border'
                         }`}
                     >
                         <span>{TYPE_ICONS[type]}</span>
@@ -168,13 +191,13 @@ export default function ExploreContentPage() {
             {isLoading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[1, 2, 3].map(i => (
-                        <div key={i} className="bg-white rounded-2xl h-48 animate-pulse border border-gray-100" />
+                        <div key={i} className="bg-background-secondary rounded-2xl h-48 animate-pulse border border-border" />
                     ))}
                 </div>
             ) : items.length === 0 ? (
-                <div className="text-center py-20 text-gray-500 bg-white rounded-2xl border border-gray-100">
+                <div className="text-center py-20 text-foreground-secondary bg-background-secondary rounded-2xl border border-border">
                     <div className="text-5xl mb-4">📭</div>
-                    <p className="font-semibold text-gray-700">Chưa có nội dung nào</p>
+                    <p className="font-semibold text-foreground">Chưa có nội dung nào</p>
                     <p className="text-sm mt-1">Bấm "Thêm nội dung" để bắt đầu</p>
                 </div>
             ) : (
@@ -182,8 +205,8 @@ export default function ExploreContentPage() {
                     {items.map(item => (
                         <div
                             key={item.id}
-                            className={`bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col transition-all hover:shadow-md ${
-                                item.isActive ? 'border-gray-100' : 'border-gray-200 opacity-60'
+                            className={`bg-background-secondary rounded-2xl shadow-sm border overflow-hidden flex flex-col transition-all hover:shadow-md ${
+                                item.isActive ? 'border-border' : 'border-border opacity-60'
                             }`}
                         >
                             {/* Top color band */}
@@ -192,7 +215,7 @@ export default function ExploreContentPage() {
                             <div className="p-4 flex flex-col flex-1 gap-3">
                                 {/* Type + badge */}
                                 <div className="flex items-center justify-between">
-                                    <span className="flex items-center gap-1.5 text-xs font-bold bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">
+                                    <span className="flex items-center gap-1.5 text-xs font-bold bg-background-tertiary text-foreground-secondary px-2.5 py-1 rounded-full">
                                         {TYPE_ICONS[item.type as ExploreContentType]} {TYPE_LABELS[item.type as ExploreContentType]}
                                     </span>
                                     {item.badge && (
@@ -202,9 +225,9 @@ export default function ExploreContentPage() {
 
                                 {/* Title + description */}
                                 <div className="flex-1">
-                                    <h3 className="font-bold text-gray-800 leading-tight line-clamp-2">{item.title}</h3>
+                                    <h3 className="font-bold text-foreground leading-tight line-clamp-2">{item.title}</h3>
                                     {item.description && (
-                                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.description}</p>
+                                        <p className="text-xs text-foreground-secondary mt-1 line-clamp-2">{item.description}</p>
                                     )}
                                 </div>
 
@@ -215,33 +238,33 @@ export default function ExploreContentPage() {
 
                                 {/* Dates */}
                                 {(item.startDate || item.endDate) && (
-                                    <p className="text-xs text-gray-400">
+                                    <p className="text-xs text-foreground-secondary">
                                         📅 {item.startDate ? new Date(item.startDate).toLocaleDateString('vi-VN') : ''} 
                                         {item.endDate ? ` → ${new Date(item.endDate).toLocaleDateString('vi-VN')}` : ''}
                                     </p>
                                 )}
 
                                 {/* Active status + sort */}
-                                <div className="flex items-center justify-between pt-2 border-t border-gray-50">
+                                <div className="flex items-center justify-between pt-2 border-t border-border">
                                     <button
                                         onClick={() => toggleActiveMutation.mutate({ id: item.id, isActive: !item.isActive })}
                                         className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${
                                             item.isActive
                                                 ? 'bg-green-50 text-green-700 hover:bg-green-100'
-                                                : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                                                : 'bg-background-tertiary text-foreground-secondary hover:bg-background-tertiary'
                                         }`}
                                     >
                                         {item.isActive ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                                         {item.isActive ? 'Đang hiển thị' : 'Đã ẩn'}
                                     </button>
-                                    <span className="text-xs text-gray-400">Thứ tự: {item.sortOrder}</span>
+                                    <span className="text-xs text-foreground-secondary">Thứ tự: {item.sortOrder}</span>
                                 </div>
 
                                 {/* Actions */}
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => openEdit(item)}
-                                        className="flex-1 flex items-center justify-center gap-1.5 text-sm font-semibold border border-gray-200 hover:border-green-300 hover:text-green-700 py-2 rounded-xl transition-colors"
+                                        className="flex-1 flex items-center justify-center gap-1.5 text-sm font-semibold border border-border hover:border-green-300 hover:text-green-700 py-2 rounded-xl transition-colors"
                                     >
                                         <Pencil className="w-3.5 h-3.5" /> Sửa
                                     </button>
@@ -261,18 +284,18 @@ export default function ExploreContentPage() {
             {/* Create/Edit Modal */}
             {showModal && (
                 <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
-                        <div className="sticky top-0 bg-white px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                            <h2 className="font-bold text-lg text-gray-800">
+                    <div className="bg-background-secondary rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl">
+                        <div className="sticky top-0 bg-background-secondary px-6 py-4 border-b border-border flex items-center justify-between">
+                            <h2 className="font-bold text-lg text-foreground">
                                 {editItem ? 'Chỉnh sửa nội dung' : 'Thêm nội dung mới'}
                             </h2>
-                            <button onClick={closeModal} className="p-2 hover:bg-gray-100 rounded-lg">✕</button>
+                            <button onClick={closeModal} className="p-2 hover:bg-background-tertiary rounded-lg">✕</button>
                         </div>
 
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
                             {/* Type */}
                             <div className="space-y-1.5">
-                                <label className="text-sm font-semibold text-gray-700">Loại nội dung *</label>
+                                <label className="text-sm font-semibold text-foreground">Loại nội dung *</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     {ALL_TYPES.map(type => (
                                         <button
@@ -280,7 +303,7 @@ export default function ExploreContentPage() {
                                             type="button"
                                             onClick={() => setForm(f => ({ ...f, type }))}
                                             className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border transition-colors ${
-                                                form.type === type ? 'bg-green-600 text-white border-green-600' : 'bg-white text-gray-600 border-gray-200 hover:border-green-300'
+                                                form.type === type ? 'bg-green-600 text-white border-green-600' : 'bg-background-secondary text-foreground-secondary border-border hover:border-green-300'
                                             }`}
                                         >
                                             <span>{TYPE_ICONS[type]}</span>
@@ -292,24 +315,24 @@ export default function ExploreContentPage() {
 
                             {/* Title */}
                             <div className="space-y-1.5">
-                                <label className="text-sm font-semibold text-gray-700">Tiêu đề *</label>
+                                <label className="text-sm font-semibold text-foreground">Tiêu đề *</label>
                                 <input
                                     required
                                     value={form.title}
                                     onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                     placeholder="Tiêu đề nội dung..."
                                 />
                             </div>
 
                             {/* Description */}
                             <div className="space-y-1.5">
-                                <label className="text-sm font-semibold text-gray-700">Mô tả</label>
+                                <label className="text-sm font-semibold text-foreground">Mô tả</label>
                                 <textarea
                                     value={form.description}
                                     onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
                                     rows={3}
-                                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                                     placeholder="Mô tả chi tiết..."
                                 />
                             </div>
@@ -317,20 +340,20 @@ export default function ExploreContentPage() {
                             {/* Price + Badge in 2 columns */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-sm font-semibold text-gray-700">Giá tiền</label>
+                                    <label className="text-sm font-semibold text-foreground">Giá tiền</label>
                                     <input
                                         value={form.price}
                                         onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                         placeholder="VD: 500.000đ/tháng"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-sm font-semibold text-gray-700">Badge / Tag</label>
+                                    <label className="text-sm font-semibold text-foreground">Badge / Tag</label>
                                     <input
                                         value={form.badge}
                                         onChange={e => setForm(f => ({ ...f, badge: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                         placeholder="VD: Phổ biến, HOT..."
                                     />
                                 </div>
@@ -338,33 +361,55 @@ export default function ExploreContentPage() {
 
                             {/* Image URL */}
                             <div className="space-y-1.5">
-                                <label className="text-sm font-semibold text-gray-700">URL Hình ảnh</label>
+                                <label className="text-sm font-semibold text-foreground">URL Hình ảnh</label>
                                 <input
                                     value={form.imageUrl}
                                     onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))}
-                                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                     placeholder="https://..."
                                 />
+                            </div>
+
+                            {/* Action Button Info */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-semibold text-foreground">Tên nút bấm (tùy chọn)</label>
+                                    <input
+                                        value={form.actionText}
+                                        onChange={e => setForm(f => ({ ...f, actionText: e.target.value }))}
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="VD: Nhắn Zalo ngay"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-semibold text-foreground">Đường dẫn nút (tùy chọn)</label>
+                                    <input
+                                        value={form.actionUrl}
+                                        onChange={e => setForm(f => ({ ...f, actionUrl: e.target.value }))}
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        placeholder="VD: https://zalo.me/..."
+                                    />
+                                </div>
                             </div>
 
                             {/* Start/End dates */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-sm font-semibold text-gray-700">Ngày bắt đầu</label>
+                                    <label className="text-sm font-semibold text-foreground">Ngày bắt đầu</label>
                                     <input
                                         type="date"
                                         value={form.startDate}
                                         onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-sm font-semibold text-gray-700">Ngày kết thúc</label>
+                                    <label className="text-sm font-semibold text-foreground">Ngày kết thúc</label>
                                     <input
                                         type="date"
                                         value={form.endDate}
                                         onChange={e => setForm(f => ({ ...f, endDate: e.target.value }))}
-                                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                     />
                                 </div>
                             </div>
@@ -372,24 +417,24 @@ export default function ExploreContentPage() {
                             {/* Sort order + Active */}
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-sm font-semibold text-gray-700">Thứ tự hiển thị</label>
+                                    <label className="text-sm font-semibold text-foreground">Thứ tự hiển thị</label>
                                     <input
                                         type="number"
                                         value={form.sortOrder}
                                         onChange={e => setForm(f => ({ ...f, sortOrder: Number(e.target.value) }))}
-                                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
                                         min={0}
                                     />
                                 </div>
                                 <div className="space-y-1.5">
-                                    <label className="text-sm font-semibold text-gray-700">Trạng thái</label>
+                                    <label className="text-sm font-semibold text-foreground">Trạng thái</label>
                                     <button
                                         type="button"
                                         onClick={() => setForm(f => ({ ...f, isActive: !f.isActive }))}
                                         className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold border transition-colors ${
                                             form.isActive
                                                 ? 'bg-green-50 text-green-700 border-green-300'
-                                                : 'bg-gray-100 text-gray-500 border-gray-300'
+                                                : 'bg-background-tertiary text-foreground-secondary border-border'
                                         }`}
                                     >
                                         {form.isActive ? <><Eye className="w-4 h-4" /> Hiển thị</> : <><EyeOff className="w-4 h-4" /> Ẩn</>}
@@ -402,7 +447,7 @@ export default function ExploreContentPage() {
                                 <button
                                     type="button"
                                     onClick={closeModal}
-                                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold hover:bg-gray-50 transition-colors"
+                                    className="flex-1 py-2.5 rounded-xl border border-border text-foreground-secondary font-semibold hover:bg-background-tertiary transition-colors"
                                 >
                                     Hủy
                                 </button>
@@ -422,17 +467,17 @@ export default function ExploreContentPage() {
             {/* Delete confirmation */}
             {deleteConfirm && (
                 <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+                    <div className="bg-background-secondary rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                         <div className="text-center">
                             <div className="text-5xl mb-4">🗑️</div>
-                            <h3 className="font-bold text-lg text-gray-800 mb-2">Xóa nội dung?</h3>
-                            <p className="text-sm text-gray-500 mb-6">
+                            <h3 className="font-bold text-lg text-foreground mb-2">Xóa nội dung?</h3>
+                            <p className="text-sm text-foreground-secondary mb-6">
                                 Bạn có chắc muốn xóa <strong>"{deleteConfirm.title}"</strong>? Hành động này không thể hoàn tác.
                             </p>
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => setDeleteConfirm(null)}
-                                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold hover:bg-gray-50"
+                                    className="flex-1 py-2.5 rounded-xl border border-border text-foreground-secondary font-semibold hover:bg-background-tertiary"
                                 >
                                     Hủy
                                 </button>

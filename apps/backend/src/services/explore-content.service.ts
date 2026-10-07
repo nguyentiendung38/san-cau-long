@@ -27,7 +27,7 @@ export class ExploreContentService {
                 imageUrl: data.imageUrl,
                 price: data.price,
                 badge: data.badge,
-                metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+                metadata: data.metadata ? (typeof data.metadata === 'string' ? data.metadata : JSON.stringify(data.metadata)) : null,
                 isActive: data.isActive ?? true,
                 sortOrder: data.sortOrder ?? 0,
                 startDate: data.startDate ? new Date(data.startDate) : null,

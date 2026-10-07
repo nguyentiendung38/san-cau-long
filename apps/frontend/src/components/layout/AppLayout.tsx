@@ -55,7 +55,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                     <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
                         <span className="text-white font-bold text-lg">H</span>
                     </div>
-                    <span className="text-xl font-bold text-primary-500">SÂN CẦU LÔNG HUE</span>
+                    <span className="text-xl font-bold text-primary-500">HUE</span>
                 </div>
 
                 {/* Navigation */}

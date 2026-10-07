@@ -21,6 +21,7 @@ export interface CustomerQueryParams {
     search?: string;
     membershipTier?: string;
     isActive?: boolean;
+    isRegistered?: boolean;
     page?: number;
     limit?: number;
 }
@@ -46,6 +47,14 @@ export class CustomerService {
 
         if (isActive !== undefined) {
             where.isActive = isActive;
+        }
+
+        if (params.isRegistered !== undefined) {
+            if (params.isRegistered) {
+                where.passwordHash = { not: null };
+            } else {
+                where.passwordHash = null;
+            }
         }
 
         const [customers, total] = await Promise.all([

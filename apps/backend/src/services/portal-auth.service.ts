@@ -17,14 +17,14 @@ export const portalAuthService = {
         const existingPhone = await prisma.customer.findUnique({
             where: { phone: data.phone }
         });
-        if (existingPhone) {
+        if (existingPhone && existingPhone.passwordHash) {
             throw new AppError(409, 'Số điện thoại này đã được đăng ký');
         }
 
         const existingEmail = await prisma.customer.findFirst({
             where: { email: data.email }
         });
-        if (existingEmail) {
+        if (existingEmail && existingEmail.passwordHash) {
             throw new AppError(409, 'Email này đã được đăng ký');
         }
 
@@ -74,8 +74,14 @@ export const portalAuthService = {
         // OTP is valid, register customer
         const passwordHash = await bcrypt.hash(data.password, 12);
         
-        const customer = await prisma.customer.create({
-            data: {
+        const customer = await prisma.customer.upsert({
+            where: { phone: data.phone },
+            update: {
+                name: data.name,
+                email: data.email,
+                passwordHash
+            },
+            create: {
                 name: data.name,
                 phone: data.phone,
                 email: data.email,
@@ -107,14 +113,20 @@ export const portalAuthService = {
             where: { phone: data.phone }
         });
         
-        if (existing) {
+        if (existing && existing.passwordHash) {
             throw new AppError(409, 'Số điện thoại này đã được đăng ký');
         }
 
         const passwordHash = await bcrypt.hash(data.password, 12);
         
-        const customer = await prisma.customer.create({
-            data: {
+        const customer = await prisma.customer.upsert({
+            where: { phone: data.phone },
+            update: {
+                name: data.name,
+                email: data.email || null,
+                passwordHash
+            },
+            create: {
                 name: data.name,
                 phone: data.phone,
                 email: data.email || null,

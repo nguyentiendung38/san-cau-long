@@ -22,6 +22,7 @@ interface VenueFormData {
     name: string;
     address: string;
     phone: string;
+    logo: string;
     openTime: string;
     closeTime: string;
 }
@@ -30,6 +31,7 @@ const defaultFormData: VenueFormData = {
     name: '',
     address: '',
     phone: '',
+    logo: '',
     openTime: '06:00',
     closeTime: '23:00',
 };
@@ -95,6 +97,7 @@ export default function VenuesPage() {
                 name: venue.name,
                 address: venue.address,
                 phone: venue.phone || '',
+                logo: venue.logo || '',
                 openTime: venue.openTime,
                 closeTime: venue.closeTime,
             });
@@ -128,6 +131,7 @@ export default function VenuesPage() {
             name: formData.name.trim(),
             address: formData.address.trim(),
             phone: formData.phone.trim() || undefined,
+            logo: formData.logo.trim() || undefined,
             openTime: formData.openTime,
             closeTime: formData.closeTime,
         };
@@ -343,6 +347,17 @@ export default function VenuesPage() {
                                         value={formData.phone}
                                         onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                         placeholder="VD: 0901234567"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
+                                        Ảnh đại diện (Link/URL)
+                                    </label>
+                                    <Input
+                                        value={formData.logo}
+                                        onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
+                                        placeholder="VD: https://imgur.com/my-venue.jpg"
                                     />
                                 </div>
 

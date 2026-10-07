@@ -16,14 +16,15 @@ import {
     Phone,
     Mail,
     Loader2,
-    Users
+    Ticket
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { venueApi, Venue } from '@/services/venue.service';
 import { pricingRuleApi, PricingRule } from '@/services/inventory.service';
-import { customerApi } from '@/services/customer.service';
+import { operatingHourApi, OperatingHour } from '@/services/operating-hour.service';
+import { voucherApi, Voucher } from '@/services/voucher.service';
 import { useToast } from '@/hooks/use-toast';
 
 interface TabProps {
@@ -191,6 +192,28 @@ export default function SettingsPage() {
     const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
     const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
     const [editingPricingRule, setEditingPricingRule] = useState<PricingRule | null>(null);
+    
+    const [isOperatingHourModalOpen, setIsOperatingHourModalOpen] = useState(false);
+    const [editingOperatingHour, setEditingOperatingHour] = useState<OperatingHour | null>(null);
+    const [operatingHourForm, setOperatingHourForm] = useState({
+        venueId: '',
+        startTime: '06:00',
+        endTime: '23:00',
+        daysOfWeek: '[1,2,3,4,5,6,0]', // Default all days
+    });
+
+    const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
+    const [editingVoucher, setEditingVoucher] = useState<Voucher | null>(null);
+    const [voucherForm, setVoucherForm] = useState<Partial<Voucher>>({
+        code: '',
+        discountType: 'PERCENTAGE',
+        discountValue: 0,
+        minOrderValue: 0,
+        maxDiscount: 0,
+        usageLimit: 0,
+        isActive: true,
+    });
+
     const [pricingForm, setPricingForm] = useState({
         venueId: '',
         name: '',
@@ -203,28 +226,6 @@ export default function SettingsPage() {
     });
     const { toast } = useToast();
     const queryClient = useQueryClient();
-    const { data: registeredUsersData, isLoading: loadingRegisteredUsers } = useQuery({
-        queryKey: ['registered-users'],
-        queryFn: () => customerApi.getAll({ limit: 50 }),
-        enabled: activeTab === 'registered_users',
-    });
-
-    const deleteCustomerMutation = useMutation({
-        mutationFn: (id: string) => customerApi.delete(id),
-        onSuccess: () => {
-            toast({ title: 'Đã xóa tài khoản khỏi CSDL' });
-            queryClient.invalidateQueries({ queryKey: ['registered-users'] });
-        },
-        onError: () => {
-            toast({ title: 'Lỗi khi xóa tài khoản', variant: 'error' });
-        }
-    });
-
-    const handleDeleteCustomer = (user: any) => {
-        if (confirm(`Bạn có chắc muốn xóa vĩnh viễn tài khoản của ${user.name} khỏi CSDL?`)) {
-            deleteCustomerMutation.mutate(user.id);
-        }
-    };
 
         // Fetch venues
     const { data: venuesData, isLoading: loadingVenues } = useQuery({
@@ -237,8 +238,21 @@ export default function SettingsPage() {
         queryFn: () => pricingRuleApi.getAll({ isActive: true }),
     });
 
+    const { data: operatingHoursData, isLoading: loadingOperatingHours } = useQuery({
+        queryKey: ['operating-hours'],
+        queryFn: () => operatingHourApi.getAll({ isActive: true }),
+    });
+
+    const { data: vouchersData, isLoading: loadingVouchers } = useQuery({
+        queryKey: ['vouchers'],
+        queryFn: () => voucherApi.getAll(),
+        enabled: activeTab === 'vouchers',
+    });
+
     const venues = venuesData?.data || [];
     const pricingRules = pricingRulesData?.data || [];
+    const operatingHours = operatingHoursData?.data || [];
+    const vouchers = vouchersData || [];
 
     // Create/Update venue mutation
     const saveMutation = useMutation({
@@ -383,13 +397,112 @@ export default function SettingsPage() {
         setIsPricingModalOpen(true);
     };
 
+    const openOperatingHourModal = (oh?: OperatingHour) => {
+        if (oh) {
+            setEditingOperatingHour(oh);
+            setOperatingHourForm({
+                venueId: oh.venueId,
+                startTime: oh.startTime,
+                endTime: oh.endTime,
+                daysOfWeek: oh.daysOfWeek,
+            });
+        } else {
+            setEditingOperatingHour(null);
+            setOperatingHourForm({
+                venueId: venues[0]?.id || '',
+                startTime: '06:00',
+                endTime: '23:00',
+                daysOfWeek: '[1,2,3,4,5,6,0]',
+            });
+        }
+        setIsOperatingHourModalOpen(true);
+    };
+
+    const saveOperatingHour = async () => {
+        if (!operatingHourForm.venueId || !operatingHourForm.startTime || !operatingHourForm.endTime) {
+            toast({ title: 'Thiếu thông tin', variant: 'error' });
+            return;
+        }
+
+        const payload = {
+            venueId: operatingHourForm.venueId,
+            startTime: operatingHourForm.startTime,
+            endTime: operatingHourForm.endTime,
+            daysOfWeek: operatingHourForm.daysOfWeek,
+        };
+
+        if (editingOperatingHour) {
+            await operatingHourApi.update(editingOperatingHour.id, payload);
+            toast({ title: 'Đã cập nhật khung giờ', variant: 'success' });
+        } else {
+            await operatingHourApi.create(payload);
+            toast({ title: 'Đã thêm khung giờ', variant: 'success' });
+        }
+        setIsOperatingHourModalOpen(false);
+        queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
+    };
+
+    const deleteOperatingHour = async (id: string) => {
+        if (!confirm('Bạn có chắc muốn xóa khung giờ này?')) return;
+        await operatingHourApi.delete(id);
+        toast({ title: 'Đã xóa khung giờ', variant: 'success' });
+        queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
+    };
+
+    const openVoucherModal = (voucher?: Voucher) => {
+        if (voucher) {
+            setEditingVoucher(voucher);
+            setVoucherForm({ ...voucher });
+        } else {
+            setEditingVoucher(null);
+            setVoucherForm({
+                code: '',
+                discountType: 'PERCENTAGE',
+                discountValue: 0,
+                minOrderValue: 0,
+                maxDiscount: 0,
+                usageLimit: 0,
+                isActive: true,
+            });
+        }
+        setIsVoucherModalOpen(true);
+    };
+
+    const saveVoucher = async () => {
+        if (!voucherForm.code || !voucherForm.discountValue) {
+            toast({ title: 'Thiếu thông tin bắt buộc', variant: 'error' });
+            return;
+        }
+
+        try {
+            if (editingVoucher) {
+                await voucherApi.update(editingVoucher.id, voucherForm);
+                toast({ title: 'Đã cập nhật mã ưu đãi', variant: 'success' });
+            } else {
+                await voucherApi.create(voucherForm);
+                toast({ title: 'Đã tạo mã ưu đãi', variant: 'success' });
+            }
+            setIsVoucherModalOpen(false);
+            queryClient.invalidateQueries({ queryKey: ['vouchers'] });
+        } catch (error: any) {
+            toast({ title: error?.response?.data?.message || 'Lỗi khi lưu mã ưu đãi', variant: 'error' });
+        }
+    };
+
+    const deleteVoucher = async (id: string) => {
+        if (!confirm('Bạn có chắc muốn xóa mã này?')) return;
+        await voucherApi.delete(id);
+        toast({ title: 'Đã xóa mã ưu đãi', variant: 'success' });
+        queryClient.invalidateQueries({ queryKey: ['vouchers'] });
+    };
+
     const tabs = [
         { id: 'venue', icon: Building2, label: 'Thông tin cơ sở' },
         { id: 'hours', icon: Clock, label: 'Giờ hoạt động' },
         { id: 'pricing', icon: DollarSign, label: 'Bảng giá' },
+        { id: 'vouchers', icon: Ticket, label: 'Khuyến mãi' },
         { id: 'notifications', icon: Bell, label: 'Thông báo' },
         { id: 'security', icon: Shield, label: 'Bảo mật' },
-        { id: 'registered_users', icon: Users, label: 'Danh sách tài khoản' },
     ];
 
     return (
@@ -501,35 +614,57 @@ export default function SettingsPage() {
                     {/* Operating Hours */}
                     {activeTab === 'hours' && (
                         <div className="bg-background-secondary border border-border rounded-xl p-6">
-                            <h3 className="text-lg font-semibold text-foreground mb-6">Giờ hoạt động</h3>
-                            <div className="space-y-4">
-                                {['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ Nhật'].map((day, i) => (
-                                    <div key={i} className="flex flex-wrap items-center gap-4 p-3 bg-background-tertiary/50 rounded-lg">
-                                        <span className="w-24 font-medium text-foreground">{day}</span>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="time"
-                                                defaultValue="06:00"
-                                                className="bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground text-sm"
-                                            />
-                                            <span className="text-foreground-secondary">đến</span>
-                                            <input
-                                                type="time"
-                                                defaultValue="23:00"
-                                                className="bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground text-sm"
-                                            />
-                                        </div>
-                                        <label className="flex items-center gap-2 text-sm text-foreground-secondary ml-auto">
-                                            <input type="checkbox" defaultChecked className="rounded accent-primary-500" />
-                                            Hoạt động
-                                        </label>
-                                    </div>
-                                ))}
-                                <Button className="mt-4 gap-2">
-                                    <Save className="w-4 h-4" />
-                                    Lưu thay đổi
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold text-foreground">Giờ hoạt động</h3>
+                                <Button className="gap-2" onClick={() => openOperatingHourModal()}>
+                                    <Plus className="w-4 h-4" />
+                                    Thêm khung giờ
                                 </Button>
                             </div>
+
+                            {loadingOperatingHours ? (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+                                </div>
+                            ) : operatingHours.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <Clock className="w-12 h-12 mx-auto mb-4 text-foreground-muted opacity-50" />
+                                    <p className="text-foreground-secondary">Chưa có khung giờ hoạt động nào</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-3">
+                                    {operatingHours.map((oh: OperatingHour) => {
+                                        let daysText = 'Tất cả các ngày';
+                                        try {
+                                            const days = JSON.parse(oh.daysOfWeek);
+                                            if (days.length < 7) {
+                                                const dayNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+                                                daysText = days.map((d: number) => dayNames[d]).join(', ');
+                                            }
+                                        } catch(e) {}
+
+                                        return (
+                                            <div key={oh.id} className="flex flex-wrap items-center justify-between gap-4 p-4 bg-background-tertiary/50 border border-border rounded-xl hover:border-primary-500/30 transition-colors">
+                                                <div>
+                                                    <h4 className="font-semibold text-foreground mb-1">{oh.startTime} - {oh.endTime}</h4>
+                                                    <div className="flex items-center gap-4 text-sm text-foreground-secondary">
+                                                        <span className="flex items-center gap-1"><Building2 className="w-4 h-4" /> {venues.find((v: any) => v.id === oh.venueId)?.name}</span>
+                                                        <span className="flex items-center gap-1"><Clock className="w-4 h-4" /> {daysText}</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Button variant="outline" size="sm" onClick={() => openOperatingHourModal(oh)}>
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </Button>
+                                                    <Button variant="destructive" size="sm" onClick={() => deleteOperatingHour(oh.id)}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -585,6 +720,55 @@ export default function SettingsPage() {
                         </div>
                     )}
 
+                    {/* Vouchers */}
+                    {activeTab === 'vouchers' && (
+                        <div className="bg-background-secondary border border-border rounded-xl p-6">
+                            <div className="flex items-center justify-between mb-6">
+                                <h3 className="text-lg font-semibold text-foreground">Quản lý Mã khuyến mãi (Voucher)</h3>
+                                <Button onClick={() => openVoucherModal()} className="bg-green-600 hover:bg-green-700 text-white gap-2">
+                                    <Plus className="w-4 h-4" /> Thêm mã mới
+                                </Button>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {loadingVouchers ? (
+                                    <div className="p-8 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-foreground-secondary" /></div>
+                                ) : vouchers.length === 0 ? (
+                                    <div className="p-8 text-center text-foreground-secondary border border-dashed border-border rounded-xl">
+                                        Chưa có mã khuyến mãi nào
+                                    </div>
+                                ) : (
+                                    vouchers.map(v => (
+                                        <div key={v.id} className="flex flex-col sm:flex-row gap-4 p-4 border border-border rounded-xl bg-background hover:border-green-500 transition-colors">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="font-bold text-lg text-green-600 bg-green-50 px-2 rounded">{v.code}</span>
+                                                    {!v.isActive && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Đã tắt</span>}
+                                                </div>
+                                                <p className="text-sm font-semibold text-foreground mb-1">
+                                                    Giảm {v.discountType === 'FIXED' ? formatCurrency(v.discountValue) : `${v.discountValue}%`}
+                                                    {v.discountType === 'PERCENTAGE' && v.maxDiscount ? ` (tối đa ${formatCurrency(v.maxDiscount)})` : ''}
+                                                </p>
+                                                <p className="text-xs text-foreground-secondary">
+                                                    {v.minOrderValue ? `Đơn tối thiểu ${formatCurrency(v.minOrderValue)}. ` : 'Không yêu cầu đơn tối thiểu. '}
+                                                    {v.usageLimit ? `Đã dùng: ${v.usageCount}/${v.usageLimit}. ` : `Đã dùng: ${v.usageCount}. `}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <Button variant="outline" size="sm" onClick={() => openVoucherModal(v)}>
+                                                    <Edit2 className="w-4 h-4" />
+                                                </Button>
+                                                <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => deleteVoucher(v.id)}>
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Notifications */}
                     {activeTab === 'notifications' && (
                         <div className="bg-background-secondary border border-border rounded-xl p-6">
@@ -606,59 +790,6 @@ export default function SettingsPage() {
                                     </div>
                                 ))}
                             </div>
-                        </div>
-                    )}
-
-                    {/* Registered Users */}
-                    {activeTab === 'registered_users' && (
-                        <div className="bg-background-secondary border border-border rounded-xl p-6">
-                            <h3 className="text-lg font-semibold text-foreground mb-6">Tài khoản khách hàng</h3>
-                            
-                            {loadingRegisteredUsers ? (
-                                <div className="flex items-center justify-center py-12">
-                                    <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
-                                </div>
-                            ) : !registeredUsersData?.data?.length ? (
-                                <div className="text-center py-12">
-                                    <Users className="w-12 h-12 mx-auto mb-4 text-foreground-muted opacity-50" />
-                                    <p className="text-foreground-secondary">Chưa có khách hàng nào đăng ký tài khoản</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-4">
-                                    <div className="grid grid-cols-5 gap-4 pb-2 border-b border-border text-sm font-medium text-foreground-secondary">
-                                        <div className="col-span-2">Khách hàng</div>
-                                        <div>Số điện thoại</div>
-                                        <div>Ngày đăng ký</div>
-                                        <div className="text-right">Thao tác</div>
-                                    </div>
-                                    {registeredUsersData.data.map((user: any) => (
-                                        <div key={user.id} className="grid grid-cols-5 gap-4 py-3 border-b border-border/50 items-center text-sm">
-                                            <div className="col-span-2 flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-primary-500/20 flex items-center justify-center font-bold text-primary-500">
-                                                    {user.name.charAt(0).toUpperCase()}
-                                                </div>
-                                                <div>
-                                                    <p className="font-medium text-foreground">{user.name}</p>
-                                                    <p className="text-xs text-foreground-muted">{user.email || 'Chưa cập nhật email'}</p>
-                                                </div>
-                                            </div>
-                                            <div className="text-foreground">{user.phone}</div>
-                                            <div className="text-foreground-secondary">
-                                                {new Date(user.createdAt).toLocaleDateString('vi-VN')}
-                                            </div>
-                                            <div className="text-right flex justify-end">
-                                                <button
-                                                    onClick={() => handleDeleteCustomer(user)}
-                                                    className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                    title="Xóa tài khoản"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
                         </div>
                     )}
 
@@ -714,6 +845,81 @@ export default function SettingsPage() {
                 venue={editingVenue}
                 onSave={handleSaveVenue}
             />
+
+            {isOperatingHourModalOpen && (
+                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="w-full max-w-xl rounded-2xl border border-border bg-background-secondary p-6 shadow-2xl">
+                        <div className="flex items-center justify-between mb-6">
+                            <h3 className="text-lg font-semibold text-foreground">
+                                {editingOperatingHour ? 'Sửa khung giờ' : 'Thêm khung giờ'}
+                            </h3>
+                            <button onClick={() => { setIsOperatingHourModalOpen(false); setEditingOperatingHour(null); }} className="p-2 hover:bg-background-tertiary rounded-lg">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                        <div className="space-y-4 max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y pr-2">
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Cơ sở</label>
+                                <select
+                                    className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground"
+                                    value={operatingHourForm.venueId}
+                                    onChange={(e) => setOperatingHourForm(prev => ({ ...prev, venueId: e.target.value }))}
+                                >
+                                    {venues.map((venue: Venue) => (
+                                        <option key={venue.id} value={venue.id}>{venue.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Từ giờ</label>
+                                    <Input
+                                        type="time"
+                                        value={operatingHourForm.startTime}
+                                        onChange={(e) => setOperatingHourForm(prev => ({ ...prev, startTime: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Đến giờ</label>
+                                    <Input
+                                        type="time"
+                                        value={operatingHourForm.endTime}
+                                        onChange={(e) => setOperatingHourForm(prev => ({ ...prev, endTime: e.target.value }))}
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-2">Áp dụng cho ngày</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {[1, 2, 3, 4, 5, 6, 0].map(day => {
+                                        const labels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+                                        let currentDays: number[] = [];
+                                        try { currentDays = JSON.parse(operatingHourForm.daysOfWeek); } catch(e) {}
+                                        const isSelected = currentDays.includes(day);
+
+                                        return (
+                                            <button
+                                                key={day}
+                                                className={`px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'bg-primary border-primary text-primary-foreground' : 'bg-background-tertiary border-border text-foreground-secondary'}`}
+                                                onClick={() => {
+                                                    const newDays = isSelected ? currentDays.filter((d: number) => d !== day) : [...currentDays, day];
+                                                    setOperatingHourForm(prev => ({ ...prev, daysOfWeek: JSON.stringify(newDays.sort()) }));
+                                                }}
+                                            >
+                                                {labels[day]}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            <div className="flex justify-end gap-2 pt-4">
+                                <Button variant="outline" onClick={() => { setIsOperatingHourModalOpen(false); setEditingOperatingHour(null); }}>Hủy</Button>
+                                <Button onClick={saveOperatingHour}>Lưu</Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {isPricingModalOpen && (
                 <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
@@ -824,6 +1030,94 @@ export default function SettingsPage() {
                     </div>
                 </div>
             )}
+
+            {isVoucherModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50">
+                    <div className="bg-background-secondary rounded-2xl w-full max-w-md overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-border">
+                            <h3 className="text-lg font-bold text-foreground">{editingVoucher ? 'Sửa mã ưu đãi' : 'Thêm mã ưu đãi'}</h3>
+                            <button onClick={() => setIsVoucherModalOpen(false)} className="p-2 hover:bg-background rounded-full transition-colors">
+                                <X className="w-5 h-5 text-foreground-secondary" />
+                            </button>
+                        </div>
+                        <div className="p-4 space-y-4 max-h-[85vh] overflow-y-auto overscroll-contain touch-pan-y">
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Mã (Code)</label>
+                                <Input
+                                    value={voucherForm.code}
+                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, code: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+                                    placeholder="VD: SUMMER20"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Loại giảm giá</label>
+                                <select 
+                                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                                    value={voucherForm.discountType}
+                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, discountType: e.target.value as 'PERCENTAGE' | 'FIXED' }))}
+                                >
+                                    <option value="PERCENTAGE">Theo phần trăm (%)</option>
+                                    <option value="FIXED">Số tiền cố định (VNĐ)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">
+                                    {voucherForm.discountType === 'PERCENTAGE' ? 'Phần trăm giảm (%)' : 'Số tiền giảm (VNĐ)'}
+                                </label>
+                                <Input
+                                    type="number"
+                                    value={voucherForm.discountValue || ''}
+                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, discountValue: Number(e.target.value) }))}
+                                />
+                            </div>
+                            {voucherForm.discountType === 'PERCENTAGE' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Giảm tối đa (VNĐ)</label>
+                                    <Input
+                                        type="number"
+                                        placeholder="Để trống nếu không giới hạn"
+                                        value={voucherForm.maxDiscount || ''}
+                                        onChange={(e) => setVoucherForm(prev => ({ ...prev, maxDiscount: Number(e.target.value) || undefined }))}
+                                    />
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Đơn tối thiểu (VNĐ)</label>
+                                <Input
+                                    type="number"
+                                    placeholder="Để trống nếu không yêu cầu"
+                                    value={voucherForm.minOrderValue || ''}
+                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, minOrderValue: Number(e.target.value) || undefined }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">Số lượt dùng tối đa</label>
+                                <Input
+                                    type="number"
+                                    placeholder="Để trống nếu không giới hạn"
+                                    value={voucherForm.usageLimit || ''}
+                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, usageLimit: Number(e.target.value) || undefined }))}
+                                />
+                            </div>
+                            <div className="flex items-center gap-2 pt-2">
+                                <input 
+                                    type="checkbox" 
+                                    id="isActive"
+                                    checked={voucherForm.isActive} 
+                                    onChange={(e) => setVoucherForm(prev => ({ ...prev, isActive: e.target.checked }))} 
+                                />
+                                <label htmlFor="isActive" className="text-sm font-medium text-foreground cursor-pointer">Kích hoạt mã này</label>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-4 border-t border-border">
+                                <Button variant="ghost" onClick={() => setIsVoucherModalOpen(false)}>Hủy</Button>
+                                <Button onClick={saveVoucher}>{editingVoucher ? 'Cập nhật' : 'Thêm mới'}</Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
+

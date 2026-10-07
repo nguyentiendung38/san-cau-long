@@ -76,4 +76,19 @@ router.delete('/:id', authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER')
     }
 });
 
+// Admin: Update payment status
+router.patch('/:id/payment-status', authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { paymentStatus, paymentAmount } = req.body;
+        const request = await bookingRequestService.updatePaymentStatus(req.params.id, paymentStatus, paymentAmount);
+        res.json({
+            success: true,
+            message: 'Đã cập nhật trạng thái thanh toán',
+            data: request,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export default router;

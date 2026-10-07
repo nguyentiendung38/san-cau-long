@@ -32,7 +32,7 @@ export default function PortalLoginPage() {
             if (res.data.customer.phone) {
                 localStorage.setItem('portalUserPhone', res.data.customer.phone);
             }
-            navigate('/portal');
+            navigate('/trang-chu');
         } catch (error: any) {
             const msg = error.response?.data?.message || 'Đăng nhập thất bại';
             alert(msg);
@@ -44,7 +44,7 @@ export default function PortalLoginPage() {
             {/* Header */}
             <div className="flex items-center px-4 py-4 text-white relative">
                 <button 
-                    onClick={() => navigate('/portal')}
+                    onClick={() => navigate('/trang-chu')}
                     className="absolute left-4 p-2 hover:bg-white/10 rounded-full transition-colors"
                 >
                     <ChevronLeft className="w-6 h-6" />
@@ -122,7 +122,7 @@ export default function PortalLoginPage() {
                 <div className="w-full max-w-lg mt-6 text-center space-y-4">
                     <div className="text-white text-sm">
                         Bạn chưa có tài khoản?{' '}
-                        <Link to="/register" className="font-bold hover:underline">
+                        <Link to="/dang-ky" className="font-bold hover:underline">
                             Đăng ký
                         </Link>
                     </div>

@@ -1,0 +1,786 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { venueApi, Venue, Court } from '@/services/venue.service';
+import { bookingRequestApi } from '@/services/booking.service';
+import { productApi, serviceApi, Product, Service } from '@/services/inventory.service';
+import { useToast } from '@/hooks/use-toast';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X, Plus, Minus, ShoppingBag, Clock, MapPin } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+
+const TIME_SLOTS: string[] = [];
+for (let h = 5; h <= 23; h++) {
+    const hour = h.toString().padStart(2, '0');
+    TIME_SLOTS.push(`${hour}:00`);
+    if (h !== 23) {
+        TIME_SLOTS.push(`${hour}:30`);
+    }
+}
+
+// Group TIME_SLOTS into chunks for better display
+const HOUR_GROUPS: string[] = [];
+for (let h = 5; h <= 23; h++) {
+    HOUR_GROUPS.push(`${h.toString().padStart(2, '0')}:00`);
+}
+
+export default function PortalBookingVisual() {
+    const { venueId, courtId } = useParams();
+    const navigate = useNavigate();
+    const [venue, setVenue] = useState<Venue | null>(null);
+    const [loadingVenue, setLoadingVenue] = useState(true);
+
+    useEffect(() => {
+        if (!venueId) return;
+        venueApi.getById(venueId).then(res => {
+            setVenue(res);
+            setLoadingVenue(false);
+        }).catch(err => {
+            console.error(err);
+            setLoadingVenue(false);
+        });
+    }, [venueId]);
+
+    const onClose = () => navigate(-1);
+
+    const now = new Date();
+    const todayString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const currentTimeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const maxDate = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+
+    const [selectedDate, setSelectedDate] = useState(todayString);
+    const [courts, setCourts] = useState<Court[]>([]);
+    const [bookings, setBookings] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [tempDate, setTempDate] = useState<Date>(new Date());
+    const [viewMonth, setViewMonth] = useState<Date>(new Date());
+
+    const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
+    const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+    const [showForm, setShowForm] = useState(false);
+
+    const [bookingForm, setBookingForm] = useState({
+        name: '', phone: '', notes: ''
+    });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [paymentMethod, setPaymentMethod] = useState<'MOMO' | 'DEPOSIT_TRANSFER'>('MOMO');
+    const [paymentProof, setPaymentProof] = useState<string>('');
+
+    const [products, setProducts] = useState<Product[]>([]);
+    const [services, setServices] = useState<Service[]>([]);
+    const [orderedItems, setOrderedItems] = useState<{ id: string; name: string; price: number; quantity: number; type: 'product' | 'service' }[]>([]);
+    const [showInventory, setShowInventory] = useState(false);
+
+    const totalAmount = useMemo(() => {
+        if (!selectedCourt || selectedSlots.length === 0 || !venue) return 0;
+        const date = new Date(selectedDate);
+        const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+        const dayOfWeek = days[date.getDay()];
+        let total = 0;
+        for (const slot of selectedSlots) {
+            const [h, m] = slot.split(':').map(Number);
+            let nextM = m + 30;
+            let nextH = h;
+            if (nextM >= 60) { nextM = 0; nextH++; }
+            const slotStart = slot;
+            const slotEnd = String(nextH).padStart(2, '0') + ':' + String(nextM).padStart(2, '0');
+            let pricePerHour = 50000;
+            if ((venue as any).pricingRules && (venue as any).pricingRules.length > 0) {
+                const rules = [...(venue as any).pricingRules].sort((a: any, b: any) => b.priority - a.priority);
+                for (const rule of rules) {
+                    const matchDay = !rule.dayOfWeek || rule.dayOfWeek === dayOfWeek;
+                    const matchTime = (!rule.startTime || rule.startTime <= slotStart) && (!rule.endTime || rule.endTime >= slotEnd);
+                    if (matchDay && matchTime) { pricePerHour = rule.pricePerHour; break; }
+                }
+            }
+            total += pricePerHour / 2;
+        }
+        for (const item of orderedItems) {
+            total += item.price * item.quantity;
+        }
+        return total;
+    }, [selectedCourt, selectedSlots, venue, selectedDate, orderedItems]);
+
+    const { toast } = useToast();
+    const queryClient = useQueryClient();
+
+    useEffect(() => {
+        if (!venue) return;
+        const fetchAvailability = async () => {
+            setLoading(true);
+            try {
+                const res = await venueApi.getAvailability(venue.id, selectedDate);
+                const filteredCourts = courtId ? res.courts.filter((c: Court) => c.id === courtId) : res.courts;
+                setCourts(filteredCourts);
+                setBookings(res.bookings);
+                try {
+                    const [prodRes, servRes] = await Promise.all([
+                        productApi.getAll({ venueId: venue.id, isActive: true }),
+                        serviceApi.getAll({ venueId: venue.id, isActive: true })
+                    ]);
+                    setProducts(prodRes.data || []);
+                    setServices(servRes.data || []);
+                } catch (e) { console.error('Failed to fetch inventory:', e); }
+                setSelectedCourt(null);
+                setSelectedSlots([]);
+            } catch {
+                toast({ title: 'Lỗi tải dữ liệu', variant: 'error' });
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchAvailability();
+    }, [venue?.id, selectedDate, courtId, toast]);
+
+    const getSlotStatus = (cId: string, time: string) => {
+        const isPast = selectedDate === todayString && time < currentTimeString;
+        if (isPast) return 'past';
+        const isBooked = bookings.some(b => b.courtId === cId && b.startTime <= time && b.endTime > time);
+        if (isBooked) return 'booked';
+        return 'available';
+    };
+
+    const handleSlotClick = (court: Court, time: string) => {
+        const status = getSlotStatus(court.id, time);
+        if (status !== 'available') return;
+
+        if (selectedCourt && selectedCourt.id !== court.id) {
+            setSelectedCourt(court);
+            setSelectedSlots([time]);
+            return;
+        }
+        setSelectedCourt(court);
+        if (selectedSlots.length === 0) {
+            setSelectedSlots([time]);
+        } else {
+            const timeIndex = TIME_SLOTS.indexOf(time);
+            const firstSlotIndex = TIME_SLOTS.indexOf(selectedSlots[0]);
+            const lastSlotIndex = TIME_SLOTS.indexOf(selectedSlots[selectedSlots.length - 1]);
+            if (timeIndex === firstSlotIndex - 1 || timeIndex === lastSlotIndex + 1) {
+                const newSlots = [...selectedSlots, time].sort((a, b) => TIME_SLOTS.indexOf(a) - TIME_SLOTS.indexOf(b));
+                setSelectedSlots(newSlots);
+            } else if (selectedSlots.includes(time)) {
+                if (time === selectedSlots[0] || time === selectedSlots[selectedSlots.length - 1]) {
+                    setSelectedSlots(selectedSlots.filter(s => s !== time));
+                    if (selectedSlots.length === 1) setSelectedCourt(null);
+                } else {
+                    setSelectedSlots([time]);
+                }
+            } else {
+                setSelectedSlots([time]);
+            }
+        }
+    };
+
+    const handleProceed = () => {
+        if (!selectedCourt || selectedSlots.length === 0) return;
+        setShowForm(true);
+    };
+
+    const handleBookingSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!selectedCourt || selectedSlots.length === 0 || !venue) return;
+        const startTime = selectedSlots[0];
+        const lastSlot = selectedSlots[selectedSlots.length - 1];
+        const [h, m] = lastSlot.split(':').map(Number);
+        let newM = m + 30, newH = h;
+        if (newM >= 60) { newM = 0; newH += 1; }
+        const endTime = `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+
+        if (paymentMethod === 'DEPOSIT_TRANSFER' && !paymentProof) {
+            toast({ title: 'Vui lòng tải lên ảnh chụp màn hình chuyển khoản', variant: 'error' });
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const bookingRequest = await bookingRequestApi.createPublic({
+                ...bookingForm,
+                venueId: venue.id,
+                courtId: selectedCourt.id,
+                date: selectedDate,
+                startTime,
+                endTime,
+                paymentMethod,
+                paymentAmount: totalAmount,
+                paymentProof,
+                orderedItems
+            });
+
+            if (bookingForm.phone) {
+                localStorage.setItem('portalUserPhone', bookingForm.phone);
+                window.dispatchEvent(new Event('portal-phone-updated'));
+                queryClient.invalidateQueries({ queryKey: ['my-requests'] });
+            }
+
+            if (paymentMethod === 'MOMO') {
+                toast({ title: '🔄 Đang chuyển sang trang thanh toán MoMo...' });
+                const momoRes = await bookingRequestApi.createMomoPayment(bookingRequest.id, totalAmount);
+                if (momoRes.payUrl) {
+                    window.location.href = momoRes.payUrl;
+                    return;
+                } else {
+                    toast({ title: '❌ Không lấy được link MoMo, vui lòng thử lại', variant: 'error' });
+                }
+            } else {
+                toast({ title: '✅ Gửi yêu cầu thành công! Chờ admin xác nhận.' });
+            }
+
+            setBookings(prev => [...prev, { courtId: selectedCourt.id, startTime, endTime }]);
+            setShowForm(false);
+            setSelectedCourt(null);
+            setSelectedSlots([]);
+        } catch (error: any) {
+            toast({ title: `Lỗi: ${error?.response?.data?.message || 'Vui lòng thử lại'}`, variant: 'error' });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const generateCalendarDays = () => {
+        const firstDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1);
+        const lastDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0);
+        let startOffset = firstDay.getDay() - 1;
+        if (startOffset === -1) startOffset = 6;
+        const days: (Date | null)[] = [];
+        for (let i = 0; i < startOffset; i++) days.push(null);
+        for (let i = 1; i <= lastDay.getDate(); i++) days.push(new Date(viewMonth.getFullYear(), viewMonth.getMonth(), i));
+        return days;
+    };
+
+    const isSameDay = (d1: Date, d2: Date) =>
+        d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+
+    const changeMonth = (offset: number) => {
+        const newMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + offset, 1);
+        const currentM = new Date(now.getFullYear(), now.getMonth(), 1);
+        const maxM = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+        if (newMonth >= currentM && newMonth <= maxM) setViewMonth(newMonth);
+    };
+
+    const formatSelectedDate = () => {
+        const d = new Date(selectedDate);
+        const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+        return `${days[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    };
+
+    const endTimeDisplay = () => {
+        if (selectedSlots.length === 0) return '';
+        const lastSlot = selectedSlots[selectedSlots.length - 1];
+        const [h, m] = lastSlot.split(':').map(Number);
+        let newM = m + 30, newH = h;
+        if (newM >= 60) { newM = 0; newH += 1; }
+        return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
+    };
+
+    const allInventory = [...products.map(p => ({ ...p, type: 'product' as const })), ...services.map(s => ({ ...s, type: 'service' as const }))];
+
+    if (loadingVenue) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-10 h-10 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-gray-500 text-sm">Đang tải...</span>
+                </div>
+            </div>
+        );
+    }
+    if (!venue) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                <div className="text-center">
+                    <div className="text-4xl mb-2">😕</div>
+                    <div className="text-gray-600 font-medium">Không tìm thấy sân</div>
+                    <button onClick={() => navigate(-1)} className="mt-4 text-green-600 font-semibold">← Quay lại</button>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#1a5b3a] to-[#046c4e] text-white">
+                <div className="flex items-center px-4 pt-4 pb-3 gap-3">
+                    <button onClick={onClose} className="p-2 hover:bg-white/15 rounded-full transition-colors shrink-0">
+                        <ChevronLeft className="w-5 h-5" />
+                    </button>
+                    <div className="flex-1 min-w-0">
+                        <h1 className="font-bold text-base leading-tight truncate">{venue.name}</h1>
+                        <div className="flex items-center gap-1 text-green-200 text-xs mt-0.5">
+                            <MapPin className="w-3 h-3 shrink-0" />
+                            <span className="truncate">{venue.address}</span>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => {
+                            const d = new Date(selectedDate);
+                            setTempDate(d);
+                            setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                            setShowDatePicker(true);
+                        }}
+                        className="flex items-center gap-2 bg-white/15 hover:bg-white/25 transition-colors rounded-xl px-3 py-2 shrink-0"
+                    >
+                        <CalendarIcon className="w-4 h-4" />
+                        <span className="text-sm font-medium">{formatSelectedDate()}</span>
+                    </button>
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-3 px-4 pb-3 text-xs overflow-x-auto">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="w-4 h-4 rounded bg-white/80 border border-white/40" />
+                        <span className="text-green-100">Trống</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="w-4 h-4 rounded bg-[#4ade80]" />
+                        <span className="text-green-100">Đang chọn</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="w-4 h-4 rounded bg-red-400" />
+                        <span className="text-green-100">Đã đặt</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="w-4 h-4 rounded bg-white/20" />
+                        <span className="text-green-100">Đã qua</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Court Grid */}
+            <div className="flex-1 overflow-hidden">
+                {loading ? (
+                    <div className="flex items-center justify-center h-64">
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-8 h-8 border-4 border-green-600 border-t-transparent rounded-full animate-spin" />
+                            <span className="text-gray-400 text-sm">Đang tải lịch...</span>
+                        </div>
+                    </div>
+                ) : courts.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-64 gap-3">
+                        <div className="text-5xl">🏸</div>
+                        <div className="text-gray-500 font-medium">Chưa có sân nào</div>
+                    </div>
+                ) : (
+                    <div className="overflow-auto h-full" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                        {/* Time header row - sticky */}
+                        <div className="flex sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
+                            <div className="w-[72px] shrink-0 border-r border-gray-200 bg-white" />
+                            <div className="flex overflow-hidden">
+                                {TIME_SLOTS.map(t => (
+                                    <div
+                                        key={t}
+                                        className={`w-10 shrink-0 text-center py-2 border-r border-gray-100 ${t.endsWith(':00') ? 'bg-green-50' : 'bg-white'}`}
+                                    >
+                                        {t.endsWith(':00') && (
+                                            <span className="text-[9px] text-green-700 font-bold">{t}</span>
+                                        )}
+                                        {t.endsWith(':30') && (
+                                            <span className="text-[8px] text-gray-300">·</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Court rows */}
+                        {courts.map((court, idx) => (
+                            <div key={court.id} className={`flex border-b border-gray-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                                {/* Court label - sticky left */}
+                                <div className="w-[72px] shrink-0 sticky left-0 z-10 flex items-center justify-center border-r border-gray-200 bg-inherit py-2 px-1">
+                                    <div className="text-center">
+                                        <div className="text-xs font-bold text-green-800 leading-tight">{court.name}</div>
+                                        <div className={`w-2 h-2 rounded-full mx-auto mt-1 ${court.status === 'ACTIVE' ? 'bg-green-400' : 'bg-gray-300'}`} />
+                                    </div>
+                                </div>
+
+                                {/* Slots */}
+                                <div className="flex">
+                                    {TIME_SLOTS.map(time => {
+                                        const status = getSlotStatus(court.id, time);
+                                        const isSelected = selectedCourt?.id === court.id && selectedSlots.includes(time);
+
+                                        let slotClass = 'w-10 h-12 shrink-0 border-r border-b border-gray-100 transition-all ';
+                                        if (status === 'past') slotClass += 'bg-gray-100 cursor-not-allowed';
+                                        else if (status === 'booked') slotClass += 'bg-red-100 cursor-not-allowed';
+                                        else if (isSelected) slotClass += 'bg-[#4ade80] shadow-inner cursor-pointer';
+                                        else slotClass += 'bg-white hover:bg-green-50 cursor-pointer active:bg-green-100';
+
+                                        if (time.endsWith(':00') && status === 'available' && !isSelected) {
+                                            slotClass += ' border-l border-l-green-100';
+                                        }
+
+                                        return (
+                                            <div
+                                                key={`${court.id}-${time}`}
+                                                onClick={() => handleSlotClick(court, time)}
+                                                className={slotClass}
+                                                title={`${court.name} - ${time}`}
+                                            >
+                                                {status === 'booked' && time.endsWith(':00') && (
+                                                    <div className="h-full w-full flex items-center justify-center">
+                                                        <div className="w-1 h-1 rounded-full bg-red-400" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+
+                        <div className="h-4" />
+                    </div>
+                )}
+            </div>
+
+            {/* Inventory section - collapsible */}
+            {allInventory.length > 0 && (
+                <div className="bg-white border-t border-gray-100">
+                    <button
+                        onClick={() => setShowInventory(!showInventory)}
+                        className="w-full flex items-center justify-between px-4 py-3"
+                    >
+                        <div className="flex items-center gap-2">
+                            <ShoppingBag className="w-4 h-4 text-green-600" />
+                            <span className="text-sm font-semibold text-gray-700">Dịch vụ đi kèm</span>
+                            {orderedItems.length > 0 && (
+                                <span className="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                                    {orderedItems.reduce((s, i) => s + i.quantity, 0)}
+                                </span>
+                            )}
+                        </div>
+                        <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showInventory ? 'rotate-90' : ''}`} />
+                    </button>
+
+                    {showInventory && (
+                        <div className="px-4 pb-3">
+                            <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1">
+                                {allInventory.map(item => {
+                                    const ordered = orderedItems.find(o => o.id === item.id);
+                                    const quantity = ordered?.quantity || 0;
+                                    return (
+                                        <div key={item.id} className="min-w-[200px] shrink-0 bg-gray-50 border border-gray-100 rounded-2xl p-3 flex flex-col gap-2">
+                                            <div>
+                                                <div className="font-semibold text-gray-800 text-sm">{item.name}</div>
+                                                <div className="text-green-600 font-bold text-sm">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price)}</div>
+                                            </div>
+                                            <div className="flex items-center gap-2 justify-end">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (quantity > 1) setOrderedItems(orderedItems.map(o => o.id === item.id ? { ...o, quantity: o.quantity - 1 } : o));
+                                                        else if (quantity === 1) setOrderedItems(orderedItems.filter(o => o.id !== item.id));
+                                                    }}
+                                                    className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-600 hover:bg-gray-100 shadow-sm"
+                                                >
+                                                    <Minus className="w-3 h-3" />
+                                                </button>
+                                                <span className="w-5 text-center font-bold text-sm">{quantity}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        if (quantity > 0) setOrderedItems(orderedItems.map(o => o.id === item.id ? { ...o, quantity: o.quantity + 1 } : o));
+                                                        else setOrderedItems([...orderedItems, { id: item.id, name: item.name, price: item.price, quantity: 1, type: item.type }]);
+                                                    }}
+                                                    className="w-7 h-7 rounded-full bg-green-500 flex items-center justify-center text-white hover:bg-green-600 shadow-sm"
+                                                >
+                                                    <Plus className="w-3 h-3" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Bottom action bar */}
+            <div className="bg-white border-t border-gray-100 px-4 pt-3 pb-20 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+                {selectedCourt && selectedSlots.length > 0 ? (
+                    <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-bold text-gray-800">{selectedCourt.name}</span>
+                                <span className="text-xs text-gray-400">·</span>
+                                <div className="flex items-center gap-1 text-gray-500 text-xs">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{selectedSlots[0]} – {endTimeDisplay()}</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[#046c4e] font-bold text-base">
+                                    {totalAmount.toLocaleString('vi-VN')} đ
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                    ({Math.floor((selectedSlots.length * 30) / 60)}h{(selectedSlots.length * 30) % 60 === 0 ? '' : '30'})
+                                </span>
+                            </div>
+                            {orderedItems.length > 0 && (
+                                <div className="text-xs text-green-600 truncate mt-0.5">
+                                    + {orderedItems.map(i => `${i.name} x${i.quantity}`).join(', ')}
+                                </div>
+                            )}
+                        </div>
+                        <button
+                            onClick={handleProceed}
+                            className="bg-[#046c4e] hover:bg-green-800 active:scale-95 text-white font-bold text-sm px-5 py-3 rounded-2xl transition-all shadow-md shadow-green-900/20 shrink-0"
+                        >
+                            Tiếp theo →
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-400">Chọn giờ trên lịch để đặt sân</p>
+                        <button
+                            disabled
+                            className="bg-gray-200 text-gray-400 font-bold text-sm px-5 py-3 rounded-2xl cursor-not-allowed"
+                        >
+                            Tiếp theo →
+                        </button>
+                    </div>
+                )}
+            </div>
+
+            {/* Booking Form Modal */}
+            {showForm && selectedCourt && (
+                <div className="fixed inset-0 z-[110] bg-black/50 backdrop-blur-sm flex items-end justify-center p-0 sm:items-center sm:p-4">
+                    <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md overflow-hidden max-h-[90vh] flex flex-col">
+                        {/* Modal Header */}
+                        <div className="px-5 pt-5 pb-4 border-b border-gray-100 flex items-center justify-between shrink-0">
+                            <h3 className="font-bold text-lg text-gray-900">Xác nhận đặt sân</h3>
+                            <button onClick={() => setShowForm(false)} className="p-1.5 hover:bg-gray-100 rounded-full transition-colors">
+                                <X className="w-5 h-5 text-gray-500" />
+                            </button>
+                        </div>
+
+                        <div className="overflow-y-auto flex-1">
+                            <form onSubmit={handleBookingSubmit} className="px-5 py-4 space-y-4">
+                                {/* Booking summary */}
+                                <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-4 space-y-2">
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Sân</span>
+                                        <span className="font-semibold text-gray-800">{selectedCourt.name}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Ngày</span>
+                                        <span className="font-semibold text-gray-800">{formatSelectedDate()}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                        <span className="text-gray-500">Giờ chơi</span>
+                                        <span className="font-semibold text-gray-800">{selectedSlots[0]} – {endTimeDisplay()}</span>
+                                    </div>
+                                    {orderedItems.length > 0 && (
+                                        <div className="border-t border-green-200 pt-2 space-y-1">
+                                            {orderedItems.map(item => (
+                                                <div key={item.id} className="flex justify-between text-sm">
+                                                    <span className="text-gray-500">{item.name} x{item.quantity}</span>
+                                                    <span className="font-medium text-gray-700">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.price * item.quantity)}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="border-t border-green-200 pt-2 flex justify-between items-center">
+                                        <span className="font-semibold text-gray-700">Tổng cộng</span>
+                                        <span className="font-bold text-lg text-[#046c4e]">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalAmount)}</span>
+                                    </div>
+                                </div>
+
+                                {/* Form fields */}
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="text-sm font-semibold text-gray-700 mb-1 block">Họ và tên *</label>
+                                        <input
+                                            required
+                                            type="text"
+                                            value={bookingForm.name}
+                                            onChange={e => setBookingForm({ ...bookingForm, name: e.target.value })}
+                                            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
+                                            placeholder="VD: Nguyễn Văn A"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-semibold text-gray-700 mb-1 block">Số điện thoại *</label>
+                                        <input
+                                            required
+                                            type="tel"
+                                            value={bookingForm.phone}
+                                            onChange={e => setBookingForm({ ...bookingForm, phone: e.target.value })}
+                                            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
+                                            placeholder="VD: 0901234567"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-sm font-semibold text-gray-700 mb-1 block">Ghi chú <span className="font-normal text-gray-400">(tuỳ chọn)</span></label>
+                                        <textarea
+                                            value={bookingForm.notes}
+                                            onChange={e => setBookingForm({ ...bookingForm, notes: e.target.value })}
+                                            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 resize-none text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50"
+                                            rows={2}
+                                            placeholder="Ghi chú thêm..."
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Payment method */}
+                                <div>
+                                    <label className="text-sm font-semibold text-gray-700 mb-2 block">Phương thức thanh toán</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPaymentMethod('MOMO')}
+                                            className={`py-3 rounded-xl border-2 text-sm font-semibold transition-all ${paymentMethod === 'MOMO' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}
+                                        >
+                                            💳 MoMo
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPaymentMethod('DEPOSIT_TRANSFER')}
+                                            className={`py-3 rounded-xl border-2 text-sm font-semibold transition-all ${paymentMethod === 'DEPOSIT_TRANSFER' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 bg-white text-gray-500 hover:border-gray-300'}`}
+                                        >
+                                            🏦 Chuyển khoản
+                                        </button>
+                                    </div>
+
+                                    {paymentMethod === 'DEPOSIT_TRANSFER' && (
+                                        <div className="mt-4 p-4 border border-green-200 bg-green-50 rounded-xl space-y-4 animate-in fade-in slide-in-from-top-2">
+                                            <div className="text-center">
+                                                <p className="text-sm font-medium text-green-800 mb-2">Vui lòng quét mã QR để thanh toán cọc</p>
+                                                <div className="bg-white p-2 rounded-lg inline-block border border-green-200 shadow-sm mx-auto">
+                                                    {/* Fake QR using VietQR format for generic testing, replace with actual venue owner's QR later */}
+                                                    <img src={`https://img.vietqr.io/image/MB-0359850125-compact2.png?amount=${totalAmount}&addInfo=Coc%20san%20${bookingForm.phone || 'khach'}&accountName=NGUYEN%20VAN%20A`} alt="QR Thanh toán" className="w-40 h-40 object-contain" />
+                                                </div>
+                                                <div className="text-xs text-green-700 mt-2">
+                                                    Hoặc chuyển khoản đến:<br/>
+                                                    <strong>MB Bank - 0359850125</strong><br/>
+                                                    Chủ TK: NGUYEN VAN A
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="text-sm font-semibold text-gray-700 block text-center">Tải lên ảnh chụp màn hình chuyển khoản *</label>
+                                                <div className="flex items-center justify-center w-full">
+                                                    <label htmlFor="payment-proof" className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-white hover:bg-green-50 transition-colors relative overflow-hidden">
+                                                        {paymentProof ? (
+                                                            <img src={paymentProof} alt="Proof" className="w-full h-full object-contain p-1" />
+                                                        ) : (
+                                                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                                                <svg className="w-8 h-8 mb-2 text-green-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                                                                    <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                                                                </svg>
+                                                                <p className="mb-2 text-sm text-gray-500"><span className="font-semibold text-green-600">Nhấn để tải ảnh</span> hoặc kéo thả</p>
+                                                            </div>
+                                                        )}
+                                                        <input 
+                                                            id="payment-proof" 
+                                                            type="file" 
+                                                            className="hidden" 
+                                                            accept="image/*"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) {
+                                                                    if (file.size > 5 * 1024 * 1024) {
+                                                                        alert('Ảnh quá lớn. Vui lòng chọn ảnh < 5MB');
+                                                                        return;
+                                                                    }
+                                                                    const reader = new FileReader();
+                                                                    reader.onload = (ev) => {
+                                                                        if (ev.target?.result) {
+                                                                            setPaymentProof(ev.target.result as string);
+                                                                        }
+                                                                    };
+                                                                    reader.readAsDataURL(file);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button
+                                    disabled={isSubmitting}
+                                    type="submit"
+                                    className={`w-full text-white font-bold py-3.5 rounded-xl active:scale-98 transition-all shadow-md text-base ${
+                                        isSubmitting ? 'bg-gray-300 cursor-not-allowed' :
+                                        paymentMethod === 'MOMO' ? 'bg-[#ae2070] hover:bg-pink-700 shadow-pink-200' : 'bg-[#046c4e] hover:bg-green-800 shadow-green-200'
+                                    }`}
+                                >
+                                    {isSubmitting ? (
+                                        <span className="flex items-center justify-center gap-2">
+                                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Đang xử lý...
+                                        </span>
+                                    ) : paymentMethod === 'MOMO' ? '💳 Thanh toán qua MoMo' : '✅ Gửi yêu cầu đặt sân'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Date Picker Modal */}
+            {showDatePicker && (
+                <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white rounded-3xl w-full max-w-[340px] p-5 shadow-2xl">
+                        <div className="flex justify-between items-center mb-5">
+                            <button onClick={() => changeMonth(-1)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors">
+                                <ChevronLeft className="w-5 h-5" />
+                            </button>
+                            <div className="font-bold text-gray-800">
+                                Tháng {viewMonth.getMonth() + 1}/{viewMonth.getFullYear()}
+                            </div>
+                            <button onClick={() => changeMonth(1)} className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors">
+                                <ChevronRight className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-7 mb-2 text-center text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map(d => <div key={d}>{d}</div>)}
+                        </div>
+
+                        <div className="grid grid-cols-7 gap-y-1 text-center">
+                            {generateCalendarDays().map((day, i) => {
+                                if (!day) return <div key={`empty-${i}`} />;
+                                const isToday = isSameDay(day, now);
+                                const isSelected = isSameDay(day, tempDate);
+                                const isPast = day < new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                                const isBeyondNext = day > maxDate;
+                                let cls = 'w-9 h-9 mx-auto flex items-center justify-center rounded-full text-sm transition-all ';
+                                if (isPast || isBeyondNext) cls += 'text-gray-200 cursor-not-allowed';
+                                else if (isSelected) cls += 'bg-[#046c4e] text-white font-bold shadow-md';
+                                else if (isToday) cls += 'border-2 border-[#046c4e] text-[#046c4e] font-semibold';
+                                else cls += 'hover:bg-green-50 text-gray-700 cursor-pointer';
+                                return (
+                                    <button key={i} disabled={isPast || isBeyondNext} onClick={() => setTempDate(day)} className={cls}>
+                                        {day.getDate()}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex gap-3 mt-5">
+                            <button onClick={() => setShowDatePicker(false)} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors">
+                                Huỷ
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const dStr = `${tempDate.getFullYear()}-${String(tempDate.getMonth() + 1).padStart(2, '0')}-${String(tempDate.getDate()).padStart(2, '0')}`;
+                                    setSelectedDate(dStr);
+                                    setShowDatePicker(false);
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-[#046c4e] text-white font-bold text-sm hover:bg-green-800 transition-colors shadow-md"
+                            >
+                                Xác nhận
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}

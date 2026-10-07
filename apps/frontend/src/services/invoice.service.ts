@@ -69,6 +69,9 @@ export interface CreateInvoiceInput {
     discount?: number;
     discountType?: 'PERCENTAGE' | 'FIXED';
     paymentMethod?: string;
+    paymentStatus?: string;
+    paidAmount?: number;
+    depositAmount?: number;
     notes?: string;
 }
 

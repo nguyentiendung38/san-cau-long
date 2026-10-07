@@ -15,6 +15,8 @@ import chatbotRoutes from './chatbot.routes.js';
 import zaloRoutes from './zalo.routes.js';
 import bookingRequestRoutes from './booking-request.routes.js';
 import exploreContentRoutes from './explore-content.routes.js';
+import operatingHourRoutes from './operating-hour.routes.js';
+import voucherRoutes from './voucher.routes.js';
 
 const router = Router();
 
@@ -39,6 +41,8 @@ router.use('/invoices', invoiceRoutes);
 router.use('/products', productRoutes);
 router.use('/services', serviceRoutes);
 router.use('/pricing-rules', pricingRuleRoutes);
+router.use('/operating-hours', operatingHourRoutes);
+router.use('/vouchers', voucherRoutes);
 router.use('/reports', reportRoutes);
 router.use('/export', exportRoutes);
 router.use('/chatbot', chatbotRoutes);

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
     Search, MapPin, Map, CalendarCheck, Heart, User, Home, Flame, Compass, 
@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget';
-import { PortalBookingVisual } from './PortalBookingVisual';
 import { bookingRequestApi } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
 import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABELS, TYPE_ICONS } from '@/services/explore-content.service';
@@ -23,7 +22,13 @@ for (let h = 6; h <= 23; h++) {
 }
 
 export default function PortalPage() {
-    const [activeTab, setActiveTab] = useState<'home' | 'account' | 'map' | 'explore' | 'history'>('home');
+    const [searchParams] = useSearchParams();
+    const activeTab = (searchParams.get('tab') as 'home' | 'account' | 'map' | 'explore' | 'history') || 'home';
+    const navigate = useNavigate();
+
+    const setActiveTab = (tab: string) => {
+        navigate(`/trang-chu?tab=${tab}`);
+    };
     const [exploreFilter, setExploreFilter] = useState<string>('all');
     
     const [venues, setVenues] = useState<Venue[]>([]);
@@ -33,15 +38,7 @@ export default function PortalPage() {
 
 
 
-    const [viewingVenueDetail, setViewingVenueDetail] = useState<Venue | null>(null);
-    const [selectedVenue, setSelectedVenue] = useState<Venue | null>(null);
-    const [venueCourts, setVenueCourts] = useState<Court[]>([]);
-    const [loadingCourts, setLoadingCourts] = useState(false);
     
-    const [bookingCourt, setBookingCourt] = useState<Court | null>(null);
-    const [bookingForm, setBookingForm] = useState({
-        name: '', phone: '', date: '', startTime: '', endTime: '', notes: ''
-    });
 
     
     const [favToast, setFavToast] = useState<{show: boolean, isAdd: boolean, id: number}>({ show: false, isAdd: true, id: 0 });
@@ -74,10 +71,20 @@ export default function PortalPage() {
         }
     }, [favToast.id, favToast.show]);
     
-    const [isSubmitting, setIsSubmitting] = useState(false);
     
-    const navigate = useNavigate();
     const { toast } = useToast();
+    
+    useEffect(() => {
+        const paymentStatus = searchParams.get('payment');
+        if (paymentStatus === 'success') {
+            toast({ title: '✅ Đặt sân & thanh toán MoMo thành công!' });
+            searchParams.delete('payment');
+        } else if (paymentStatus === 'failed') {
+            toast({ title: '❌ Thanh toán MoMo thất bại hoặc bị hủy.', variant: 'error' });
+            searchParams.delete('payment');
+        }
+    }, [searchParams, toast]);
+    
     const queryClient = useQueryClient();
 
     const { data: exploreItems = [] } = useQuery<ExploreContent[]>({
@@ -96,78 +103,9 @@ export default function PortalPage() {
 
     const getByType = (type: ExploreContentType) => exploreItems.filter(item => item.type === type);
 
-    const handleBookingSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!selectedVenue || !bookingCourt) return;
-        
-        if (bookingForm.startTime < '06:00' || bookingForm.endTime > '23:00' || bookingForm.endTime <= bookingForm.startTime) {
-            toast({
-                title: 'Khung giờ không hợp lệ',
-                description: 'Vui lòng chọn giờ từ 06:00 đến 23:00, và giờ kết thúc phải lớn hơn giờ bắt đầu.',
-                variant: 'error',
-            });
-            return;
-        }
 
-        const now = new Date();
-        const todayString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-        const currentTimeString = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-
-        if (bookingForm.date < todayString || (bookingForm.date === todayString && bookingForm.startTime < currentTimeString)) {
-            toast({
-                title: 'Không thể chọn giờ quá khứ',
-                description: 'Vui lòng chọn khung giờ trong tương lai.',
-                variant: 'error',
-            });
-            return;
-        }
-
-        setIsSubmitting(true);
-        try {
-            await bookingRequestApi.createPublic({
-                ...bookingForm,
-                venueId: selectedVenue.id,
-                courtId: bookingCourt.id,
-            });
-            toast({
-                title: 'Gửi yêu cầu thành công!',
-                description: 'Chúng tôi sẽ liên hệ lại để xác nhận lịch đặt của bạn.',
-            });
-            localStorage.setItem('portalUserPhone', bookingForm.phone);
-            setUserPhone(bookingForm.phone);
-            queryClient.invalidateQueries({ queryKey: ['my-requests'] });
-            setBookedVenueIds(prev => {
-                if (!prev.includes(selectedVenue.id)) {
-                    const next = [...prev, selectedVenue.id];
-                    localStorage.setItem('portal_booked', JSON.stringify(next));
-                    return next;
-                }
-                return prev;
-            });
-            setBookingCourt(null);
-            setBookingForm({ name: '', phone: '', date: '', startTime: '', endTime: '', notes: '' });
-        } catch (error) {
-            toast({
-                title: 'Lỗi',
-                description: 'Đã có lỗi xảy ra, vui lòng thử lại.',
-                variant: 'error',
-            });
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    const handleSelectVenue = async (venue: Venue) => {
-        setSelectedVenue(venue);
-        setLoadingCourts(true);
-        try {
-            const res = await courtApi.getByVenue(venue.id);
-            setVenueCourts(res);
-        } catch (error) {
-            console.error('Failed to fetch courts', error);
-        } finally {
-            setLoadingCourts(false);
-        }
+    const handleSelectVenue = (venue: Venue) => {
+        navigate(`/dat-lich/${venue.id}`);
     };
 
     useEffect(() => {
@@ -258,38 +196,6 @@ export default function PortalPage() {
                 </div>
             </div>
 
-            {/* Top Header */}
-            <header className="bg-[#129b46] px-4 py-2.5 text-white sticky top-0 z-40 shadow-sm">
-                <div className="max-w-[1400px] mx-auto flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-green-100 rounded-full flex flex-col items-center justify-center text-[#129b46] font-black italic shadow-inner border border-white/20">
-                            {portalCustomerName !== 'Khách' ? portalCustomerName.charAt(0).toUpperCase() : 'K'}
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-[11px] font-medium text-green-100 tracking-wide">{getDayName()}, {formatDate()}</span>
-                            <span className="font-bold text-sm tracking-wide text-white">{portalCustomerName !== 'Khách' ? portalCustomerName : 'KHÁCH'}</span>
-                        </div>
-                    </div>
-                    
-                    <div className="flex items-center gap-2">
-                        {portalCustomerName === 'Khách' ? (
-                            <>
-                                <button onClick={() => navigate('/client-login')} className="bg-white text-[#129b46] px-5 py-1.5 rounded-full text-sm font-bold shadow-sm hover:bg-gray-50 transition">
-                                    Đăng nhập
-                                </button>
-                                <button onClick={() => navigate('/register')} className="bg-transparent border border-white text-white px-5 py-1.5 rounded-full text-sm font-bold hover:bg-white/10 transition">
-                                    Đăng kí
-                                </button>
-                            </>
-                        ) : (
-                            <button onClick={handleLogout} className="bg-white/20 hover:bg-white/30 text-white px-4 py-1.5 rounded-full text-sm font-bold transition">
-                                Đăng xuất
-                            </button>
-                        )}
-                    </div>
-                </div>
-            </header>
-
             {/* Main Content Areas */}
             {activeTab === 'home' && (
                 <div className="flex flex-col flex-1 pb-24 px-4 pt-4 max-w-[1400px] mx-auto w-full">
@@ -318,14 +224,13 @@ export default function PortalPage() {
                                 <span>Bản đồ</span>
                             </button>
                             <div className="w-px h-5 bg-gray-200 mx-1 hidden md:block"></div>
-                            <button className="flex items-center gap-1.5 hover:text-[#19b251] transition-colors whitespace-nowrap">
+                            <button onClick={() => {
+                                const savedPhone = localStorage.getItem('portalUserPhone');
+                                if (savedPhone) setUserPhone(savedPhone);
+                                setActiveTab('history');
+                            }} className="flex items-center gap-1.5 hover:text-[#19b251] transition-colors whitespace-nowrap">
                                 <CalendarCheck className="w-4 h-4" />
                                 <span>Sân đã đặt</span>
-                            </button>
-                            <div className="w-px h-5 bg-gray-200 mx-1 hidden md:block"></div>
-                            <button className="flex items-center gap-1.5 hover:text-[#19b251] transition-colors whitespace-nowrap">
-                                <Heart className="w-4 h-4" />
-                                <span>Yêu thích</span>
                             </button>
                         </div>
                     </div>
@@ -364,8 +269,6 @@ export default function PortalPage() {
                         ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                                 {filteredVenues.map((venue) => {
-                                    const isFav = favoriteVenueIds.includes(venue.id);
-                                    
                                     return (
                                         <div key={venue.id} className="group bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
                                             {/* Image Section */}
@@ -375,29 +278,6 @@ export default function PortalPage() {
                                                     alt={venue.name} 
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                                 />
-                                                
-                                                {/* Top-left Badges */}
-                                                <div className="absolute top-2.5 left-2.5 flex items-center">
-                                                    <div className="flex items-center bg-[#0d8f3e] text-white rounded-full pr-2.5 shadow-sm z-10 h-6">
-                                                        <div className="w-4 h-4 bg-white rounded-full flex items-center justify-center ml-1">
-                                                            <Star className="w-2.5 h-2.5 text-gray-400 fill-gray-400" />
-                                                        </div>
-                                                        <span className="text-[10px] font-bold ml-1 tracking-wide">Đơn ngày</span>
-                                                    </div>
-                                                    <div className="bg-[#d946ef] text-white text-[10px] font-bold px-3 py-1 rounded-r-full shadow-sm -ml-2.5 pl-4 h-6 flex items-center">
-                                                        Sự kiện
-                                                    </div>
-                                                </div>
-                                                
-                                                {/* Top-Right Buttons */}
-                                                <div className="absolute top-2.5 right-2.5 flex gap-1.5">
-                                                    <button onClick={(e) => toggleFavorite(venue.id, e)} className="w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 transition-colors">
-                                                        <Heart className={`w-3.5 h-3.5 ${isFav ? 'fill-[#ea580c] text-[#ea580c]' : 'text-[#064e3b]'}`} />
-                                                    </button>
-                                                    <button className="w-7 h-7 bg-white rounded-full flex items-center justify-center shadow-sm hover:bg-gray-50 transition-colors">
-                                                        <Navigation className="w-3.5 h-3.5 text-[#064e3b] transform rotate-45" />
-                                                    </button>
-                                                </div>
                                             </div>
                                             
                                             {/* Info Section */}
@@ -439,37 +319,8 @@ export default function PortalPage() {
                 </div>
             )}
 
-            {/* Bottom Nav */}
-            <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 flex justify-around items-end pb-[max(env(safe-area-inset-bottom),8px)] pt-2 z-50">
-                <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center w-16 group ${activeTab === 'home' ? 'text-[#19b251]' : 'text-gray-400 hover:text-[#19b251]'}`}>
-                    <Home className="w-5 h-5 mb-1" />
-                    <span className="text-[10px] font-bold">Trang chủ</span>
-                </button>
-                <button onClick={() => setActiveTab('map')} className={`flex flex-col items-center w-16 group ${activeTab === 'map' ? 'text-[#19b251]' : 'text-gray-400 hover:text-[#19b251]'}`}>
-                    <MapPin className="w-5 h-5 mb-1" />
-                    <span className="text-[10px] font-bold">Bản đồ</span>
-                </button>
-                
-                {/* Floating Khám phá button */}
-                <div className="relative -top-3">
-                    <button onClick={() => setActiveTab('explore')} className={`w-[48px] h-[48px] rounded-full flex flex-col items-center justify-center shadow-[0_4px_15px_rgba(25,178,81,0.2)] border-[1.5px] transition-all bg-white ${activeTab === 'explore' ? 'border-[#19b251] text-[#19b251]' : 'border-[#19b251]/20 text-[#19b251]'}`}>
-                        <Compass className="w-5 h-5" />
-                    </button>
-                    <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[10px] font-bold text-[#19b251] whitespace-nowrap">Khám phá</div>
-                </div>
-                
-                <button onClick={() => setActiveTab('explore')} className={`flex flex-col items-center w-16 group ${activeTab === 'explore' && exploreFilter !== 'all' ? 'text-[#19b251]' : 'text-gray-400 hover:text-[#19b251]'}`}>
-                    <Flame className="w-5 h-5 mb-1" />
-                    <span className="text-[10px] font-bold">Nổi bật</span>
-                </button>
-                <button onClick={() => setActiveTab('account')} className={`flex flex-col items-center w-16 group ${activeTab === 'account' ? 'text-[#19b251]' : 'text-gray-400 hover:text-[#19b251]'}`}>
-                    <User className="w-5 h-5 mb-1" />
-                    <span className="text-[10px] font-bold">Tài khoản</span>
-                </button>
-            </div>
-
             {/* Map View */}
-            {activeTab === 'map' && !selectedVenue && (
+            {activeTab === 'map' && (
                 <div className="flex flex-col min-h-[calc(100vh-80px)] pb-24">
                     <div className="flex-1 relative">
                         <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3826.6404207967107!2d107.60194437592682!3d16.443078629319736!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3141a165ca6ab627%3A0xf296b18480a09d08!2zVHLGsOG7nW5nIMSQ4bqhaSBo4buNYyBLaW5oIHThur8sIMSQ4bqhaSBo4buNYyBIdeG6vw!5e0!3m2!1svi!2s!4v1790410473151!5m2!1svi!2s" width="100%" height="100%" style={{ border: 0, minHeight: '80vh' }} allowFullScreen={true} loading="lazy"></iframe>
@@ -478,7 +329,7 @@ export default function PortalPage() {
             )}
 
             {/* Account View */}
-            {activeTab === 'account' && !selectedVenue && (
+            {activeTab === 'account' && (
                 <div className="flex flex-col min-h-[calc(100vh-80px)] bg-gray-50 max-w-[1400px] mx-auto w-full pb-24 px-4 pt-6">
                     <h2 className="font-bold text-2xl text-gray-800 mb-6">Tài khoản của tôi</h2>
                     
@@ -512,59 +363,30 @@ export default function PortalPage() {
                             <ChevronRight className="w-5 h-5 text-gray-400" />
                         </button>
 
-                        <button className="w-full flex items-center gap-4 p-4 border-b border-gray-50 hover:bg-gray-50 transition text-left" onClick={() => { setActiveTab('explore'); setExploreFilter('news') }}>
-                            <div className="w-10 h-10 rounded-full bg-yellow-50 flex items-center justify-center text-yellow-600">
-                                <Bell className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <h4 className="font-bold text-gray-800">Thông báo</h4>
-                                <p className="text-xs text-gray-500">Cập nhật tin tức mới nhất</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
-                        </button>
-
-                        <button className="w-full flex items-center gap-4 p-4 border-b border-gray-50 hover:bg-gray-50 transition text-left" onClick={() => { setActiveTab('explore'); setExploreFilter('course') }}>
+                        <button className="w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition text-left" onClick={() => { setActiveTab('explore'); setExploreFilter('all') }}>
                             <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
-                                <BookOpen className="w-5 h-5" />
+                                <Compass className="w-5 h-5" />
                             </div>
                             <div className="flex-1">
-                                <h4 className="font-bold text-gray-800">Khóa học</h4>
-                                <p className="text-xs text-gray-500">Các lớp học cầu lông</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
-                        </button>
-
-                        <button className="w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition text-left" onClick={() => { setActiveTab('explore'); setExploreFilter('deal') }}>
-                            <div className="w-10 h-10 rounded-full bg-pink-50 flex items-center justify-center text-pink-600">
-                                <Gift className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <h4 className="font-bold text-gray-800">Ưu đãi của tôi</h4>
-                                <p className="text-xs text-gray-500">Voucher và khuyến mãi</p>
+                                <h4 className="font-bold text-gray-800">Khám phá nội dung</h4>
+                                <p className="text-xs text-gray-500">Tin tức, khóa học, ưu đãi</p>
                             </div>
                             <ChevronRight className="w-5 h-5 text-gray-400" />
                         </button>
                     </div>
 
-                    {/* Logout Button */}
-                    {portalCustomerName !== 'Khách' ? (
-                        <button onClick={handleLogout} className="w-full bg-red-50 text-red-600 font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-red-100 transition border border-red-100">
-                            <LogOut className="w-5 h-5" />
-                            Đăng xuất
-                        </button>
-                    ) : (
-                        <button onClick={() => navigate('/client-login')} className="w-full bg-[#19b251] text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-[#129b46] transition shadow-md">
-                            <User className="w-5 h-5" />
-                            Đăng nhập
-                        </button>
-                    )}
                 </div>
             )}
 
             {/* Explore View */}
-            {activeTab === 'explore' && !selectedVenue && (
+            {activeTab === 'explore' && (
                 <div className="flex flex-col min-h-[calc(100vh-80px)] pb-24 bg-gray-50 px-4 pt-6 max-w-[1400px] mx-auto w-full">
-                    <h1 className="font-black text-2xl italic tracking-widest uppercase mb-4 text-gray-800">Khám phá nội dung</h1>
+                    <div className="flex items-center gap-3 mb-4">
+                        <button onClick={() => setActiveTab('account')} className="p-2 bg-white rounded-full shadow-sm shrink-0">
+                            <ChevronLeft className="w-5 h-5 text-gray-800" />
+                        </button>
+                        <h1 className="font-black text-2xl italic tracking-widest uppercase text-gray-800">Khám phá nội dung</h1>
+                    </div>
                     
                     {/* Filter chips */}
                     <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4 mb-2">
@@ -615,9 +437,25 @@ export default function PortalPage() {
                                         {item.description && (
                                             <p className="text-sm text-gray-500 mb-3 flex-1">{item.description}</p>
                                         )}
-                                        {item.price && (
-                                            <p className="font-black text-[#19b251] text-lg mt-auto">{item.price}</p>
-                                        )}
+                                        <div className="mt-auto pt-3 flex items-center justify-between">
+                                            {item.price ? (
+                                                <p className="font-black text-[#19b251] text-lg">{item.price}</p>
+                                            ) : <div />}
+                                            {(() => {
+                                                if (!item.metadata) return null;
+                                                try {
+                                                    const meta = JSON.parse(item.metadata);
+                                                    if (meta.actionUrl) {
+                                                        return (
+                                                            <a href={meta.actionUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-1.5 bg-[#19b251] text-white text-sm font-bold rounded-full hover:bg-[#159a45] transition-colors">
+                                                                {meta.actionText || 'Xem chi tiết'}
+                                                            </a>
+                                                        );
+                                                    }
+                                                } catch(e) {}
+                                                return null;
+                                            })()}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -627,7 +465,7 @@ export default function PortalPage() {
             )}
 
             {/* History View */}
-            {activeTab === 'history' && !selectedVenue && (
+            {activeTab === 'history' && (
                 <div className="flex flex-col min-h-[calc(100vh-80px)] pb-24 bg-gray-50 px-4 pt-6 max-w-[1400px] mx-auto w-full">
                     <div className="flex items-center gap-3 mb-6">
                         <button onClick={() => setActiveTab('account')} className="p-2 bg-white rounded-full shadow-sm">
@@ -705,6 +543,12 @@ export default function PortalPage() {
                                                 <span className="text-gray-500">Thời gian:</span>
                                                 <span className="font-semibold text-[#19b251]">{req.startTime} - {req.endTime}</span>
                                             </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-gray-500">Thanh toán:</span>
+                                                <span className={`font-semibold ${req.paymentStatus === 'PAID' ? 'text-green-600' : 'text-orange-500'}`}>
+                                                    {req.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
@@ -714,223 +558,6 @@ export default function PortalPage() {
                 </div>
             )}
 
-            {/* Modal */}
-            {viewingVenueDetail && (
-                <div className="fixed inset-0 z-[100] bg-[#f3f4f6] flex flex-col animate-in fade-in slide-in-from-bottom-10 duration-300 overflow-y-auto">
-                    
-                    {/* Banner */}
-                    <div className="relative h-[250px] w-full shrink-0">
-                        <img src="/court-a1.jpg" alt="Banner" className="w-full h-full object-cover" />
-                        <div className="absolute inset-0 bg-black/20"></div>
-                        
-                        {/* Top controls */}
-                        <div className="absolute top-4 left-4 right-4 flex justify-between items-start">
-                            <button onClick={() => setViewingVenueDetail(null)} className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md hover:bg-gray-100 transition-colors">
-                                <ChevronLeft className="w-6 h-6 text-gray-700" />
-                            </button>
-                            
-                            <div className="flex items-center gap-2">
-                                <button className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md hover:bg-gray-100 transition-colors">
-                                    <svg className="w-5 h-5 text-gray-700" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
-                                </button>
-                                <button className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md hover:bg-gray-100 transition-colors">
-                                    <Heart className="w-5 h-5 text-gray-700" />
-                                </button>
-                                <button 
-                                    onClick={() => { setSelectedVenue(viewingVenueDetail); setViewingVenueDetail(null); }}
-                                    className="px-6 h-10 bg-[#eab308] hover:bg-yellow-500 text-white font-bold rounded-full shadow-md transition-colors ml-2"
-                                >
-                                    �?t l?ch
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Info Card */}
-                    <div className="relative -mt-10 mx-4 bg-white rounded-2xl shadow-sm p-4 flex gap-4 shrink-0 border border-gray-100">
-                        <div className="w-16 h-16 rounded-full border border-gray-200 p-2 shrink-0 bg-white shadow-sm flex items-center justify-center">
-                            <img src="/court-a1.jpg" className="w-full h-full object-cover rounded-full" />
-                        </div>
-                        <div className="flex-1">
-                            <h2 className="font-bold text-[17px] text-gray-800 uppercase leading-tight mb-1">{viewingVenueDetail.name}</h2>
-                            <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-[#19b251] text-[#19b251] text-xs font-semibold bg-green-50 mb-3">
-                                <MapPin className="w-3 h-3" /> C?u l�ng
-                            </div>
-                            
-                            <div className="flex flex-col gap-2 text-sm text-gray-600">
-                                <div className="flex items-start gap-2">
-                                    <MapPin className="w-4 h-4 shrink-0 text-[#19b251] mt-0.5" />
-                                    <span>{viewingVenueDetail.address}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Clock className="w-4 h-4 shrink-0 text-[#19b251]" />
-                                    <span>{viewingVenueDetail.openTime} - {viewingVenueDetail.closeTime}</span>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <svg className="w-4 h-4 shrink-0 text-[#19b251]" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                    <span className="text-[#19b251] font-medium cursor-pointer">Li�n h?</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Tabs */}
-                    <div className="flex overflow-x-auto bg-white border-b border-gray-200 mt-4 px-4 sticky top-0 z-10 scrollbar-hide shrink-0">
-                        <button className="whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700">Thông tin</button>
-                        <button className="whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700">Gói hội viên</button>
-                        <button className="whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors border-[#19b251] text-[#19b251]">Dịch vụ</button>
-                        <button className="whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700">Hình ảnh</button>
-                        <button className="whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700">Điều khoản & quy định</button>
-                        <button className="whitespace-nowrap px-4 py-3 text-sm font-medium border-b-2 transition-colors border-transparent text-gray-500 hover:text-gray-700">Đánh giá</button>
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-4 bg-white flex-1">
-                        <h3 className="font-bold text-gray-800 text-[15px] uppercase mb-4 text-[#19b251]">BᲡNG GIÁ SÂN</h3>
-                        
-                        <div className="border border-gray-200 rounded-lg overflow-hidden">
-                            <div className="bg-white px-4 py-3 border-b border-gray-200 font-bold text-sm text-gray-800 text-center">
-                                Sân Cầu Lông
-                            </div>
-                            <table className="w-full text-sm text-center">
-                                <thead className="bg-white border-b border-gray-200 text-gray-800 font-bold">
-                                    <tr>
-                                        <th className="py-3 px-2 border-r border-gray-200 font-bold">Thứ</th>
-                                        <th className="py-3 px-2 border-r border-gray-200 font-bold">Khung giờ</th>
-                                        <th className="py-3 px-2 border-b border-gray-200 font-bold">Cố định</th>
-                                        <th className="py-3 px-2 font-bold">Vãng lai</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="text-gray-600 bg-white">
-                                    {/* T2 - T6 */}
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 font-medium align-middle" rowSpan={4}>T2 - T6</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">9h - 15h</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">45.000 �</td>
-                                        <td className="py-3 px-2 border-b border-gray-200">50.000 �</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">17h - 19h30</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">90.000 �</td>
-                                        <td className="py-3 px-2 border-b border-gray-200">95.000 �</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">19h30 - 21h30</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">85.000 �</td>
-                                        <td className="py-3 px-2 border-b border-gray-200">90.000 �</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200">21h30 - 23h30</td>
-                                        <td className="py-3 px-2 border-r border-gray-200">55.000 �</td>
-                                        <td className="py-3 px-2">60.000 �</td>
-                                    </tr>
-
-                                    {/* T2 - CN */}
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 font-medium align-middle" rowSpan={2}>T2 - CN</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">5h - 9h</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">55.000 �</td>
-                                        <td className="py-3 px-2 border-b border-gray-200">60.000 �</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200">15h - 17h</td>
-                                        <td className="py-3 px-2 border-r border-gray-200">60.000 �</td>
-                                        <td className="py-3 px-2">65.000 �</td>
-                                    </tr>
-
-                                    {/* T7 - CN */}
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 font-medium align-middle" rowSpan={3}>T7 - CN</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">9h - 15h</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">50.000 �</td>
-                                        <td className="py-3 px-2 border-b border-gray-200">55.000 �</td>
-                                    </tr>
-                                    <tr className="border-b border-gray-200">
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">17h - 21h30</td>
-                                        <td className="py-3 px-2 border-r border-gray-200 border-b border-gray-200">85.000 �</td>
-                                        <td className="py-3 px-2 border-b border-gray-200">87.500 �</td>
-                                    </tr>
-                                    <tr className="">
-                                        <td className="py-3 px-2 border-r border-gray-200">21h30 - 23h30</td>
-                                        <td className="py-3 px-2 border-r border-gray-200">50.000 �</td>
-                                        <td className="py-3 px-2">55.000 �</td>
-                                    </tr>
-                                </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {bookingCourt && viewingVenueDetail && (
-                    <PortalBookingVisual venue={viewingVenueDetail} onClose={() => setBookingCourt(null)} />
-                )}
-            </div>
-        )}
-
-        {/* Booking Modal (Old List of Courts) */}
-            {selectedVenue && (
-                <div className="fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in slide-in-from-bottom-10 duration-300">
-                    <div className="flex items-center gap-4 p-4 border-b border-gray-100 bg-white shadow-sm">
-                        <button onClick={() => setSelectedVenue(null)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors">
-                            <X className="w-6 h-6 text-gray-600" />
-                        </button>
-                        <div>
-                            <h2 className="font-bold text-lg text-gray-800 leading-tight">{selectedVenue.name}</h2>
-                            <p className="text-sm text-gray-500">{selectedVenue.address}</p>
-                        </div>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
-                        <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
-                            <MapPin className="w-5 h-5 text-[#19b251]" />
-                            Danh sách sân trống
-                        </h3>
-                        
-                        {loadingCourts ? (
-                            <div className="flex justify-center p-10"><div className="w-8 h-8 border-4 border-[#19b251] border-t-transparent rounded-full animate-spin"></div></div>
-                        ) : venueCourts.length === 0 ? (
-                            <div className="text-center p-10 bg-white rounded-xl shadow-sm border border-gray-100">
-                                <p className="text-gray-500">Chưa có dữ liệu sân.</p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                                {venueCourts.map(court => (
-                                    <div key={court.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex flex-col gap-3 hover:shadow-md transition-shadow overflow-hidden">
-                                        <div className="-mt-4 -mx-4 mb-0 h-40 sm:h-36 bg-gray-100 relative">
-                                            <img 
-                                                src={
-                                                    court.name.includes('A1') ? '/court-a1.jpg' : 
-                                                    court.name.includes('A2') ? '/court-a2.jpg' : 
-                                                    court.name.includes('A3') ? '/court-a3.jpg' : 
-                                                    court.name.includes('A4') ? '/court-a4.jpg' : 
-                                                    '/court-a1.jpg'
-                                                }
-                                                alt={court.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <div className="absolute top-3 right-3">
-                                                <span className="text-[10px] font-bold px-2.5 py-1.5 bg-green-100/90 backdrop-blur-sm text-[#19b251] rounded-lg border border-green-200">SẴN SÀNG</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex justify-between items-start mt-1">
-                                            <div>
-                                                <h4 className="font-bold text-gray-800 text-lg">{court.name}</h4>
-                                                <p className="text-xs text-gray-500 mt-0.5">{court.description || 'Sân tiêu chuẩn thi đấu'}</p>
-                                            </div>
-                                        </div>
-                                        <button onClick={() => setBookingCourt(court)} className="w-full bg-[#19b251] hover:bg-green-600 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors mt-1 shadow-sm">
-                                            Chọn giờ & Đặt sân
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    
-                    {bookingCourt && selectedVenue && (
-                        <PortalBookingVisual venue={selectedVenue} onClose={() => setBookingCourt(null)} />
-                    )}
-                </div>
-            )}
 
 <ChatBotWidget />
         </div>
