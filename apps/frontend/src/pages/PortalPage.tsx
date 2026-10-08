@@ -21,9 +21,42 @@ for (let h = 6; h <= 23; h++) {
     }
 }
 
+
+const getOperatingStatus = (venue: any) => {
+    if (!venue.operatingHours || venue.operatingHours.length === 0) {
+        return { text: "Chưa cập nhật giờ", isOpen: false };
+    }
+    let minH = 24, minM = 59;
+    let maxH = 0, maxM = 0;
+    
+    venue.operatingHours.forEach((oh: any) => {
+        const [sH, sM] = oh.startTime.split(':').map(Number);
+        const [eH, eM] = oh.endTime.split(':').map(Number);
+        
+        if (sH < minH || (sH === minH && sM < minM)) { minH = sH; minM = sM; }
+        if (eH > maxH || (eH === maxH && eM > maxM)) { maxH = eH; maxM = eM; }
+    });
+    
+    const now = new Date();
+    const currH = now.getHours();
+    const currM = now.getMinutes();
+    
+    const startMins = minH * 60 + minM;
+    const endMins = maxH * 60 + maxM;
+    const currMins = currH * 60 + currM;
+    
+    const isOpen = currMins >= startMins && currMins <= endMins;
+    
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return {
+        text: `${pad(minH)}:${pad(minM)} - ${pad(maxH)}:${pad(maxM)}`,
+        isOpen
+    };
+};
+
 export default function PortalPage() {
     const [searchParams] = useSearchParams();
-    const activeTab = (searchParams.get('tab') as 'home' | 'account' | 'map' | 'explore' | 'history') || 'home';
+    const activeTab = (searchParams.get('tab') as 'home' | 'account' | 'map' | 'explore' | 'history' | 'featured_courts') || 'home';
     const navigate = useNavigate();
 
     const setActiveTab = (tab: string) => {
@@ -143,6 +176,19 @@ export default function PortalPage() {
         }
         return true;
     });
+
+    const filteredCourts = venues.flatMap(v => {
+        return (v.courts || []).map(c => ({
+            ...c,
+            venue: v
+        }));
+    }).filter(c => {
+        const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            (c.venue.name && c.venue.name.toLowerCase().includes(searchQuery.toLowerCase()));
+        if (!matchesSearch) return false;
+        return true;
+    });
+
 
     const now = new Date();
     const todayString = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -296,10 +342,23 @@ export default function PortalPage() {
                                                         <span className="font-medium text-[#f97316] shrink-0">(74.0km)</span>
                                                         <span className="text-gray-500 line-clamp-1">{venue.address}</span>
                                                     </div>
-                                                    <div className="flex items-center gap-1 mt-0.5 text-[#064e3b] text-[11px] font-medium">
-                                                        <Clock className="w-3 h-3" />
-                                                        <span>05:00 - 23:30</span>
-                                                    </div>
+                                                    
+                                                    {(() => {
+                                                        const status = getOperatingStatus(venue);
+                                                        return (
+                                                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-medium">
+                                                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${status.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                                    <div className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
+                                                                    <span>{status.isOpen ? 'Đang mở cửa' : 'Đóng cửa'}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1 text-gray-500">
+                                                                    <Clock className="w-3 h-3" />
+                                                                    <span>{status.text}</span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
+
                                                 </div>
                                                 
                                                 {/* Direct Booking Button */}
@@ -363,16 +422,7 @@ export default function PortalPage() {
                             <ChevronRight className="w-5 h-5 text-gray-400" />
                         </button>
 
-                        <button className="w-full flex items-center gap-4 p-4 hover:bg-gray-50 transition text-left" onClick={() => { setActiveTab('explore'); setExploreFilter('all') }}>
-                            <div className="w-10 h-10 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
-                                <Compass className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1">
-                                <h4 className="font-bold text-gray-800">Khám phá nội dung</h4>
-                                <p className="text-xs text-gray-500">Tin tức, khóa học, ưu đãi</p>
-                            </div>
-                            <ChevronRight className="w-5 h-5 text-gray-400" />
-                        </button>
+                        
                     </div>
 
                 </div>
@@ -400,7 +450,7 @@ export default function PortalPage() {
                         >
                             Tất cả
                         </button>
-                        {(['EVENT', 'MEMBERSHIP', 'COURSE', 'NEWS', 'DEAL', 'PASS'] as ExploreContentType[]).map(type => (
+                        {(['EVENT', 'COURSE', 'NEWS', 'DEAL', 'PASS'] as ExploreContentType[]).map(type => (
                             <button
                                 key={type}
                                 onClick={() => setExploreFilter(type.toLowerCase())}
@@ -463,6 +513,77 @@ export default function PortalPage() {
                     </div>
                 </div>
             )}
+
+            
+            {/* Featured Courts View */}
+            {activeTab === 'featured_courts' && (
+                <div className="flex flex-col min-h-[calc(100vh-80px)] pb-24 bg-gray-50 px-4 pt-6 max-w-[1400px] mx-auto w-full">
+                    <div className="flex items-center gap-3 mb-6">
+                        <button onClick={() => setActiveTab('home')} className="p-2 bg-white rounded-full shadow-sm">
+                            <ChevronLeft className="w-5 h-5 text-gray-800" />
+                        </button>
+                        <h1 className="font-black text-2xl tracking-tight text-gray-800">Sân Nổi Bật</h1>
+                    </div>
+                    
+                    <div className="flex-1">
+                        {loading ? (
+                            <div className="flex justify-center py-20">
+                                <div className="w-8 h-8 border-4 border-[#19b251] border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                        ) : filteredCourts.length === 0 ? (
+                            <div className="text-center py-12 bg-white rounded-2xl border border-gray-100">
+                                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <Flame className="w-6 h-6 text-gray-400" />
+                                </div>
+                                <p className="text-gray-500 font-medium">Chưa có sân nào</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                {filteredCourts.map((court) => {
+                                    return (
+                                        <div key={court.id} className="group bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
+                                            <div className="h-40 relative bg-gray-100 cursor-pointer overflow-hidden border-b border-gray-100" onClick={() => handleSelectVenue(court.venue)}>
+                                                <img 
+                                                    src={court.venue.logo || "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=800"} 
+                                                    alt={court.name} 
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                                />
+                                                <div className="absolute top-3 left-3 bg-[#ff4757] text-white text-[10px] font-black px-2 py-1 rounded shadow-sm uppercase">HOT</div>
+                                            </div>
+                                            
+                                            <div className="flex items-center gap-3 p-3.5">
+                                                <div className="w-10 h-10 shrink-0 bg-white rounded-full border border-gray-100 flex items-center justify-center overflow-hidden text-2xl">
+                                                    🏸
+                                                </div>
+                                                
+                                                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                                    <h4 className="font-bold text-[#064e3b] text-base line-clamp-1 cursor-pointer hover:text-[#19b251] transition-colors" onClick={() => handleSelectVenue(court.venue)}>
+                                                        {court.name}
+                                                    </h4>
+                                                    <div className="flex items-center gap-1 mt-0.5 text-[11px]">
+                                                        <span className="text-gray-500 font-bold line-clamp-1">{court.venue.name}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 mt-0.5 text-[#064e3b] text-[11px] font-medium">
+                                                        <MapPin className="w-3 h-3 shrink-0" />
+                                                        <span className="line-clamp-1">{court.venue.address}</span>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className="shrink-0">
+                                                    <button onClick={() => handleSelectVenue(court.venue)} className="w-10 h-10 rounded-full bg-[#f0fdf4] text-[#19b251] flex items-center justify-center hover:bg-[#19b251] hover:text-white transition-colors">
+                                                        <ChevronRight className="w-5 h-5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
 
             {/* History View */}
             {activeTab === 'history' && (

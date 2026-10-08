@@ -116,22 +116,11 @@ export function AppLayout({ children }: AppLayoutProps) {
                         </div>
                     </div>
 
-                    {/* Search - hidden on mobile */}
-                    <div className="hidden md:block w-80">
-                        <Input
-                            placeholder="Tìm kiếm..."
-                            icon={<Search className="w-4 h-4" />}
-                        />
-                    </div>
+                    
 
                     {/* Right side */}
-                    <div className="flex items-center gap-2 md:gap-4">
-                        {/* Venue selector - hidden on mobile */}
-                        <Button variant="secondary" size="sm" className="hidden sm:flex gap-2">
-                            <span className="hidden lg:inline">Sân cầu lông HUE</span>
-                            <span className="lg:hidden">Cơ sở</span>
-                            <ChevronDown className="w-4 h-4" />
-                        </Button>
+                    <div className="flex items-center gap-2 md:gap-4 ml-auto">
+                        
 
                         {/* Notifications */}
                         <NotificationDropdown />

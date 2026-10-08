@@ -1,6 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { 
     ChevronLeft, Clock, MapPin, 
     Phone, User, ShoppingBag, ChevronRight, Info, X
@@ -12,26 +11,44 @@ import { bookingRequestApi } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
 import { format, isSameDay } from 'date-fns';
-import api from '@/services/api';
 import { voucherApi } from '@/services/voucher.service';
 
 interface Court { id: string; name: string; status: string; }
 interface Product { id: string; name: string; price: number; stock: number; image?: string; }
 interface Service { id: string; name: string; price: number; }
 
-const TIME_SLOTS = Array.from({ length: 32 }, (_, i) => {
-    const hour = Math.floor(i / 2) + 6;
-    const min = i % 2 === 0 ? '00' : '30';
-    return `${hour.toString().padStart(2, '0')}:${min}`;
-});
+const getNextHalfHour = (time: string) => {
+    const [hour, minute] = time.split(':').map(Number);
+    const nextMinute = minute + 30;
+    const nextHour = hour + (nextMinute >= 60 ? 1 : 0);
+    return `${String(nextHour).padStart(2, '0')}:${String(nextMinute % 60).padStart(2, '0')}`;
+};
+
+const getDurationLabel = (startTime: string, endTime: string) => {
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
+    const hours = Math.floor(minutes / 60);
+    const remainingMinutes = minutes % 60;
+    return [
+        hours > 0 ? `${hours} giờ` : '',
+        remainingMinutes > 0 ? `${remainingMinutes} phút` : '',
+    ].filter(Boolean).join(' ');
+};
+
+
 
 export default function PortalBookingVisual() {
     const { venueId, courtId } = useParams();
     const navigate = useNavigate();
     const { toast } = useToast();
-    const queryClient = useQueryClient();
 
     const [venue, setVenue] = useState<any>(null);
+
+    
+    
+
+
     const [courts, setCourts] = useState<Court[]>([]);
     const [bookings, setBookings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -42,6 +59,28 @@ export default function PortalBookingVisual() {
     const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
     const [showPricing, setShowPricing] = useState(false);
     const [operatingHours, setOperatingHours] = useState<OperatingHour[]>([]);
+
+    const timeSlots = useMemo(() => {
+        if (!operatingHours || operatingHours.length === 0) {
+            return []; // User expects no slots if admin hasn't set any
+        }
+        
+        // Generate a superset of all possible slots from all active hours across any day
+        // (visibleSlots will filter them per day)
+        let slots = new Set<string>();
+        operatingHours.forEach((oh) => {
+            const [startHour, startMin] = oh.startTime.split(':').map(Number);
+            const [endHour, endMin] = oh.endTime.split(':').map(Number);
+            const startTotalMinutes = startHour * 60 + startMin;
+            const endTotalMinutes = endHour * 60 + endMin;
+            for (let m = startTotalMinutes; m < endTotalMinutes; m += 30) {
+                const h = Math.floor(m / 60);
+                const mins = m % 60;
+                slots.add(`${h.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`);
+            }
+        });
+        return Array.from(slots).sort();
+    }, [operatingHours]);
     
     const generateCalendarDays = () => {
         const year = viewMonth.getFullYear();
@@ -152,7 +191,7 @@ export default function PortalBookingVisual() {
     }, [venue, selectedDate, courtId, toast]);
 
     const visibleSlots = useMemo(() => {
-        if (!venue) return TIME_SLOTS;
+        if (!venue) return timeSlots;
 
         const dayOfWeek = selectedDate.getDay(); // 0=Sun, 1=Mon...
         
@@ -164,15 +203,10 @@ export default function PortalBookingVisual() {
             } catch(e) { return false; }
         });
 
-        if (activeHours.length === 0) {
-            // Fallback to venue openTime/closeTime if no specific operating hours defined
-            const start = venue.openTime || '06:00';
-            const end = venue.closeTime || '23:00';
-            return TIME_SLOTS.filter(t => t >= start && t < end);
-        }
+        if (activeHours.length === 0) { return []; }
 
         // Return slots that fall within ANY of the active operating hours
-        return TIME_SLOTS.filter(time => {
+        return timeSlots.filter(time => {
             return activeHours.some(oh => time >= oh.startTime && time < oh.endTime);
         });
     }, [venue, operatingHours, selectedDate]);
@@ -213,15 +247,13 @@ export default function PortalBookingVisual() {
         const dayOfWeek = format(selectedDate, 'EEEE').toUpperCase();
         
         let total = 0;
-        for (const slot of selectedSlots) {
-            const [h, m] = slot.split(':').map(Number);
-            let nextM = m + 30;
-            let nextH = h;
-            if (nextM >= 60) { nextM = 0; nextH++; }
+        const lastSelectedSlot = selectedSlots[selectedSlots.length - 1];
+        const bookingEndTime = getNextHalfHour(lastSelectedSlot);
+        for (let slot = selectedSlots[0]; slot < bookingEndTime; slot = getNextHalfHour(slot)) {
             const slotStart = slot;
-            const slotEnd = String(nextH).padStart(2, '0') + ':' + String(nextM).padStart(2, '0');
+            const slotEnd = getNextHalfHour(slot);
             
-            let pricePerHour = 50000;
+            let pricePerHour = 0;
             if (venue.pricingRules && venue.pricingRules.length > 0) {
                 const rules = [...venue.pricingRules].sort((a: any, b: any) => b.priority - a.priority);
                 for (const rule of rules) {
@@ -307,27 +339,24 @@ export default function PortalBookingVisual() {
             }
 
             if (paymentMethod === 'MOMO') {
-                try {
-                    const { data: momoUrl } = await api.post(`/momo/create-payment`, {
-                        amount: finalAmount,
-                        orderId: bookingRequest.id,
-                        orderInfo: `Thanh toan dat san ${bookingForm.phone}`,
-                        returnUrl: `${window.location.origin}/trang-chu`
-                    });
-                    if (momoUrl) {
-                        window.location.href = momoUrl;
-                        return;
-                    }
-                } catch (e) {
-                    console.error(e);
-                    toast({ title: 'Lỗi khởi tạo MoMo. Vui lòng thanh toán tại sân.', variant: 'error' });
+                toast({ title: 'Đang chuyển sang trang thanh toán MoMo...' });
+                const { payUrl } = await bookingRequestApi.createMomoPayment(bookingRequest.id, finalAmount);
+                if (!payUrl) {
+                    throw new Error('MoMo không trả về liên kết thanh toán. Vui lòng thử lại.');
                 }
+
+                window.location.assign(payUrl);
+                return;
             }
 
             toast({ title: 'Đã gửi yêu cầu đặt sân thành công!', variant: 'success' });
             navigate('/trang-chu');
         } catch (error: any) {
-            toast({ title: error?.response?.data?.message || 'Có lỗi xảy ra', variant: 'error' });
+            toast({
+                title: paymentMethod === 'MOMO' ? 'Không thể mở thanh toán MoMo' : 'Có lỗi xảy ra',
+                description: error?.response?.data?.message || error?.message || 'Vui lòng thử lại.',
+                variant: 'error',
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -356,7 +385,7 @@ export default function PortalBookingVisual() {
     }
 
     return (
-        <div className="min-h-screen bg-gray-50 pb-48 font-sans">
+        <div className="min-h-screen bg-gray-50 pb-24 font-sans">
             {/* Header */}
             <div className="bg-gradient-to-r from-green-800 to-green-600 text-white rounded-b-3xl shadow-md px-5 pt-6 pb-8">
                 <div className="flex items-start gap-4 mb-4">
@@ -364,11 +393,15 @@ export default function PortalBookingVisual() {
                         <ChevronLeft className="w-6 h-6" />
                     </button>
                     <div className="flex-1">
-                        <h1 className="text-xl font-bold">{venue.name}</h1>
-                        <p className="text-green-100 text-sm flex items-start gap-1 mt-0.5 line-clamp-2">
-                            <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
-                            {venue.address}
-                        </p>
+                        <h1 className="text-lg font-bold flex flex-wrap items-center gap-1.5 leading-tight">
+                            <span className="text-xl">🏸</span>
+                            <span>{venue.name}</span>
+                            <span className="text-green-200/60 mx-1 hidden sm:inline">|</span>
+                            <span className="text-green-100 text-[13px] font-medium flex items-center gap-1">
+                                <MapPin className="w-3.5 h-3.5 shrink-0" />
+                                <span className="line-clamp-1">{venue.address}</span>
+                            </span>
+                        </h1>
                     </div>
                     <button onClick={() => setShowPricing(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-sm transition-colors shrink-0 border border-white/20 shadow-sm" title="Bảng giá">
                         <Info className="w-4 h-4" />
@@ -497,13 +530,14 @@ export default function PortalBookingVisual() {
                                                     disabled={status !== 'available'}
                                                     onClick={() => handleSlotClick(time)}
                                                     className={cn(
-                                                        "py-2.5 rounded-xl text-[13px] font-semibold transition-all border",
+                                                    "py-2 px-1 rounded-xl text-[11px] sm:text-xs font-semibold transition-all border flex items-center justify-center gap-0.5 whitespace-nowrap",
                                                         status === 'available' && !isSelected && "bg-white text-gray-700 border-gray-200 hover:border-green-500 hover:text-green-600",
                                                         isSelected && "bg-green-500 text-white border-green-500 shadow-sm shadow-green-200 scale-105",
                                                         (status === 'booked' || status === 'past') && "bg-gray-100 text-gray-400 border-gray-100 opacity-60 cursor-not-allowed"
                                                     )}
+                                                aria-label={`${time} đến ${getNextHalfHour(time)}`}
                                                 >
-                                                    {time}
+                                                <span>{time}-{getNextHalfHour(time)}</span>
                                                 </button>
                                             );
                                         })}
@@ -562,6 +596,65 @@ export default function PortalBookingVisual() {
                                 </div>
                             )}
 
+                            {/* Summary & Checkout Card */}
+                            {selectedSlots.length > 0 && (
+                                <div className="mt-2 mb-8 bg-white p-5 rounded-3xl shadow-sm border border-gray-100 flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                                        <div className="flex items-start gap-3">
+                                            <div className="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center shrink-0">
+                                                <span className="text-xl">🏸</span>
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-gray-800">{selectedCourt?.name}</h3>
+                                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                    <span className="text-xs font-bold text-green-700 bg-green-50 px-2 py-0.5 rounded-md">
+                                                        {selectedSlots[0]} - {getNextHalfHour(selectedSlots[selectedSlots.length - 1])}
+                                                    </span>
+                                                    <span className="text-xs text-gray-500">
+                                                        ({getDurationLabel(selectedSlots[0], getNextHalfHour(selectedSlots[selectedSlots.length - 1]))})
+                                                    </span>
+                                                    {orderedItems.length > 0 && orderedItems.map((item, idx) => (
+                                                        <span key={idx} className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                                                            {item.name} (x{item.quantity})
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                                        <div className="text-left w-full sm:w-auto">
+                                            <p className="text-[11px] text-gray-500 font-bold uppercase tracking-wide mb-1">Tổng cộng</p>
+                                            <p className="text-2xl font-black text-green-600 leading-none">
+                                                {appliedVoucher ? (
+                                                    <span className="flex items-center gap-2">
+                                                        <span className="text-lg line-through text-gray-400 font-medium">{formatCurrency(totalAmount)}</span>
+                                                        {formatCurrency(finalAmount)}
+                                                    </span>
+                                                ) : formatCurrency(totalAmount)}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => {
+                                                const token = localStorage.getItem('portalUserToken');
+                                                const phone = localStorage.getItem('portalUserPhone');
+                                                if (!token || !phone) {
+                                                    toast({ title: 'Vui lòng đăng nhập để đặt sân', variant: 'error' });
+                                                    navigate('/dang-nhap');
+                                                    return;
+                                                }
+                                                setShowForm(true);
+                                            }}
+                                            className="w-full sm:w-auto px-8 py-3.5 bg-green-600 hover:bg-green-700 active:scale-95 text-white font-bold rounded-2xl shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2"
+                                        >
+                                            Tiếp tục
+                                            <ChevronRight className="w-5 h-5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
                         </>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-12 px-4 text-center bg-white rounded-3xl shadow-sm border border-gray-100">
@@ -575,72 +668,15 @@ export default function PortalBookingVisual() {
                 </div>
             )}
 
-            {/* Bottom Action Bar */}
-            <div className="fixed bottom-[65px] left-0 right-0 p-4 bg-white border-t border-gray-100 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-40 rounded-t-3xl transition-all">
-                <div className="max-w-md mx-auto">
-                    {/* Selection Summary */}
-                    {selectedSlots.length > 0 && (
-                        <div className="flex items-center justify-between text-[13px] font-medium text-gray-500 mb-3 pb-2.5 border-b border-gray-100">
-                            <div className="flex items-center gap-1.5 truncate">
-                                <span className="font-bold text-gray-800">{selectedCourt?.name}</span>
-                                <span className="text-gray-300">•</span>
-                                <span className="text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded-md">
-                                    {selectedSlots[0]} - {selectedSlots[selectedSlots.length - 1]}
-                                </span>
-                            </div>
-                            {orderedItems.length > 0 && (
-                                <div className="shrink-0 flex items-center gap-1 text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full font-bold">
-                                    +{orderedItems.reduce((s, i) => s + i.quantity, 0)} d.vụ
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex-1">
-                            <p className="text-[11px] text-gray-500 font-bold mb-0.5 uppercase tracking-wide">Tổng cộng</p>
-                            <p className="text-2xl font-black text-green-600 leading-none">
-                                {appliedVoucher ? (
-                                    <span className="flex items-center gap-2">
-                                        <span className="text-lg line-through text-gray-400 font-medium">{formatCurrency(totalAmount)}</span>
-                                        {formatCurrency(finalAmount)}
-                                    </span>
-                                ) : formatCurrency(totalAmount)}
-                            </p>
-                        </div>
-                        <button
-                            disabled={selectedSlots.length === 0}
-                            onClick={() => {
-                                const token = localStorage.getItem('portalUserToken');
-                                const phone = localStorage.getItem('portalUserPhone');
-                                if (!token || !phone) {
-                                    toast({ title: 'Vui lòng đăng nhập để đặt sân', variant: 'error' });
-                                    navigate('/dang-nhap');
-                                    return;
-                                }
-                                setShowForm(true);
-                            }}
-                            className={cn(
-                                "px-8 py-3.5 rounded-2xl font-bold text-white shadow-lg transition-all flex items-center gap-2",
-                                selectedSlots.length > 0 
-                                    ? "bg-green-600 hover:bg-green-700 shadow-green-200 active:scale-95" 
-                                    : "bg-gray-300 shadow-none cursor-not-allowed"
-                            )}
-                        >
-                            Tiếp tục
-                            <ChevronRight className="w-5 h-5" />
-                        </button>
-                    </div>
-                </div>
-            </div>
+            
 
             {/* Booking Form Modal */}
             {showForm && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
                     <div className="bg-white w-full max-w-md sm:rounded-3xl rounded-t-3xl max-h-[90dvh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-1/2">
-                        <div className="flex justify-between items-center p-5 border-b border-gray-100 shrink-0">
+                        <div className="relative flex items-center justify-center p-5 border-b border-gray-100 shrink-0">
                             <h2 className="text-xl font-black text-gray-800">Xác nhận đặt sân</h2>
-                            <button onClick={() => setShowForm(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
+                            <button onClick={() => setShowForm(false)} className="absolute right-4 p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
                                 X
                             </button>
                         </div>
@@ -657,8 +693,20 @@ export default function PortalBookingVisual() {
                                 </div>
                                 <div className="flex items-center gap-2 text-green-800 font-medium text-sm mb-2">
                                     <Clock className="w-4 h-4" />
-                                    {selectedSlots[0]} - {selectedSlots[selectedSlots.length - 1]} (+30p)
+                                    {selectedSlots[0]} - {getNextHalfHour(selectedSlots[selectedSlots.length - 1])}
+                                    <span className="text-green-700/70">
+                                        ({getDurationLabel(selectedSlots[0], getNextHalfHour(selectedSlots[selectedSlots.length - 1]))})
+                                    </span>
                                 </div>
+                                {orderedItems.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 mt-3">
+                                        {orderedItems.map((item, idx) => (
+                                            <span key={idx} className="text-[11px] font-bold text-emerald-800 bg-emerald-100/50 px-2.5 py-1 rounded-md border border-emerald-200/50">
+                                                {item.name} x{item.quantity}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                                 <div className="flex items-center justify-between text-lg font-black text-green-700 mt-3 pt-3 border-t border-green-200/60">
                                     <span>Tổng cộng</span>
                                     <span>

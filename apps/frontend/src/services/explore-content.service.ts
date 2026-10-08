@@ -1,6 +1,6 @@
 import api from './api';
 
-export type ExploreContentType = 'EVENT' | 'MEMBERSHIP' | 'COURSE' | 'NEWS' | 'DEAL' | 'PASS';
+export type ExploreContentType = 'EVENT' | 'COURSE' | 'NEWS' | 'DEAL' | 'PASS';
 
 export interface ExploreContent {
     id: string;
@@ -35,7 +35,6 @@ export interface ExploreContentInput {
 
 export const TYPE_LABELS: Record<ExploreContentType, string> = {
     EVENT: 'Sự kiện',
-    MEMBERSHIP: 'Gói hội viên',
     COURSE: 'Khóa học',
     NEWS: 'Thông báo',
     DEAL: 'Ưu đãi',
@@ -44,7 +43,6 @@ export const TYPE_LABELS: Record<ExploreContentType, string> = {
 
 export const TYPE_ICONS: Record<ExploreContentType, string> = {
     EVENT: '🎉',
-    MEMBERSHIP: '👑',
     COURSE: '📖',
     NEWS: '🔔',
     DEAL: '🎁',

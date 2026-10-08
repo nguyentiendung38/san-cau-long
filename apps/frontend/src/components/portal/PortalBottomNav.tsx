@@ -47,7 +47,7 @@ export function PortalBottomNav() {
                 <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[10px] font-bold text-[#19b251] whitespace-nowrap">Khám phá</div>
             </div>
             
-            <button onClick={() => handleTabClick('explore', 'hot')} className={`flex flex-col items-center w-16 group ${activeTab === 'explore' && exploreFilter !== 'all' ? 'text-[#19b251]' : 'text-gray-400 hover:text-[#19b251]'}`}>
+            <button onClick={() => handleTabClick('featured_courts')} className={`flex flex-col items-center w-16 group ${activeTab === 'featured_courts' ? 'text-[#19b251]' : 'text-gray-400 hover:text-[#19b251]'}`}>
                 <Flame className="w-5 h-5 mb-1" />
                 <span className="text-[10px] font-bold">Nổi bật</span>
             </button>

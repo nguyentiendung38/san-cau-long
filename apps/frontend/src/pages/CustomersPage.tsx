@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { customerApi, Customer, CreateCustomerInput } from '@/services/customer.service';
 import { useToast } from '@/hooks/use-toast';
 
@@ -48,6 +49,7 @@ export default function CustomersPage() {
     const [page, setPage] = useState(1);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+    const [deletingCustomer, setDeletingCustomer] = useState<Customer | null>(null);
     const [formData, setFormData] = useState<CreateCustomerInput>({ name: '', phone: '' });
 
     const { toast } = useToast();
@@ -137,9 +139,7 @@ export default function CustomersPage() {
     };
 
     const handleDelete = (customer: Customer) => {
-        if (confirm(`Bạn có chắc muốn xóa khách hàng "${customer.name}"?`)) {
-            deleteMutation.mutate(customer.id);
-        }
+        setDeletingCustomer(customer);
     };
 
     return (
@@ -199,7 +199,7 @@ export default function CustomersPage() {
                     <div className="flex items-center justify-center h-64">
                         <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
                     </div>
-                ) : customersData?.data.length === 0 ? (
+                ) : (!customersData?.data || customersData.data.length === 0) ? (
                     <div className="flex flex-col items-center justify-center h-64 text-foreground-secondary">
                         <User className="w-12 h-12 mb-4 opacity-50" />
                         <p>Chưa có khách hàng nào</p>
@@ -411,6 +411,14 @@ export default function CustomersPage() {
                     </div>
                 </div>
             )}
+            <ConfirmModal
+                isOpen={!!deletingCustomer}
+                onClose={() => setDeletingCustomer(null)}
+                onConfirm={() => deletingCustomer && deleteMutation.mutate(deletingCustomer.id)}
+                title="Xóa khách hàng"
+                description={`Bạn có chắc chắn muốn xóa khách hàng "${deletingCustomer?.name}" không? Hành động này không thể hoàn tác.`}
+                confirmText="Xóa vĩnh viễn"
+            />
         </div>
     );
 }

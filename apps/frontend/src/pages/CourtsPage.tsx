@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { useToast } from '@/hooks/use-toast';
 
@@ -43,6 +44,7 @@ export default function CourtsPage() {
     const [selectedVenueId, setSelectedVenueId] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingCourt, setEditingCourt] = useState<Court | null>(null);
+    const [deletingCourt, setDeletingCourt] = useState<Court | null>(null);
     const [formData, setFormData] = useState<CourtFormData>({
         name: '',
         description: '',
@@ -57,7 +59,7 @@ export default function CourtsPage() {
     // Fetch venues
     const { data: venuesData } = useQuery({
         queryKey: ['venues'],
-        queryFn: () => venueApi.getAll({ isActive: true }),
+        queryFn: () => venueApi.getAll({}),
     });
 
     // Set first venue as default
@@ -152,9 +154,7 @@ export default function CourtsPage() {
     };
 
     const handleDelete = (court: Court) => {
-        if (confirm('Ban co chac muon xoa san "' + court.name + '"?')) {
-            deleteMutation.mutate(court.id);
-        }
+        setDeletingCourt(court);
     };
 
     const selectedVenue = venuesData?.data.find((v: Venue) => v.id === selectedVenueId);
@@ -387,6 +387,14 @@ export default function CourtsPage() {
                     </div>
                 </div>
             )}
+            <ConfirmModal
+                isOpen={!!deletingCourt}
+                onClose={() => setDeletingCourt(null)}
+                onConfirm={() => deletingCourt && deleteMutation.mutate(deletingCourt.id)}
+                title="Xóa sân"
+                description={`Bạn có chắc chắn muốn xóa sân "${deletingCourt?.name}" không? Hành động này không thể hoàn tác.`}
+                confirmText="Xóa vĩnh viễn"
+            />
         </div>
     );
 }

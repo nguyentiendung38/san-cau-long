@@ -66,7 +66,7 @@ export function PublicBookingForm({
 }: PublicBookingFormProps) {
     const [step, setStep] = useState<BookingStep>('court');
     const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
-    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`);
     const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
     const [customerInfo, setCustomerInfo] = useState({
         name: '',
@@ -268,7 +268,7 @@ export function PublicBookingForm({
                                     type="date"
                                     value={selectedDate}
                                     onChange={(e) => handleDateChange(e.target.value)}
-                                    min={new Date().toISOString().split('T')[0]}
+                                    min={`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`}
                                     className="w-full px-4 py-3 bg-background-tertiary border border-border rounded-xl"
                                 />
                             </div>

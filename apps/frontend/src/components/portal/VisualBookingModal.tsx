@@ -14,7 +14,7 @@ interface VisualBookingModalProps {
 export function VisualBookingModal({ isOpen, onClose, venue, courts, initialCourtId, onNext }: VisualBookingModalProps) {
     const [selectedDate, setSelectedDate] = useState<string>(() => {
         const today = new Date();
-        return today.toISOString().split('T')[0];
+        return `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     });
 
     const [selectedCourtId, setSelectedCourtId] = useState<string | null>(initialCourtId || null);
@@ -34,13 +34,13 @@ export function VisualBookingModal({ isOpen, onClose, venue, courts, initialCour
 
     const { minDateStr, maxDateStr, maxMonthDate, currentMonthDate } = useMemo(() => {
         const today = new Date();
-        const minStr = today.toISOString().split('T')[0];
+        const minStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         
         const currentM = new Date(today.getFullYear(), today.getMonth(), 1);
         
         const maxDate = new Date();
         maxDate.setMonth(today.getMonth() + 2);
-        const maxStr = maxDate.toISOString().split('T')[0];
+        const maxStr = `${maxDate.getFullYear()}-${String(maxDate.getMonth()+1).padStart(2, '0')}-${String(maxDate.getDate()).padStart(2, '0')}`;
         
         const maxM = new Date(today.getFullYear(), today.getMonth() + 1, 1);
         
@@ -64,7 +64,7 @@ export function VisualBookingModal({ isOpen, onClose, venue, courts, initialCour
         const now = new Date();
         const slotDate = new Date(selectedDate);
         
-        const todayStr = now.toISOString().split('T')[0];
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         if (selectedDate < todayStr) return true;
         
         if (selectedDate === todayStr) {

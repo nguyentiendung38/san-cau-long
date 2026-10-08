@@ -44,7 +44,8 @@ export function WeekView({ weekStartDate, courts, bookings, onSlotClick, onBooki
         const map: Record<string, Record<string, Booking[]>> = {};
 
         bookings.forEach(booking => {
-            const dateKey = new Date(booking.date).toISOString().split('T')[0];
+            const bd = new Date(booking.date);
+            const dateKey = `${bd.getFullYear()}-${String(bd.getMonth()+1).padStart(2, '0')}-${String(bd.getDate()).padStart(2, '0')}`;
             if (!map[dateKey]) map[dateKey] = {};
             if (!map[dateKey][booking.courtId]) map[dateKey][booking.courtId] = [];
             map[dateKey][booking.courtId].push(booking);
@@ -69,7 +70,7 @@ export function WeekView({ weekStartDate, courts, bookings, onSlotClick, onBooki
                     {/* Week grid */}
                     <div className="grid grid-cols-7 gap-1 p-2">
                         {weekDays.map((date, dayIdx) => {
-                            const dateKey = date.toISOString().split('T')[0];
+                            const dateKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                             const dayBookings = bookingsByDateAndCourt[dateKey]?.[court.id] || [];
                             const isToday = date.toDateString() === today.toDateString();
 

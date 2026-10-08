@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { invoiceApi, Invoice } from '@/services/invoice.service';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
@@ -126,6 +128,7 @@ export default function InvoicesPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [page, setPage] = useState(1);
     const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+    const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
 
     const { toast } = useToast();
     const navigate = useNavigate();
@@ -172,14 +175,27 @@ export default function InvoicesPage() {
         },
     });
 
+
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => invoiceApi.delete(id),
+        onSuccess: () => {
+            toast({ title: 'Đã xóa hóa đơn!', variant: 'success' });
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+            setSelectedInvoice(null);
+        },
+        onError: () => {
+            toast({ title: 'Lỗi khi xóa', variant: 'error' });
+        },
+    });
+
     const handleExport = async () => {
         try {
             await exportReport({
                 reportType: 'bookings',
                 format: 'csv',
                 dateRange: {
-                    start: dateRange.start.toISOString().split('T')[0],
-                    end: dateRange.end.toISOString().split('T')[0],
+                    start: `${dateRange.start.getFullYear()}-${String(dateRange.start.getMonth()+1).padStart(2, '0')}-${String(dateRange.start.getDate()).padStart(2, '0')}`,
+                    end: `${dateRange.end.getFullYear()}-${String(dateRange.end.getMonth()+1).padStart(2, '0')}-${String(dateRange.end.getDate()).padStart(2, '0')}`,
                 },
             });
             toast({ title: 'Đã xuất báo cáo!', variant: 'success' });
@@ -191,13 +207,13 @@ export default function InvoicesPage() {
     // Calculate stats
     const stats = useMemo(() => ({
         total: invoicesData?.pagination.total || 0,
-        pending: invoicesData?.data.filter(i => i.paymentStatus === 'PENDING').length || 0,
-        paid: invoicesData?.data.filter(i => i.paymentStatus === 'PAID').length || 0,
-        totalRevenue: invoicesData?.data.filter(i => i.paymentStatus === 'PAID').reduce((sum, i) => sum + i.total, 0) || 0,
+        pending: (invoicesData?.data || []).filter(i => i.paymentStatus === 'PENDING').length || 0,
+        paid: (invoicesData?.data || []).filter(i => i.paymentStatus === 'PAID').length || 0,
+        totalRevenue: (invoicesData?.data || []).filter(i => i.paymentStatus === 'PAID').reduce((sum, i) => sum + i.total, 0) || 0,
     }), [invoicesData]);
 
     // Filter by search
-    const filteredInvoices = invoicesData?.data.filter(invoice =>
+    const filteredInvoices = (invoicesData?.data || []).filter(invoice =>
         !searchQuery || invoice.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase())
     ) || [];
 
@@ -300,7 +316,7 @@ export default function InvoicesPage() {
                     <div className="flex items-center justify-center h-64">
                         <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
                     </div>
-                ) : !filteredInvoices.length ? (
+                ) : (!filteredInvoices || filteredInvoices.length === 0) ? (
                     <div className="flex flex-col items-center justify-center h-64 text-foreground-secondary">
                         <Receipt className="w-12 h-12 mb-4 opacity-50" />
                         <p>Chưa có hóa đơn nào</p>
@@ -378,6 +394,16 @@ export default function InvoicesPage() {
                                                                 </button>
                                                             </>
                                                         )}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setDeletingInvoiceId(invoice.id);
+                                                            }}
+                                                            className="p-2 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                            title="Xóa vĩnh viễn"
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-red-500" />
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -541,6 +567,15 @@ export default function InvoicesPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal
+                isOpen={!!deletingInvoiceId}
+                onClose={() => setDeletingInvoiceId(null)}
+                onConfirm={() => deletingInvoiceId && deleteMutation.mutate(deletingInvoiceId)}
+                title="Xóa hóa đơn"
+                description="Bạn có chắc chắn muốn xóa vĩnh viễn hóa đơn này không? Hành động này không thể hoàn tác."
+                confirmText="Xóa vĩnh viễn"
+            />
         </div>
     );
 }

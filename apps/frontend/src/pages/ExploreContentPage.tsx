@@ -11,7 +11,7 @@ import {
 } from '@/services/explore-content.service';
 import { useToast } from '@/hooks/use-toast';
 
-const ALL_TYPES: ExploreContentType[] = ['EVENT', 'MEMBERSHIP', 'COURSE', 'NEWS', 'DEAL', 'PASS'];
+const ALL_TYPES: ExploreContentType[] = ['EVENT', 'COURSE', 'NEWS', 'DEAL', 'PASS'];
 
 const EMPTY_FORM: ExploreContentInput & { actionText?: string; actionUrl?: string } = {
     type: 'EVENT',

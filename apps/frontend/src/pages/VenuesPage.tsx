@@ -36,6 +36,39 @@ const defaultFormData: VenueFormData = {
     closeTime: '23:00',
 };
 
+
+const getOperatingStatus = (venue: any) => {
+    if (!venue.operatingHours || venue.operatingHours.length === 0) {
+        return { text: "Chưa cập nhật giờ", isOpen: false };
+    }
+    let minH = 24, minM = 59;
+    let maxH = 0, maxM = 0;
+    
+    venue.operatingHours.forEach((oh: any) => {
+        const [sH, sM] = oh.startTime.split(':').map(Number);
+        const [eH, eM] = oh.endTime.split(':').map(Number);
+        
+        if (sH < minH || (sH === minH && sM < minM)) { minH = sH; minM = sM; }
+        if (eH > maxH || (eH === maxH && eM > maxM)) { maxH = eH; maxM = eM; }
+    });
+    
+    const now = new Date();
+    const currH = now.getHours();
+    const currM = now.getMinutes();
+    
+    const startMins = minH * 60 + minM;
+    const endMins = maxH * 60 + maxM;
+    const currMins = currH * 60 + currM;
+    
+    const isOpen = currMins >= startMins && currMins <= endMins;
+    
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return {
+        text: `${pad(minH)}:${pad(minM)} - ${pad(maxH)}:${pad(maxM)}`,
+        isOpen
+    };
+};
+
 export default function VenuesPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -151,10 +184,7 @@ export default function VenuesPage() {
                     <h1 className="text-2xl font-bold text-foreground">Quản lý cơ sở</h1>
                     <p className="text-foreground-secondary">Quản lý các cơ sở, chi nhánh của bạn</p>
                 </div>
-                <Button className="gap-2" onClick={() => handleOpenModal()}>
-                    <Plus className="w-4 h-4" />
-                    Thêm cơ sở
-                </Button>
+                
             </div>
 
             {/* Venues Grid */}
@@ -167,17 +197,14 @@ export default function VenuesPage() {
                     <Building2 className="w-12 h-12 text-foreground-muted mx-auto mb-4" />
                     <h3 className="text-lg font-medium text-foreground mb-2">Chưa có cơ sở nào</h3>
                     <p className="text-foreground-secondary mb-4">Tạo cơ sở đầu tiên để bắt đầu quản lý</p>
-                    <Button onClick={() => handleOpenModal()}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Thêm cơ sở
-                    </Button>
+                    
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {venuesData?.data.map((venue: Venue) => (
                         <div
                             key={venue.id}
-                            className="bg-background-secondary rounded-xl border border-border p-6 hover:border-primary-500/50 transition-colors"
+                            className="bg-background-secondary rounded-xl border border-border p-4 hover:border-primary-500/50 transition-colors"
                         >
                             {/* Venue Header */}
                             <div className="flex items-start justify-between mb-4">
@@ -187,31 +214,13 @@ export default function VenuesPage() {
                                     </div>
                                     <div>
                                         <h3 className="font-semibold text-foreground">{venue.name}</h3>
-                                        <span className={cn(
-                                            'text-xs px-2 py-0.5 rounded-full',
-                                            venue.isActive
-                                                ? 'bg-green-500/20 text-green-400'
-                                                : 'bg-red-500/20 text-red-400'
-                                        )}>
-                                            {venue.isActive ? 'Hoạt động' : 'Đóng cửa'}
-                                        </span>
+                                        <div className="text-xs text-foreground-muted mt-0.5">{venue._count?.courts || 0} Sân</div>
+                                        
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => handleOpenModal(venue)}
-                                        className="p-2 rounded-lg hover:bg-background-tertiary transition-colors"
-                                        title="Chỉnh sửa"
-                                    >
-                                        <Pencil className="w-4 h-4 text-foreground-secondary" />
-                                    </button>
-                                    <button
-                                        onClick={() => setDeleteConfirm(venue.id)}
-                                        className="p-2 rounded-lg hover:bg-red-500/10 transition-colors"
-                                        title="Xóa"
-                                    >
-                                        <Trash2 className="w-4 h-4 text-red-400" />
-                                    </button>
+                                    
+                                    
                                 </div>
                             </div>
 
@@ -227,29 +236,26 @@ export default function VenuesPage() {
                                         <span className="text-foreground-secondary">{venue.phone}</span>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-2">
-                                    <Clock className="w-4 h-4 text-foreground-muted" />
-                                    <span className="text-foreground-secondary">
-                                        {venue.openTime} - {venue.closeTime}
-                                    </span>
-                                </div>
+                                
+                                {(() => {
+                                    const status = getOperatingStatus(venue);
+                                    return (
+                                        <div className="flex items-center gap-2">
+                                            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${status.isOpen ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                                                <div className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-green-400' : 'bg-red-400'}`} />
+                                                {status.isOpen ? 'Đang mở cửa' : 'Đóng cửa'}
+                                            </div>
+                                            <div className="flex items-center gap-1 text-foreground-muted">
+                                                <Clock className="w-4 h-4" />
+                                                <span>{status.text}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
                             </div>
 
-                            {/* Stats */}
-                            <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 gap-4 text-center">
-                                <div>
-                                    <div className="text-2xl font-bold text-foreground">
-                                        {venue._count?.courts || 0}
-                                    </div>
-                                    <div className="text-xs text-foreground-secondary">Sân</div>
-                                </div>
-                                <div>
-                                    <div className="text-2xl font-bold text-foreground">
-                                        {venue._count?.pricingRules || 0}
-                                    </div>
-                                    <div className="text-xs text-foreground-secondary">Bảng giá</div>
-                                </div>
-                            </div>
+                            
 
                             {/* Delete Confirmation */}
                             {deleteConfirm === venue.id && (
@@ -361,7 +367,7 @@ export default function VenuesPage() {
                                     />
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="hidden grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
                                             Giờ mở cửa

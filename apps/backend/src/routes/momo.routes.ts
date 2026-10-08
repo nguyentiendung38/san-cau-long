@@ -13,9 +13,10 @@ const partnerCode = process.env.MOMO_PARTNER_CODE || 'MOMO';
 // Thay đổi redirectUrl trỏ về backend để browser kích hoạt callback cập nhật trạng thái (do MoMo server ko gọi được localhost IPN)
 const redirectUrl = process.env.MOMO_REDIRECT_URL || 'http://localhost:3000/api/momo/callback';
 const ipnUrl = process.env.MOMO_IPN_URL || 'http://localhost:3000/api/momo/callback';
+const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
 const momoApiHost = process.env.MOMO_API_HOST || 'test-payment.momo.vn';
 const momoApiPath = process.env.MOMO_API_PATH || '/v2/gateway/api/create';
-const requestType = process.env.MOMO_REQUEST_TYPE || 'captureWallet';
+const requestType = process.env.MOMO_REQUEST_TYPE || 'payWithMethod';
 
 router.post('/create-payment', async (req: Request, res: Response, next: NextFunction) => {
     try {
@@ -34,9 +35,8 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
         const realAmount = Number(booking.paymentAmount);
         const safeAmount = realAmount > 0 ? realAmount : (Number(amount) || 0);
 
-        // 'payWithMethod' cho phép MoMo hiển thị tất cả phương thức: QR, ATM, Credit Card
-        // 'captureWallet' chỉ hiện QR MoMo Wallet
-        const activeRequestType = reqTypeFromBody || 'payWithMethod';
+        // payWithMethod lets MoMo sandbox offer wallet, card, and supported bank methods.
+        const activeRequestType = reqTypeFromBody || requestType;
 
         if (safeAmount <= 0) {
             return res.status(400).json({ success: false, message: 'Amount không hợp lệ' });
@@ -52,6 +52,7 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
 
         const requestBody = JSON.stringify({
             partnerCode,
+            accessKey,
             partnerName: 'Test',
             storeId: 'MomoTestStore',
             requestId,
@@ -88,8 +89,11 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
                     if (!response || !response.payUrl) {
                         return res.status(400).json({
                             success: false,
-                            message: 'Không nhận được payUrl từ MoMo test',
-                            details: response,
+                            message: response?.message || 'Không nhận được liên kết thanh toán từ MoMo',
+                            details: {
+                                resultCode: response?.resultCode,
+                                requestId: response?.requestId,
+                            },
                         });
                     }
 
@@ -111,22 +115,22 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
 router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { resultCode, orderId: queryOrderId } = req.query;
+        const orderId = typeof queryOrderId === 'string' ? queryOrderId : '';
+
         if (resultCode !== '0') {
-            return res.redirect('http://localhost:5173/co-so?payment=failed&tab=history');
-        }
-        
-        const orderId = queryOrderId as string;
-        
-        if (orderId) {
-            try {
-                await bookingRequestService.updatePaymentStatus(orderId, 'PAID');
-                await bookingRequestService.updateStatus(orderId, 'APPROVED');
-            } catch (err) {
-                console.error('Lỗi cập nhật trạng thái khi thanh toán:', err);
+            if (orderId) {
+                await bookingRequestService.updatePaymentStatus(orderId, 'FAILED');
             }
+            return res.redirect(`${frontendUrl}/trang-chu?payment=failed`);
         }
         
-        return res.redirect('http://localhost:5173/co-so?payment=success&tab=history');
+        if (!orderId) {
+            return res.redirect(`${frontendUrl}/trang-chu?payment=failed`);
+        }
+
+        await bookingRequestService.updatePaymentStatus(orderId, 'PAID');
+        await bookingRequestService.updateStatus(orderId, 'APPROVED');
+        return res.redirect(`${frontendUrl}/trang-chu?payment=success`);
     } catch (error) {
         next(error);
     }

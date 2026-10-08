@@ -89,4 +89,14 @@ router.post('/:id/cancel', authenticate, async (req: Request, res: Response, nex
     }
 });
 
+// Delete invoice
+router.delete('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        await invoiceService.delete(req.params.id);
+        res.json({ success: true, message: 'Đã xóa hóa đơn' });
+    } catch (error) {
+        next(error);
+    }
+});
+
 export default router;

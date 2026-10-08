@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
     Settings,
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { Input } from '@/components/ui/input';
 import { venueApi, Venue } from '@/services/venue.service';
 import { pricingRuleApi, PricingRule } from '@/services/inventory.service';
@@ -32,6 +33,33 @@ interface TabProps {
     icon: React.ElementType;
     label: string;
     onClick: () => void;
+}
+
+const dayOfWeekLabels: Record<string, string> = {
+    MONDAY: 'Thứ Hai',
+    TUESDAY: 'Thứ Ba',
+    WEDNESDAY: 'Thứ Tư',
+    THURSDAY: 'Thứ Năm',
+    FRIDAY: 'Thứ Sáu',
+    SATURDAY: 'Thứ Bảy',
+    SUNDAY: 'Chủ Nhật',
+};
+const allDaysLabel = Object.values(dayOfWeekLabels).join(', ');
+const notificationSettings = [
+    { key: 'setting_notify_new_booking', label: 'Thông báo khi có đặt sân mới', defaultEnabled: true },
+    { key: 'setting_notify_booking_cancelled', label: 'Thông báo khi khách hủy sân', defaultEnabled: true },
+    { key: 'setting_notify_booking_reminder', label: 'Nhắc nhở trước giờ đặt sân', defaultEnabled: false },
+    { key: 'setting_notify_daily_report', label: 'Báo cáo doanh thu hàng ngày', defaultEnabled: true },
+    { key: 'setting_notify_email_marketing', label: 'Email marketing cho khách hàng', defaultEnabled: false },
+] as const;
+
+function getNotificationSettings() {
+    return Object.fromEntries(
+        notificationSettings.map(({ key, defaultEnabled }) => [
+            key,
+            localStorage.getItem(key) === null ? defaultEnabled : localStorage.getItem(key) === 'true',
+        ])
+    ) as Record<(typeof notificationSettings)[number]['key'], boolean>;
 }
 
 function Tab({ active, icon: Icon, label, onClick }: TabProps) {
@@ -69,6 +97,20 @@ function VenueFormModal({ isOpen, onClose, venue, onSave }: VenueFormModalProps)
         closeTime: venue?.closeTime || '23:00',
     });
     const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (isOpen) {
+            setFormData({
+                name: venue?.name || '',
+                address: venue?.address || '',
+                phone: venue?.phone || '',
+                email: venue?.email || '',
+                openTime: venue?.openTime || '06:00',
+                closeTime: venue?.closeTime || '23:00',
+            });
+            setIsSaving(false);
+        }
+    }, [venue, isOpen]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -130,8 +172,7 @@ function VenueFormModal({ isOpen, onClose, venue, onSave }: VenueFormModalProps)
                                 <Input
                                     value={formData.phone}
                                     onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-                                    placeholder="0912 345 678"
-                                    type="tel"
+                                    placeholder="0912345678"
                                 />
                             </div>
                             <div>
@@ -139,36 +180,15 @@ function VenueFormModal({ isOpen, onClose, venue, onSave }: VenueFormModalProps)
                                     Email
                                 </label>
                                 <Input
+                                    type="email"
                                     value={formData.email}
                                     onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                                    placeholder="info@example.com"
-                                    type="email"
+                                    placeholder="contact@example.com"
                                 />
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">
-                                    Giờ mở cửa
-                                </label>
-                                <Input
-                                    type="time"
-                                    value={formData.openTime}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, openTime: e.target.value }))}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">
-                                    Giờ đóng cửa
-                                </label>
-                                <Input
-                                    type="time"
-                                    value={formData.closeTime}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, closeTime: e.target.value }))}
-                                />
-                            </div>
-                        </div>
+                        
 
                         <div className="flex gap-3 pt-4 border-t border-border">
                             <Button variant="ghost" type="button" className="flex-1" onClick={onClose}>
@@ -186,8 +206,32 @@ function VenueFormModal({ isOpen, onClose, venue, onSave }: VenueFormModalProps)
     );
 }
 
+
+const getOperatingStatus = (venue: any) => {
+    if (!venue.operatingHours || venue.operatingHours.length === 0) {
+        return { text: "Chưa cập nhật giờ", isOpen: false };
+    }
+    let minH = 24, minM = 59;
+    let maxH = 0, maxM = 0;
+    
+    venue.operatingHours.forEach((oh: any) => {
+        const [sH, sM] = oh.startTime.split(':').map(Number);
+        const [eH, eM] = oh.endTime.split(':').map(Number);
+        
+        if (sH < minH || (sH === minH && sM < minM)) { minH = sH; minM = sM; }
+        if (eH > maxH || (eH === maxH && eM > maxM)) { maxH = eH; maxM = eM; }
+    });
+    
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return {
+        text: `${pad(minH)}:${pad(minM)} - ${pad(maxH)}:${pad(maxM)}`,
+        isOpen: true
+    };
+};
+
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState('venue');
+    const [notificationPreferences, setNotificationPreferences] = useState(getNotificationSettings);
     const [isVenueModalOpen, setIsVenueModalOpen] = useState(false);
     const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
     const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
@@ -201,6 +245,12 @@ export default function SettingsPage() {
         endTime: '23:00',
         daysOfWeek: '[1,2,3,4,5,6,0]', // Default all days
     });
+
+    
+    const [deletingVenue, setDeletingVenue] = useState<Venue | null>(null);
+    const [deletingPricingRule, setDeletingPricingRule] = useState<PricingRule | null>(null);
+    const [deletingOperatingHourId, setDeletingOperatingHourId] = useState<string | null>(null);
+    const [deletingVoucherId, setDeletingVoucherId] = useState<string | null>(null);
 
     const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
     const [editingVoucher, setEditingVoucher] = useState<Voucher | null>(null);
@@ -226,6 +276,18 @@ export default function SettingsPage() {
     });
     const { toast } = useToast();
     const queryClient = useQueryClient();
+
+    const updateNotificationPreference = (key: (typeof notificationSettings)[number]['key'], enabled: boolean) => {
+        localStorage.setItem(key, String(enabled));
+        setNotificationPreferences((current) => ({ ...current, [key]: enabled }));
+        window.dispatchEvent(new Event('settings_changed'));
+    };
+
+    useEffect(() => {
+        const syncNotificationPreferences = () => setNotificationPreferences(getNotificationSettings());
+        window.addEventListener('storage', syncNotificationPreferences);
+        return () => window.removeEventListener('storage', syncNotificationPreferences);
+    }, []);
 
         // Fetch venues
     const { data: venuesData, isLoading: loadingVenues } = useQuery({
@@ -305,9 +367,7 @@ export default function SettingsPage() {
     };
 
     const handleDeleteVenue = (venue: Venue) => {
-        if (confirm(`Bạn có chắc muốn xóa "${venue.name}"?`)) {
-            deleteMutation.mutate(venue.id);
-        }
+        setDeletingVenue(venue);
     };
 
     const handleSaveVenue = async (data: Partial<Venue>) => {
@@ -341,34 +401,41 @@ export default function SettingsPage() {
         const payload = {
             venueId: pricingForm.venueId,
             name: pricingForm.name.trim(),
-            description: pricingForm.description.trim() || undefined,
-            dayOfWeek: pricingForm.dayOfWeek || undefined,
-            startTime: pricingForm.startTime || undefined,
-            endTime: pricingForm.endTime || undefined,
+            description: pricingForm.description.trim() || null,
+            dayOfWeek: pricingForm.dayOfWeek || null,
+            startTime: pricingForm.startTime || null,
+            endTime: pricingForm.endTime || null,
             pricePerHour: Number(pricingForm.pricePerHour) || 0,
             priority: Number(pricingForm.priority) || 0,
         };
 
-        if (editingPricingRule) {
-            await pricingRuleApi.update(editingPricingRule.id, payload);
-            toast({ title: 'Thành công', description: 'Đã cập nhật khung giá', variant: 'success' });
-        } else {
-            await pricingRuleApi.create(payload);
-            toast({ title: 'Thành công', description: 'Đã thêm khung giá mới', variant: 'success' });
-        }
+        try {
+            if (editingPricingRule) {
+                await pricingRuleApi.update(editingPricingRule.id, payload);
+                toast({ title: 'Thành công', description: 'Đã cập nhật khung giá', variant: 'success' });
+            } else {
+                await pricingRuleApi.create(payload);
+                toast({ title: 'Thành công', description: 'Đã thêm khung giá mới', variant: 'success' });
+            }
 
-        queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
-        queryClient.invalidateQueries({ queryKey: ['venue'] });
-        setEditingPricingRule(null);
-        setIsPricingModalOpen(false);
-        resetPricingForm();
+            queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
+            queryClient.invalidateQueries({ queryKey: ['venue'] });
+            setEditingPricingRule(null);
+            setIsPricingModalOpen(false);
+            resetPricingForm();
+        } catch (error: any) {
+            toast({
+                title: 'Không thể lưu khung giá',
+                description: error?.response?.data?.message || 'Vui lòng kiểm tra thông tin và thử lại.',
+                variant: 'error',
+            });
+        }
     };
 
     const removePricingRule = async (rule: PricingRule) => {
-        if (!confirm(`Bạn có chắc muốn xóa "${rule.name}"?`)) return;
-
+        setDeletingPricingRule(rule);
         try {
-            await pricingRuleApi.delete(rule.id);
+            if (false) await pricingRuleApi.delete(rule.id);
             queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
             queryClient.invalidateQueries({ queryKey: ['venue'] });
             toast({ title: 'Đã xóa', description: 'Đã xóa khung giá thành công', variant: 'success' });
@@ -440,13 +507,15 @@ export default function SettingsPage() {
         }
         setIsOperatingHourModalOpen(false);
         queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
+        queryClient.invalidateQueries({ queryKey: ['venues'] });
     };
 
     const deleteOperatingHour = async (id: string) => {
-        if (!confirm('Bạn có chắc muốn xóa khung giờ này?')) return;
-        await operatingHourApi.delete(id);
+        setDeletingOperatingHourId(id);
+        if (false) await operatingHourApi.delete(id);
         toast({ title: 'Đã xóa khung giờ', variant: 'success' });
         queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
+        queryClient.invalidateQueries({ queryKey: ['venues'] });
     };
 
     const openVoucherModal = (voucher?: Voucher) => {
@@ -490,8 +559,8 @@ export default function SettingsPage() {
     };
 
     const deleteVoucher = async (id: string) => {
-        if (!confirm('Bạn có chắc muốn xóa mã này?')) return;
-        await voucherApi.delete(id);
+        setDeletingVoucherId(id);
+        if (false) await voucherApi.delete(id);
         toast({ title: 'Đã xóa mã ưu đãi', variant: 'success' });
         queryClient.invalidateQueries({ queryKey: ['vouchers'] });
     };
@@ -569,6 +638,8 @@ export default function SettingsPage() {
                                                         <MapPin className="w-3.5 h-3.5" />
                                                         {venue.address}
                                                     </div>
+                                                    
+
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <Button
@@ -599,10 +670,17 @@ export default function SettingsPage() {
                                                     <Mail className="w-4 h-4 text-foreground-muted" />
                                                     <span className="text-foreground">{venue.email || 'Chưa cập nhật'}</span>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Clock className="w-4 h-4 text-foreground-muted" />
-                                                    <span className="text-foreground">{venue.openTime} - {venue.closeTime}</span>
-                                                </div>
+                                                
+                                                {(() => {
+                                                    const status = getOperatingStatus(venue);
+                                                    return (
+                                                        <div className="flex items-center gap-2">
+                                                            <Clock className="w-4 h-4 text-foreground-muted" />
+                                                            <span className="text-foreground">{status.text}</span>
+                                                        </div>
+                                                    );
+                                                })()}
+
                                             </div>
                                         </div>
                                     ))}
@@ -691,17 +769,18 @@ export default function SettingsPage() {
                             ) : (
                                 <div className="space-y-3">
                                     {pricingRules.map((rule) => {
-                                        const timeRange = rule.dayOfWeek
-                                            ? `Ngày: ${rule.dayOfWeek}`
-                                            : rule.startTime && rule.endTime
-                                                ? `${rule.startTime} - ${rule.endTime}`
-                                                : 'Tất cả khung giờ';
+                                        const days = rule.dayOfWeek
+                                            ? dayOfWeekLabels[rule.dayOfWeek] || rule.dayOfWeek
+                                            : `Tất cả các ngày (${allDaysLabel})`;
+                                        const timeRange = rule.startTime && rule.endTime
+                                            ? `${rule.startTime} - ${rule.endTime}`
+                                            : 'Tất cả khung giờ';
 
                                         return (
                                             <div key={rule.id} className="flex items-center justify-between p-4 border border-border rounded-xl">
                                                 <div>
                                                     <h4 className="font-medium text-foreground">{rule.name}</h4>
-                                                    <p className="text-sm text-foreground-secondary">{timeRange}</p>
+                                                    <p className="text-sm text-foreground-secondary">{days} · {timeRange}</p>
                                                 </div>
                                                 <div className="flex items-center gap-4">
                                                     <span className="font-semibold text-primary-500">{formatCurrency(rule.pricePerHour)}/giờ</span>
@@ -773,18 +852,20 @@ export default function SettingsPage() {
                     {activeTab === 'notifications' && (
                         <div className="bg-background-secondary border border-border rounded-xl p-6">
                             <h3 className="text-lg font-semibold text-foreground mb-6">Thông báo</h3>
+                            <p className="text-sm text-foreground-secondary mb-4">
+                                Chuông báo trong ứng dụng hiện hiển thị yêu cầu đặt sân mới. Các loại thông báo khác chưa có luồng gửi tương ứng.
+                            </p>
                             <div className="space-y-4">
-                                {[
-                                    { label: 'Thông báo khi có đặt sân mới', enabled: true },
-                                    { label: 'Thông báo khi khách hủy sân', enabled: true },
-                                    { label: 'Nhắc nhở trước giờ đặt sân', enabled: false },
-                                    { label: 'Báo cáo doanh thu hàng ngày', enabled: true },
-                                    { label: 'Email marketing cho khách hàng', enabled: false },
-                                ].map((setting, i) => (
-                                    <div key={i} className="flex items-center justify-between p-4 border border-border rounded-xl">
+                                {notificationSettings.map((setting) => (
+                                    <div key={setting.key} className="flex items-center justify-between p-4 border border-border rounded-xl">
                                         <span className="text-foreground">{setting.label}</span>
                                         <label className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" defaultChecked={setting.enabled} className="sr-only peer" />
+                                            <input
+                                                type="checkbox"
+                                                checked={notificationPreferences[setting.key]}
+                                                onChange={(event) => updateNotificationPreference(setting.key, event.target.checked)}
+                                                className="sr-only peer"
+                                            />
                                             <div className="w-11 h-6 bg-background-tertiary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
                                         </label>
                                     </div>
@@ -974,7 +1055,7 @@ export default function SettingsPage() {
                                         onChange={(e) => setPricingForm(prev => ({ ...prev, dayOfWeek: e.target.value }))}
                                         className="w-full rounded-lg border border-border bg-background-tertiary px-3 py-2 text-foreground"
                                     >
-                                        <option value="">Tất cả</option>
+                                        <option value="">Tất cả các ngày</option>
                                         <option value="MONDAY">Thứ Hai</option>
                                         <option value="TUESDAY">Thứ Ba</option>
                                         <option value="WEDNESDAY">Thứ Tư</option>
@@ -983,6 +1064,9 @@ export default function SettingsPage() {
                                         <option value="SATURDAY">Thứ Bảy</option>
                                         <option value="SUNDAY">Chủ Nhật</option>
                                     </select>
+                                    <p className="mt-1 text-xs text-foreground-secondary">
+                                        Áp dụng cho: {pricingForm.dayOfWeek ? dayOfWeekLabels[pricingForm.dayOfWeek] || pricingForm.dayOfWeek : allDaysLabel}
+                                    </p>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-foreground mb-1">Ưu tiên</label>
@@ -991,6 +1075,9 @@ export default function SettingsPage() {
                                         value={pricingForm.priority}
                                         onChange={(e) => setPricingForm(prev => ({ ...prev, priority: Number(e.target.value) || 0 }))}
                                     />
+                                    <p className="mt-1 text-xs text-foreground-secondary">
+                                        Khi nhiều khung giá cùng khớp, số lớn hơn được áp dụng trước.
+                                    </p>
                                 </div>
                             </div>
 
@@ -1117,7 +1204,13 @@ export default function SettingsPage() {
                     </div>
                 </div>
             )}
+
+            <ConfirmModal isOpen={!!deletingVenue} onClose={() => setDeletingVenue(null)} onConfirm={() => deletingVenue && deleteMutation.mutate(deletingVenue.id)} title="Xóa cơ sở" description={`Bạn có chắc chắn muốn xóa "${deletingVenue?.name}"?`} confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingPricingRule} onClose={() => setDeletingPricingRule(null)} onConfirm={() => deletingPricingRule && (async () => { try { await pricingRuleApi.delete(deletingPricingRule.id); queryClient.invalidateQueries({ queryKey: ['pricing-rules'] }); toast({ title: 'Đã xóa bảng giá', variant: 'success' }); } catch(e) {} setDeletingPricingRule(null); })()} title="Xóa bảng giá" description={`Bạn có chắc chắn muốn xóa "${deletingPricingRule?.name}"?`} confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingOperatingHourId} onClose={() => setDeletingOperatingHourId(null)} onConfirm={() => deletingOperatingHourId && (async () => { try { await operatingHourApi.delete(deletingOperatingHourId); queryClient.invalidateQueries({ queryKey: ['operating-hours'] }); queryClient.invalidateQueries({ queryKey: ['venues'] });
+        queryClient.invalidateQueries({ queryKey: ['venues'] }); toast({ title: 'Đã xóa khung giờ', variant: 'success' }); } catch(e) {} setDeletingOperatingHourId(null); })()} title="Xóa khung giờ" description="Bạn có chắc chắn muốn xóa khung giờ này?" confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingVoucherId} onClose={() => setDeletingVoucherId(null)} onConfirm={() => deletingVoucherId && (async () => { try { await voucherApi.delete(deletingVoucherId); queryClient.invalidateQueries({ queryKey: ['vouchers'] }); toast({ title: 'Đã xóa mã ưu đãi', variant: 'success' }); } catch(e) {} setDeletingVoucherId(null); })()} title="Xóa mã ưu đãi" description="Bạn có chắc chắn muốn xóa mã này?" confirmText="Xóa vĩnh viễn" />
+
         </div>
     );
 }
-

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn, formatCurrency } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { customerApi } from '@/services/customer.service';
 import { CustomerBookingHistory } from '@/components/customer';
 import { useToast } from '@/hooks/use-toast';
@@ -42,6 +43,11 @@ export default function CustomerDetailPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<'history' | 'points' | 'notes'>('history');
+    const [isDeleting, setIsDeleting] = useState(false);
+    const executeDeleteCustomer = () => {
+        if (customer) deleteMutation.mutate(customer.id);
+        setIsDeleting(false);
+    };
     const [pointsInput, setPointsInput] = useState('');
 
     const { data: customer, isLoading, error } = useQuery({
@@ -170,9 +176,7 @@ export default function CustomerDetailPage() {
                             size="sm"
                             className="gap-2"
                             onClick={() => {
-                                if (confirm('Bạn có chắc muốn xóa khách hàng này?')) {
-                                    deleteMutation.mutate(customer.id);
-                                }
+                                setIsDeleting(true);
                             }}
                         >
                             <Trash2 className="w-4 h-4" />
@@ -294,6 +298,22 @@ export default function CustomerDetailPage() {
                     )}
                 </div>
             </div>
+            <ConfirmModal
+                isOpen={isDeleting}
+                onClose={() => setIsDeleting(false)}
+                onConfirm={() => deleteMutation.mutate(customer.id)}
+                title="Xóa khách hàng"
+                description="Bạn có chắc chắn muốn xóa khách hàng này không? Hành động này không thể hoàn tác."
+                confirmText="Xóa vĩnh viễn"
+            />
+            <ConfirmModal
+                isOpen={isDeleting}
+                onClose={() => setIsDeleting(false)}
+                onConfirm={executeDeleteCustomer}
+                title="Xóa khách hàng"
+                description="Bạn có chắc chắn muốn xóa khách hàng này không? Tất cả dữ liệu liên quan sẽ bị xóa."
+                confirmText="Xóa vĩnh viễn"
+            />
         </div>
     );
 }

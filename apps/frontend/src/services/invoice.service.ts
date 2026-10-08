@@ -122,6 +122,10 @@ export const invoiceApi = {
         return response.data.data!;
     },
 
+    async delete(id: string): Promise<void> {
+        await api.delete(`/invoices/${id}`);
+    },
+
     async cancel(id: string, reason?: string): Promise<Invoice> {
         const response = await api.post<ApiResponse<Invoice>>(`/invoices/${id}/cancel`, { reason });
         return response.data.data!;

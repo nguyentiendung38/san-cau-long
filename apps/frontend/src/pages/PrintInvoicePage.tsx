@@ -168,16 +168,26 @@ export default function PrintInvoicePage() {
                                 <span>Tổng cộng:</span>
                                 <span className="text-primary-600">{formatCurrency(invoice.total)}</span>
                             </div>
-                            {invoice.paidAmount > 0 && invoice.paidAmount < invoice.total && (
+                            {(invoice.depositAmount > 0 || invoice.paidAmount > 0) && (
                                 <>
-                                    <div className="flex justify-between py-2 text-sm">
-                                        <span className="text-gray-600">Đã thanh toán:</span>
-                                        <span className="text-green-600">{formatCurrency(invoice.paidAmount)}</span>
-                                    </div>
-                                    <div className="flex justify-between py-2 text-sm font-medium">
-                                        <span className="text-gray-600">Còn lại:</span>
-                                        <span className="text-red-600">{formatCurrency(invoice.total - invoice.paidAmount)}</span>
-                                    </div>
+                                    {invoice.depositAmount > 0 && (
+                                        <div className="flex justify-between py-2 text-sm">
+                                            <span className="text-gray-600">Khách đã cọc:</span>
+                                            <span className="text-green-600">-{formatCurrency(invoice.depositAmount)}</span>
+                                        </div>
+                                    )}
+                                    {invoice.paidAmount > 0 && (
+                                        <div className="flex justify-between py-2 text-sm">
+                                            <span className="text-gray-600">Đã thanh toán:</span>
+                                            <span className="text-green-600">{formatCurrency(invoice.paidAmount)}</span>
+                                        </div>
+                                    )}
+                                    {invoice.paymentStatus !== 'PAID' && (
+                                        <div className="flex justify-between py-2 text-sm font-bold">
+                                            <span className="text-gray-800">Còn cần thu thêm:</span>
+                                            <span className="text-red-600">{formatCurrency(Math.max(0, invoice.total - (invoice.depositAmount || 0) - (invoice.paidAmount || 0)))}</span>
+                                        </div>
+                                    )}
                                 </>
                             )}
                         </div>

@@ -3,6 +3,7 @@ import { X, Calendar, Clock, User, FileText, AlertCircle, Check, Loader2 } from 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { bookingApi, CreateBookingInput, PricingResult } from '@/services/booking.service';
+import { voucherApi } from '@/services/voucher.service';
 import { customerApi, Customer } from '@/services/customer.service';
 import { Court } from '@/services/booking.service';
 
@@ -34,7 +35,7 @@ export function NewBookingModal({
     const [formData, setFormData] = useState({
         courtId: selectedCourtId,
         customerId: '',
-        date: selectedDate ? selectedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        date: selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`,
         startTime: selectedTime || '08:00',
         endTime: selectedTime ?
             `${String(parseInt(selectedTime.split(':')[0]) + 1).padStart(2, '0')}:${selectedTime.split(':')[1]}`
@@ -51,6 +52,36 @@ export function NewBookingModal({
     const [isLoadingPrice, setIsLoadingPrice] = useState(false);
     const [availability, setAvailability] = useState<{ available: boolean; conflicts?: Array<{ startTime: string; endTime: string }> } | null>(null);
     const [loadingAvailability, setLoadingAvailability] = useState(false);
+    const [voucherCode, setVoucherCode] = useState('');
+    const [voucherValid, setVoucherValid] = useState(false);
+    const [voucherMessage, setVoucherMessage] = useState('');
+    const [discountAmount, setDiscountAmount] = useState(0);
+    const [isApplyingVoucher, setIsApplyingVoucher] = useState(false);
+
+    const handleApplyVoucher = async () => {
+        if (!voucherCode.trim() || !pricing) return;
+        setIsApplyingVoucher(true);
+        setVoucherMessage('');
+        try {
+            const res = await voucherApi.validate(voucherCode.trim(), pricing.total);
+            if (res.valid) {
+                setVoucherValid(true);
+                setDiscountAmount(res.discountAmount);
+                setVoucherMessage(`Áp dụng thành công, giảm ${new Intl.NumberFormat('vi-VN').format(res.discountAmount)}đ`);
+            } else {
+                setVoucherValid(false);
+                setDiscountAmount(0);
+                setVoucherMessage('Mã không hợp lệ hoặc đã hết hạn');
+            }
+        } catch (e: any) {
+            setVoucherValid(false);
+            setDiscountAmount(0);
+            setVoucherMessage(e.response?.data?.message || 'Lỗi kiểm tra mã giảm giá');
+        } finally {
+            setIsApplyingVoucher(false);
+        }
+    };
+
 
     const [errors, setErrors] = useState<Record<string, string>>({});
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,7 +92,7 @@ export function NewBookingModal({
             setFormData({
                 courtId: selectedCourtId || courts[0]?.id || '',
                 customerId: '',
-                date: selectedDate ? selectedDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                date: selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`,
                 startTime: selectedTime || '08:00',
                 endTime: selectedTime ?
                     `${String(parseInt(selectedTime.split(':')[0]) + 1).padStart(2, '0')}:${selectedTime.split(':')[1]}`
@@ -73,6 +104,10 @@ export function NewBookingModal({
             setPricing(null);
             setAvailability(null);
             setErrors({});
+            setVoucherCode('');
+            setVoucherValid(false);
+            setVoucherMessage('');
+            setDiscountAmount(0);
         }
     }, [isOpen, selectedCourtId, selectedDate, selectedTime, courts]);
 
@@ -135,6 +170,10 @@ export function NewBookingModal({
 
         if (availability && !availability.available) {
             newErrors.availability = 'Khung giờ này đã có người đặt';
+        }
+
+        if (pricing && pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá') {
+            newErrors.availability = 'Khung giờ này ngoài giờ hoạt động (chưa thiết lập giá)';
         }
 
         setErrors(newErrors);
@@ -254,38 +293,32 @@ export function NewBookingModal({
                                 <Clock className="w-4 h-4 text-primary-500" />
                                 Giờ bắt đầu *
                             </label>
-                            <select
+                            <input
+                                type="time"
                                 value={formData.startTime}
                                 onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
                                 className={cn(
-                                    "w-full bg-background-tertiary border rounded-lg px-3 py-2.5 text-foreground",
+                                    "w-full bg-background-tertiary border rounded-lg px-3 py-2 text-foreground",
                                     "focus:outline-none focus:ring-2 focus:ring-primary-500",
                                     errors.startTime ? 'border-red-500' : 'border-border'
                                 )}
-                            >
-                                {TIME_OPTIONS.map(time => (
-                                    <option key={time} value={time}>{time}</option>
-                                ))}
-                            </select>
+                            />
                         </div>
                         <div>
                             <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-2">
                                 <Clock className="w-4 h-4 text-primary-500" />
                                 Giờ kết thúc *
                             </label>
-                            <select
+                            <input
+                                type="time"
                                 value={formData.endTime}
                                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
                                 className={cn(
-                                    "w-full bg-background-tertiary border rounded-lg px-3 py-2.5 text-foreground",
+                                    "w-full bg-background-tertiary border rounded-lg px-3 py-2 text-foreground",
                                     "focus:outline-none focus:ring-2 focus:ring-primary-500",
                                     errors.endTime ? 'border-red-500' : 'border-border'
                                 )}
-                            >
-                                {TIME_OPTIONS.map(time => (
-                                    <option key={time} value={time}>{time}</option>
-                                ))}
-                            </select>
+                            />
                             {errors.endTime && (
                                 <p className="text-red-400 text-sm mt-1">{errors.endTime}</p>
                             )}
@@ -304,6 +337,11 @@ export function NewBookingModal({
                                 <>
                                     <Loader2 className="w-5 h-5 text-foreground-secondary animate-spin" />
                                     <span className="text-foreground-secondary text-sm">Đang kiểm tra...</span>
+                                </>
+                            ) : pricing && pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá' ? (
+                                <>
+                                    <AlertCircle className="w-5 h-5 text-red-500" />
+                                    <span className="text-red-400 text-sm">Ngoài giờ hoạt động (chưa thiết lập giá)</span>
                                 </>
                             ) : availability?.available ? (
                                 <>
@@ -427,10 +465,49 @@ export function NewBookingModal({
                                     <span className="text-sm text-primary-400">{pricing.appliedRule}</span>
                                 </div>
                             )}
+
+                            {/* Voucher Input */}
+                            <div className="mt-4 flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="Nhập mã giảm giá..."
+                                    value={voucherCode}
+                                    onChange={(e) => {
+                                        setVoucherCode(e.target.value.toUpperCase());
+                                        if (voucherValid) {
+                                            setVoucherValid(false);
+                                            setDiscountAmount(0);
+                                            setVoucherMessage('');
+                                        }
+                                    }}
+                                    className="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:border-primary-500 uppercase"
+                                />
+                                <Button 
+                                    type="button"
+                                    size="sm"
+                                    onClick={handleApplyVoucher}
+                                    disabled={!voucherCode || isApplyingVoucher}
+                                >
+                                    {isApplyingVoucher ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Áp dụng'}
+                                </Button>
+                            </div>
+                            {voucherMessage && (
+                                <p className={`text-xs mt-1 ${voucherValid ? 'text-green-500' : 'text-red-500'}`}>
+                                    {voucherMessage}
+                                </p>
+                            )}
+
+                            {voucherValid && discountAmount > 0 && (
+                                <div className="flex justify-between items-center mt-2 text-green-500">
+                                    <span>Giảm giá:</span>
+                                    <span>-{new Intl.NumberFormat('vi-VN').format(discountAmount)} đ</span>
+                                </div>
+                            )}
+
                             <div className="flex justify-between items-center mt-3 pt-3 border-t border-border">
                                 <span className="font-semibold text-foreground">Tổng cộng:</span>
                                 <span className="text-xl font-bold text-primary-400">
-                                    {new Intl.NumberFormat('vi-VN').format(pricing.total)} đ
+                                    {new Intl.NumberFormat('vi-VN').format(Math.max(0, pricing.total - discountAmount))} đ
                                 </span>
                             </div>
                         </div>

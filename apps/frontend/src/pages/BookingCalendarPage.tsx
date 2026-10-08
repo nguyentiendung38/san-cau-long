@@ -20,23 +20,19 @@ import { invoiceApi, Invoice } from '@/services/invoice.service';
 import { InvoiceDetailPanel } from '@/components/invoice/InvoiceDetailPanel';
 
 // Time slots from 6:00 to 23:00
-const TIME_SLOTS = Array.from({ length: 18 }, (_, i) => {
-    const hour = i + 6;
-    return `${hour.toString().padStart(2, '0')}:00`;
-});
-
 interface BookingSlot {
     booking: Booking;
     gridRow: number;
     gridRowSpan: number;
 }
 
-function getBookingSlot(booking: Booking): BookingSlot {
+function getBookingSlot(booking: Booking, timeSlots: string[]): BookingSlot {
     const [startH, startM] = booking.startTime.split(':').map(Number);
     const [endH, endM] = booking.endTime.split(':').map(Number);
 
-    const startRow = (startH - 6) * 2 + Math.floor(startM / 30) + 2; // +2 for header
-    const endRow = (endH - 6) * 2 + Math.floor(endM / 30) + 2;
+    const startHour = parseInt(timeSlots[0].split(":")[0]);
+    const startRow = (startH - startHour) * 2 + Math.floor(startM / 30) + 2; // +2 for header
+    const endRow = (endH - startHour) * 2 + Math.floor(endM / 30) + 2;
 
     return {
         booking,
@@ -89,7 +85,7 @@ export default function BookingCalendarPage() {
     // Fetch venues
     const { data: venuesData } = useQuery({
         queryKey: ['venues'],
-        queryFn: () => venueApi.getAll({ isActive: true }),
+        queryFn: () => venueApi.getAll({}),
     });
 
     // Set first venue as default
@@ -107,6 +103,29 @@ export default function BookingCalendarPage() {
         queryFn: () => bookingApi.getCalendarData(selectedVenueId, formattedDate, formattedDate),
         enabled: !!selectedVenueId,
     });
+
+
+    const timeSlots = useMemo(() => {
+        const selectedVenue: any = venuesData?.data.find((v: any) => v.id === selectedVenueId);
+        if (!selectedVenue || !selectedVenue.operatingHours || selectedVenue.operatingHours.length === 0) {
+            return Array.from({ length: 18 }, (_, i) => {
+                const hour = i + 6;
+                return `${hour.toString().padStart(2, '0')}:00`;
+            });
+        }
+        let minH = 24, maxH = 0;
+        selectedVenue.operatingHours.forEach((oh: any) => {
+            const startH = parseInt(oh.startTime.split(':')[0]);
+            const endH = parseInt(oh.endTime.split(':')[0]);
+            if (startH < minH) minH = startH;
+            if (endH > maxH) maxH = endH;
+        });
+        const length = maxH - minH;
+        return Array.from({ length }, (_, i) => {
+            const hour = i + minH;
+            return `${hour.toString().padStart(2, '0')}:00`;
+        });
+    }, [venuesData, selectedVenueId]);
 
     // Check-in mutation
     const checkInMutation = useMutation({
@@ -228,7 +247,7 @@ export default function BookingCalendarPage() {
         calendarData.bookings.forEach(booking => {
             if (hideCompleted && booking.status === 'COMPLETED') return;
             if (!map[booking.courtId]) map[booking.courtId] = [];
-            map[booking.courtId].push(getBookingSlot(booking));
+            map[booking.courtId].push(getBookingSlot(booking, timeSlots));
         });
         return map;
     }, [calendarData, hideCompleted]);
@@ -369,7 +388,7 @@ export default function BookingCalendarPage() {
                         <div className="flex items-center justify-center h-full">
                             <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
                         </div>
-                    ) : calendarData?.courts.length === 0 ? (
+                    ) : (!calendarData?.courts || calendarData.courts.length === 0) ? (
                         <div className="flex flex-col items-center justify-center h-full text-foreground-secondary">
                             <CalendarIcon className="w-12 h-12 mb-4 opacity-50" />
                             <p>Chưa có sân nào được thiết lập</p>
@@ -382,7 +401,7 @@ export default function BookingCalendarPage() {
                                     className="grid min-w-max"
                                     style={{
                                         gridTemplateColumns: `80px repeat(${calendarData?.courts.length || 1}, minmax(200px, 1fr))`,
-                                        gridTemplateRows: `auto repeat(${TIME_SLOTS.length * 2}, 30px)`,
+                                        gridTemplateRows: `auto repeat(${timeSlots.length * 2}, 30px)`,
                                     }}
                                 >
                                     {/* Header row */}
@@ -397,7 +416,7 @@ export default function BookingCalendarPage() {
                                     ))}
 
                                     {/* Time slots */}
-                                    {TIME_SLOTS.map((time, idx) => (
+                                    {timeSlots.map((time, idx) => (
                                         <React.Fragment key={`time-row-${time}`}>
                                             {/* Time label - spans 2 rows (1 hour = 2 x 30min slots) */}
                                             <div

@@ -31,7 +31,7 @@ export default function InventoryPage() {
     // Fetch venues for dropdown
     const { data: venuesData } = useQuery({
         queryKey: ['venues'],
-        queryFn: () => venueApi.getAll({ isActive: true }),
+        queryFn: () => venueApi.getAll({}),
     });
 
     // Fetch products

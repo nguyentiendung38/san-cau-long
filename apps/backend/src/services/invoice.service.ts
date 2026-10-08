@@ -223,6 +223,12 @@ export class InvoiceService {
         const invoiceNumber = `INV${datePrefix}${String(count + 1).padStart(4, '0')}`;
 
         // Create invoice
+        let finalPaymentStatus = paymentStatus || 'PENDING';
+        if (finalPaymentStatus === 'PAID' && (depositAmount || 0) + (paidAmount || 0) < total && total > 0) {
+            finalPaymentStatus = 'PENDING';
+        }
+
+        // Create invoice
         const invoice = await prisma.invoice.create({
             data: {
                 invoiceNumber,
@@ -230,7 +236,7 @@ export class InvoiceService {
                 subtotal,
                 discount: discountAmount,
                 total,
-                paymentStatus: paymentStatus || 'PENDING',
+                paymentStatus: finalPaymentStatus,
                 paymentMethod,
                 paidAmount: paidAmount || 0,
                 depositAmount: depositAmount || 0,
@@ -267,7 +273,7 @@ export class InvoiceService {
             where: { id },
             data: {
                 paymentStatus,
-                paidAmount: paidAmount !== undefined ? paidAmount : (paymentStatus === 'PAID' ? existing.total : existing.paidAmount),
+                paidAmount: paidAmount !== undefined ? paidAmount : (paymentStatus === 'PAID' ? Math.max(0, existing.total - (existing.depositAmount || 0)) : existing.paidAmount),
                 ...(paymentStatus === 'PAID' ? { paidAt: new Date() } : {}),
             },
             include: {
@@ -284,6 +290,10 @@ export class InvoiceService {
         }
 
         return invoice;
+    }
+
+    async delete(id: string) {
+        return prisma.invoice.delete({ where: { id } });
     }
 
     async cancel(id: string, reason?: string) {

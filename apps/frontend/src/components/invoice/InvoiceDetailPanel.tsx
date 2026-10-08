@@ -208,7 +208,7 @@ export function InvoiceDetailPanel({
                                 <span className="text-foreground">Tổng cộng</span>
                                 <span className="text-primary-500">{formatCurrency(invoice.total)}</span>
                             </div>
-                            {((invoice.depositAmount || 0) > 0 || (invoice.paidAmount || 0) > 0) && invoice.status !== 'PAID' && (
+                            {((invoice.depositAmount || 0) > 0 || (invoice.paidAmount || 0) > 0)  && (
                                 <>
                                     <div className="border-t border-border pt-2">
                                         {(invoice.depositAmount || 0) > 0 && (
@@ -219,7 +219,7 @@ export function InvoiceDetailPanel({
                                         )}
                                         <div className="flex justify-between text-base font-bold text-red-500 mt-1">
                                             <span>Còn cần thu thêm</span>
-                                            <span>{formatCurrency(Math.max(0, invoice.total - (invoice.depositAmount || invoice.paidAmount || 0)))}</span>
+                                            <span>{formatCurrency(Math.max(0, invoice.total - ((invoice.depositAmount || 0) + (invoice.paidAmount || 0))))}</span>
                                         </div>
                                     </div>
                                 </>

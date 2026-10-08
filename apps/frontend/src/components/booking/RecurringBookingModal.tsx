@@ -48,7 +48,7 @@ export function RecurringBookingModal({
 }: RecurringBookingModalProps) {
     const [formData, setFormData] = useState<RecurringBookingInput>({
         courtId: courts[0]?.id || '',
-        startDate: new Date().toISOString().split('T')[0],
+        startDate: `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`,
         endDate: '',
         startTime: '18:00',
         endTime: '20:00',
@@ -202,30 +202,32 @@ export function RecurringBookingModal({
                                 <Clock className="w-4 h-4 inline mr-1" />
                                 Giờ bắt đầu
                             </label>
-                            <select
+                            <input
+                                type="time"
                                 value={formData.startTime}
                                 onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
-                                className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            >
-                                {TIME_OPTIONS.map(time => (
-                                    <option key={time} value={time}>{time}</option>
-                                ))}
-                            </select>
+                                className={cn(
+                                    "w-full bg-background-tertiary border rounded-lg px-3 py-2.5 text-foreground",
+                                    "focus:outline-none focus:ring-2 focus:ring-primary-500",
+                                    errors.startTime ? 'border-red-500' : 'border-border'
+                                )}
+                            />
                         </div>
                         <div>
                             <label className="block text-sm font-medium text-foreground mb-1">
                                 <Clock className="w-4 h-4 inline mr-1" />
                                 Giờ kết thúc
                             </label>
-                            <select
+                            <input
+                                type="time"
                                 value={formData.endTime}
                                 onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
-                                className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
-                            >
-                                {TIME_OPTIONS.map(time => (
-                                    <option key={time} value={time}>{time}</option>
-                                ))}
-                            </select>
+                                className={cn(
+                                    "w-full bg-background-tertiary border rounded-lg px-3 py-2.5 text-foreground",
+                                    "focus:outline-none focus:ring-2 focus:ring-primary-500",
+                                    errors.endTime ? 'border-red-500' : 'border-border'
+                                )}
+                            />
                         </div>
                     </div>
                     {errors.time && (

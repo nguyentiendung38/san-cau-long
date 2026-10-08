@@ -33,8 +33,8 @@ function getDefaultDateRange() {
     const start = new Date();
     start.setMonth(start.getMonth() - 1);
     return {
-        start: start.toISOString().split('T')[0],
-        end: end.toISOString().split('T')[0],
+        start: `${start.getFullYear()}-${String(start.getMonth()+1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`,
+        end: `${end.getFullYear()}-${String(end.getMonth()+1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`,
     };
 }
 

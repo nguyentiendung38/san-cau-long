@@ -31,13 +31,28 @@ export function NotificationDropdown() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
+    const [isNotifyEnabled, setIsNotifyEnabled] = useState(localStorage.getItem('setting_notify_new_booking') !== 'false');
+
+    useEffect(() => {
+        const handleSettingsChange = () => {
+            setIsNotifyEnabled(localStorage.getItem('setting_notify_new_booking') !== 'false');
+        };
+        window.addEventListener('settings_changed', handleSettingsChange);
+        window.addEventListener('storage', handleSettingsChange);
+        return () => {
+            window.removeEventListener('settings_changed', handleSettingsChange);
+            window.removeEventListener('storage', handleSettingsChange);
+        };
+    }, []);
+
     const { data: bookingRequests } = useQuery({
         queryKey: ['booking-requests'],
         queryFn: () => bookingRequestApi.getAll(),
-        refetchInterval: 60000,
+        refetchInterval: isNotifyEnabled ? 60000 : false,
+        enabled: isNotifyEnabled
     });
 
-    const notifications: Notification[] = (bookingRequests || [])
+    const notifications: Notification[] = !isNotifyEnabled ? [] : (bookingRequests || [])
         .filter((req: any) => req.status === 'PENDING')
         .map((req: any) => ({
             id: req.id,
@@ -223,4 +238,3 @@ export function NotificationDropdown() {
         </div>
     );
 }
-

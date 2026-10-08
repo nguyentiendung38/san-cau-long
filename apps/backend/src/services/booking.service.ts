@@ -1,6 +1,55 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/error.js';
 
+export interface PricingRuleForCalculation {
+    name: string;
+    dayOfWeek: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    pricePerHour: number;
+    priority: number;
+}
+
+export function calculatePriceFromRules(
+    pricingRules: PricingRuleForCalculation[],
+    dayOfWeek: string,
+    startTime: string,
+    endTime: string
+) {
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    const startMinutes = startHour * 60 + startMinute;
+    const endMinutes = endHour * 60 + endMinute;
+    const duration = (endMinutes - startMinutes) / 60;
+    let total = 0;
+    const appliedRules = new Set<string>();
+
+    for (let slotStart = startMinutes; slotStart < endMinutes;) {
+        const slotEnd = Math.min(endMinutes, (Math.floor(slotStart / 30) + 1) * 30);
+        const slotStartTime = `${String(Math.floor(slotStart / 60)).padStart(2, '0')}:${String(slotStart % 60).padStart(2, '0')}`;
+        const slotEndTime = `${String(Math.floor(slotEnd / 60)).padStart(2, '0')}:${String(slotEnd % 60).padStart(2, '0')}`;
+        const matchingRule = pricingRules.find((rule) => {
+            if (rule.dayOfWeek && rule.dayOfWeek !== dayOfWeek) return false;
+            return (!rule.startTime || rule.startTime <= slotStartTime) &&
+                (!rule.endTime || rule.endTime >= slotEndTime);
+        });
+
+        if (matchingRule) {
+            const slotDuration = (slotEnd - slotStart) / 60;
+            total += matchingRule.pricePerHour * slotDuration;
+            appliedRules.add(matchingRule.name);
+        }
+        slotStart = slotEnd;
+    }
+
+    return {
+        pricePerHour: duration > 0 ? total / duration : 0,
+        duration,
+        total,
+        appliedRule: appliedRules.size > 0 ? [...appliedRules].join(', ') : 'Chưa thiết lập giá',
+    };
+}
+
 export interface CreateBookingInput {
     courtId: string;
     customerId?: string;
@@ -8,6 +57,8 @@ export interface CreateBookingInput {
     startTime: string;
     endTime: string;
     notes?: string;
+    voucherCode?: string;
+    discountAmount?: number;
     createdById?: string;
     orderedItems?: string | null;
     paymentMethod?: string;
@@ -20,6 +71,8 @@ export interface UpdateBookingInput {
     startTime?: string;
     endTime?: string;
     notes?: string;
+    voucherCode?: string;
+    discountAmount?: number;
     status?: string;
 }
 
@@ -122,66 +175,18 @@ export class BookingService {
             throw new AppError(404, 'Không tìm thấy sân');
         }
 
-        // Get applicable pricing rules
-        const dayOfWeek = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][
-            date.getDay()
-        ];
-
-        const pricingRules = await prisma.pricingRule.findMany({
-            where: {
-                venueId: court.venueId,
-                isActive: true,
-            },
-            orderBy: { priority: 'desc' },
-        });
-
-        // Calculate duration in hours
-        const [startH, startM] = startTime.split(':').map(Number);
-        const [endH, endM] = endTime.split(':').map(Number);
-        const startMinutes = startH * 60 + startM;
-        const endMinutes = endH * 60 + endM;
-        const duration = (endMinutes - startMinutes) / 60;
-
-        if (duration <= 0) {
+        if (endTime <= startTime) {
             throw new AppError(400, 'Thời gian kết thúc phải sau thời gian bắt đầu');
         }
 
-        // Find best matching rule
-        type PricingRule = (typeof pricingRules)[number];
-        let bestRule: PricingRule | undefined = pricingRules.find((r: PricingRule) => !r.dayOfWeek && !r.startTime); // Default rule
-        let appliedRule = 'Giá mặc định';
-
-        for (const rule of pricingRules) {
-            // Check day of week match
-            if (rule.dayOfWeek && rule.dayOfWeek !== dayOfWeek) continue;
-
-            // Check time range match
-            if (rule.startTime && rule.endTime) {
-                const [rStartH, rStartM] = rule.startTime.split(':').map(Number);
-                const [rEndH, rEndM] = rule.endTime.split(':').map(Number);
-                const rStart = rStartH * 60 + rStartM;
-                const rEnd = rEndH * 60 + rEndM;
-
-                // Booking must be within rule time range
-                if (startMinutes < rStart || endMinutes > rEnd) continue;
-            }
-
-            // This rule matches - use it if higher priority
-            if (!bestRule || rule.priority > bestRule.priority) {
-                bestRule = rule;
-                appliedRule = rule.name;
-            }
-        }
-
-        const pricePerHour = bestRule?.pricePerHour || 50000;
-        const total = pricePerHour * duration;
-
-        return {
-            pricePerHour,
-            duration,
-            total,
-            appliedRule,
-        };
+        const dayOfWeek = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'][
+            date.getUTCDay()
+        ];
+        const pricingRules = await prisma.pricingRule.findMany({
+            where: { venueId: court.venueId, isActive: true },
+            orderBy: { priority: 'desc' },
+        });
+        return calculatePriceFromRules(pricingRules, dayOfWeek, startTime, endTime);
     }
 
     async findAll(params: BookingQueryParams) {
@@ -301,12 +306,30 @@ export class BookingService {
         // Calculate price
         const pricing = await this.calculatePrice(
             input.courtId,
-            input.date,
+            new Date(input.date),
             input.startTime,
             input.endTime
         );
+        
+        if (pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá') {
+            throw new AppError(400, 'Khung giờ này ngoài giờ hoạt động (chưa thiết lập giá)');
+        }
 
         let finalTotalAmount = pricing.total;
+        
+        if (input.voucherCode && input.discountAmount) {
+            finalTotalAmount = Math.max(0, finalTotalAmount - input.discountAmount);
+            input.notes = input.notes ? input.notes + '\nÁp dụng voucher: ' + input.voucherCode + ' (-' + input.discountAmount + 'đ)' : 'Áp dụng voucher: ' + input.voucherCode + ' (-' + input.discountAmount + 'đ)';
+            
+            // Increment voucher usage
+            try {
+                await prisma.voucher.update({
+                    where: { code: input.voucherCode },
+                    data: { usageCount: { increment: 1 } }
+                });
+            } catch (e) {}
+        }
+
         if (input.orderedItems) {
             try {
                 const items = JSON.parse(input.orderedItems);

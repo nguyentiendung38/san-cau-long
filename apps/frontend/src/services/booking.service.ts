@@ -11,6 +11,8 @@ export interface Booking {
     status: 'PENDING' | 'CONFIRMED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
     totalAmount: number;
     notes?: string;
+    voucherCode?: string;
+    discountAmount?: number;
     orderedItems?: string;
     paymentMethod?: string;
     paymentStatus?: string;
@@ -59,6 +61,8 @@ export interface CreateBookingInput {
     startTime: string;
     endTime: string;
     notes?: string;
+    voucherCode?: string;
+    discountAmount?: number;
 }
 
 export interface PricingResult {
@@ -166,6 +170,8 @@ export interface BookingRequest {
     startTime: string;
     endTime: string;
     notes?: string;
+    voucherCode?: string;
+    discountAmount?: number;
     status: string;
     paymentMethod?: 'MOMO' | 'DEPOSIT_TRANSFER';
     paymentStatus?: 'PENDING' | 'PAID' | 'FAILED';

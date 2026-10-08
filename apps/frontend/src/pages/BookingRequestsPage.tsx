@@ -64,7 +64,7 @@ export default function BookingRequestsPage() {
                 </div>
             ) : (
                 <div className="grid gap-4">
-                    {requests?.length === 0 ? (
+                    {(!requests || requests.length === 0) ? (
                         <div className="text-center p-12 bg-background-secondary rounded-xl border border-border text-foreground-muted">
                             <div className="text-4xl mb-3">📬</div>
                             Không có yêu cầu đặt sân nào.
@@ -150,24 +150,15 @@ export default function BookingRequestsPage() {
                                     )}
                                     {req.status === 'PENDING' && (
                                         <>
-                                            <button 
-                                                onClick={() => updateStatusMutation.mutate({ id: req.id, status: 'APPROVED' })}
-                                                className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                                            >
+                                            <button onClick={() => updateStatusMutation.mutate({ id: req.id, status: 'APPROVED' })} disabled={updateStatusMutation.isPending} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                                                 <Check className="w-4 h-4" /> Đã nhập vào lịch
                                             </button>
-                                            <button 
-                                                onClick={() => updateStatusMutation.mutate({ id: req.id, status: 'REJECTED' })}
-                                                className="bg-error/10 hover:bg-error/20 text-error border border-error/20 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-                                            >
+                                            <button onClick={() => updateStatusMutation.mutate({ id: req.id, status: 'REJECTED' })} disabled={updateStatusMutation.isPending} className="bg-error/10 hover:bg-error/20 text-error border border-error/20 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                                                 <X className="w-4 h-4" /> Từ chối
                                             </button>
                                         </>
                                     )}
-                                    <button 
-                                        onClick={() => deleteMutation.mutate(req.id)}
-                                        className="bg-background-tertiary hover:bg-background text-foreground-secondary border border-border px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 mt-auto"
-                                    >
+                                    <button onClick={() => deleteMutation.mutate(req.id)} disabled={deleteMutation.isPending} className="bg-background-tertiary hover:bg-background text-foreground-secondary border border-border px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 mt-auto disabled:opacity-50 disabled:cursor-not-allowed">
                                         <Trash2 className="w-4 h-4" /> Xóa bản ghi
                                     </button>
                                 </div>

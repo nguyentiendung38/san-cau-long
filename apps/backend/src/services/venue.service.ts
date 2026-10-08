@@ -46,9 +46,10 @@ export class VenueService {
             prisma.venue.findMany({
                 where,
                 include: {
-                    _count: {
-                        select: { courts: true, staff: true },
-                    },
+                    _count: { select: { courts: true, staff: true } }, operatingHours: true,
+                    courts: {
+                        where: { status: 'ACTIVE' }
+                    }
                 },
                 skip,
                 take: limit,
@@ -83,6 +84,9 @@ export class VenueService {
                     where: { isActive: true },
                 },
                 products: {
+                    where: { isActive: true },
+                },
+                operatingHours: {
                     where: { isActive: true },
                 },
                 _count: {
