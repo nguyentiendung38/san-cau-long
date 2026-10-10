@@ -41,7 +41,7 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
         }
 
         const baseUrl = process.env.VNPAY_RETURN_URL?.trim() || 'http://localhost:3000/api/vnpay/callback';
-        const vnp_ReturnUrl = source === 'zalo' ? `${baseUrl}?source=zalo` : baseUrl;
+        const vnp_ReturnUrl = source === 'zalo' ? baseUrl.replace('/callback', '/callback/zalo') : baseUrl;
         
         const ipAddr = '127.0.0.1';
         
@@ -126,9 +126,9 @@ const failedHtml = `
 </html>
 `;
 
-router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
+router.get(['/callback', '/callback/:source'], async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const source = req.query.source;
+        const source = req.params.source || req.query.source;
         const verify = vnpay.verifyReturnUrl(req.query as any);
         const orderId = verify.vnp_TxnRef ? verify.vnp_TxnRef.split('-')[0] : '';
 
