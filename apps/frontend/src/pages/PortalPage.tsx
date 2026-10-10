@@ -138,7 +138,7 @@ export default function PortalPage() {
     const [tempPhone, setTempPhone] = useState('');
     const { data: myRequests = [], isLoading: isLoadingRequests } = useQuery<any[]>({
         queryKey: ['my-requests', userPhone],
-        queryFn: () => bookingRequestApi.getMyRequests(userPhone),
+        queryFn: () => bookingRequestApi.getMyRequests(userPhone).then(data => data.filter((b: any) => !b.notes?.includes("Zalo"))),
         enabled: activeTab === 'history' && !!userPhone,
     });
 

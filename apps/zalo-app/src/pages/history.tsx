@@ -16,7 +16,8 @@ const HistoryPage = () => {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          setBookings(data.data || []);
+          const zaloBookings = (data.data || []).filter(b => b.notes && b.notes.includes("Zalo"));
+          setBookings(zaloBookings);
           if (data.data && data.data.length > 0) {
             localStorage.setItem("courtify_phone", phoneNumber);
           }
