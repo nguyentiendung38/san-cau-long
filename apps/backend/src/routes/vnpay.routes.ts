@@ -141,7 +141,7 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
                 res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
                 return res.send(successHtml);
             } else {
-                return res.redirect(`${frontendUrl}/trang-chu?payment=success`);
+                return res.redirect(`${frontendUrl}/trang-chu?payment=success&tab=history`);
             }
         } else {
             if (orderId) {
@@ -151,11 +151,11 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
                 res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
                 return res.send(failedHtml);
             } else {
-                return res.redirect(`${frontendUrl}/trang-chu?payment=failed`);
+                return res.redirect(`${frontendUrl}/trang-chu?payment=failed&tab=history`);
             }
         }
     } catch (error) {
-        return res.redirect(`${frontendUrl}/trang-chu?payment=failed`);
+        return res.redirect(`${frontendUrl}/trang-chu?payment=failed&tab=history`);
     }
 });
 
