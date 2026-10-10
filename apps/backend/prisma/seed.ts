@@ -11,6 +11,7 @@ async function main() {
     await prisma.invoiceItem.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.booking.deleteMany();
+    await prisma.bookingRequest.deleteMany();
     await prisma.pricingRule.deleteMany();
     await prisma.service.deleteMany();
     await prisma.product.deleteMany();
@@ -18,9 +19,12 @@ async function main() {
     await prisma.venueStaff.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.refreshToken.deleteMany();
+    await prisma.operatingHour.deleteMany();
+    await prisma.voucher.deleteMany();
     await prisma.venue.deleteMany();
     await prisma.user.deleteMany();
     await prisma.membershipPlan.deleteMany();
+    await prisma.otpRecord.deleteMany();
 
     // Create admin user
     const adminPassword = await bcrypt.hash('admin123', 12);
