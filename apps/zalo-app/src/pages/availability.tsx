@@ -130,14 +130,14 @@ const AvailabilityPage = () => {
                       let textColor = "#059669";
                       let borderColor = "#34D399";
                       
-                      if (booked) {
-                        bgColor = "#FEF2F2";
-                        textColor = "#DC2626";
-                        borderColor = "#FCA5A5";
-                      } else if (passed) {
+                      if (passed) {
                         bgColor = "#F3F4F6";
                         textColor = "#9CA3AF";
                         borderColor = "#E5E7EB";
+                      } else if (booked) {
+                        bgColor = "#FEF2F2";
+                        textColor = "#DC2626";
+                        borderColor = "#FCA5A5";
                       }
 
                       return (
@@ -157,7 +157,7 @@ const AvailabilityPage = () => {
                           }}
                         >
                           <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                            {booked && <Icon icon="zi-close" style={{ color: "#DC2626", fontSize: "14px", fontWeight: "bold" }} />}
+                            {(booked && !passed) && <Icon icon="zi-close" style={{ color: "#DC2626", fontSize: "14px", fontWeight: "bold" }} />}
                             <span style={{ fontSize: "11px", fontWeight: "bold" }}>{time}-{nextTime}</span>
                           </div>
                         </div>
