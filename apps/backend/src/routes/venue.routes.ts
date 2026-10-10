@@ -60,7 +60,7 @@ router.get('/:id/availability', async (req: Request, res: Response, next: NextFu
             where: {
                 courtId: { in: courts.map((c: any) => c.id) },
                 date: { gte: startOfDay, lte: endOfDay },
-                status: { notIn: ['CANCELLED', 'COMPLETED'] }
+                status: { not: 'CANCELLED' }
             }
         });
 

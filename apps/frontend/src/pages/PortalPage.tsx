@@ -110,13 +110,13 @@ export default function PortalPage() {
     useEffect(() => {
         const paymentStatus = searchParams.get('payment');
         if (paymentStatus === 'success') {
-            toast({
-                title: 'Đặt sân thành công!',
-                description: 'Thanh toán VNPay đã được xác nhận.',
+            setTimeout(() => toast({
+                title: 'Thanh toán VNPAY thành công!',
+                description: 'Cảm ơn bạn. Đơn đặt sân đã được xác nhận.',
                 variant: 'success',
-            });
+            }), 300);
         } else if (paymentStatus === 'failed') {
-            toast({ title: 'Thanh toán VNPay thất bại hoặc bị hủy.', variant: 'error' });
+            setTimeout(() => toast({ title: 'Thanh toán VNPay thất bại hoặc bị hủy.', variant: 'error' }), 300);
         } else {
             return;
         }
