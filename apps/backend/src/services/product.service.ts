@@ -169,11 +169,7 @@ export class ProductService {
             throw new AppError(404, 'Không tìm thấy sản phẩm');
         }
 
-        // Soft delete - just mark as inactive
-        await prisma.product.update({
-            where: { id },
-            data: { isActive: false },
-        });
+        await prisma.product.delete({ where: { id } });
 
         return { success: true };
     }

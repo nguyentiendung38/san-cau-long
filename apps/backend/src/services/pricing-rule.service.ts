@@ -196,10 +196,7 @@ export class PricingRuleService {
             throw new AppError(404, 'Không tìm thấy khung giá');
         }
 
-        await prisma.pricingRule.update({
-            where: { id },
-            data: { isActive: false },
-        });
+        await prisma.pricingRule.delete({ where: { id } });
 
         return { success: true };
     }

@@ -92,11 +92,25 @@ export class CourtService {
             throw new AppError(404, 'Không tìm thấy sân');
         }
 
-        // Xóa cascade thủ công
-        await prisma.invoiceItem.deleteMany({ where: { booking: { courtId: id } } });
-        await prisma.booking.deleteMany({ where: { courtId: id } });
-        await prisma.bookingRequest.deleteMany({ where: { courtId: id } });
-        await prisma.court.delete({ where: { id } });
+        await prisma.$transaction(async (tx) => {
+            const bookings = await tx.booking.findMany({
+                where: { courtId: id },
+                select: { id: true },
+            });
+            const bookingIds = bookings.map((booking) => booking.id);
+            const invoiceItems = await tx.invoiceItem.findMany({
+                where: { bookingId: { in: bookingIds } },
+                select: { invoiceId: true },
+            });
+            const invoiceIds = [...new Set(invoiceItems.map((item) => item.invoiceId))];
+
+            if (invoiceIds.length > 0) {
+                await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+            }
+
+            await tx.bookingRequest.deleteMany({ where: { courtId: id } });
+            await tx.court.delete({ where: { id } });
+        });
         
         return { message: 'Đã xóa sân thành công' };
     }

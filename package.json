@@ -17,7 +17,6 @@
         "db:generate": "npm run db:generate --workspace=@courtify/backend",
         "db:push": "npm run db:push --workspace=@courtify/backend",
         "db:migrate": "npm run db:migrate --workspace=@courtify/backend",
-        "db:seed": "npm run db:seed --workspace=@courtify/backend",
         "db:studio": "npm run db:studio --workspace=@courtify/backend",
         "lint": "npm run lint --workspaces --if-present",
         "test": "npm run test --workspaces --if-present",

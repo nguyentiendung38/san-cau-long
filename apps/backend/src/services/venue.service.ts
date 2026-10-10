@@ -135,27 +135,44 @@ export class VenueService {
     }
 
     async delete(id: string) {
-        // Check if venue exists
         const existing = await prisma.venue.findUnique({
             where: { id },
-            include: { _count: { select: { courts: true } } },
+            select: { id: true },
         });
 
         if (!existing) {
             throw new AppError(404, 'Không tìm thấy cơ sở');
         }
 
-        // Check for active courts with bookings
-        if (existing._count.courts > 0) {
-            // Soft delete instead
-            await prisma.venue.update({
-                where: { id },
-                data: { isActive: false },
+        await prisma.$transaction(async (tx) => {
+            const [bookings, services, products] = await Promise.all([
+                tx.booking.findMany({
+                    where: { court: { venueId: id } },
+                    select: { id: true },
+                }),
+                tx.service.findMany({ where: { venueId: id }, select: { id: true } }),
+                tx.product.findMany({ where: { venueId: id }, select: { id: true } }),
+            ]);
+            const relatedItems = await tx.invoiceItem.findMany({
+                where: {
+                    OR: [
+                        { bookingId: { in: bookings.map((booking) => booking.id) } },
+                        { serviceId: { in: services.map((service) => service.id) } },
+                        { productId: { in: products.map((product) => product.id) } },
+                    ],
+                },
+                select: { invoiceId: true },
             });
-            return { message: 'Cơ sở đã được vô hiệu hóa (có sân đang liên kết)' };
-        }
+            const invoiceIds = [...new Set(relatedItems.map((item) => item.invoiceId))];
 
-        await prisma.venue.delete({ where: { id } });
+            if (invoiceIds.length > 0) {
+                await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+            }
+
+            await tx.bookingRequest.deleteMany({ where: { venueId: id } });
+            await tx.venue.delete({ where: { id } });
+        });
+
         return { message: 'Đã xóa cơ sở thành công' };
     }
 

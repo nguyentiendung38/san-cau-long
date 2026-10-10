@@ -321,18 +321,6 @@ export default function HomePage() {
               <Text.Title size="small">{venueDetail.name}</Text.Title>
               <Text size="xSmall" style={{ color: '#64748B', marginBottom: '16px' }}>{venueDetail.address}</Text>
               
-              <Text size="small" bold>Giờ mở cửa chung:</Text>
-              <Text size="xSmall" style={{ marginBottom: '16px' }}>{venueDetail.openTime} - {venueDetail.closeTime}</Text>
-              
-              {venueDetail.operatingHours && venueDetail.operatingHours.length > 0 && (
-                <Box mb={4}>
-                  <Text size="small" bold>Lịch hoạt động chi tiết:</Text>
-                  {venueDetail.operatingHours.map((oh) => (
-                    <Text size="xSmall" key={oh.id}>• {translateDays(oh.daysOfWeek)}: {oh.startTime} - {oh.endTime}</Text>
-                  ))}
-                </Box>
-              )}
-              
               {venueDetail.pricingRules && venueDetail.pricingRules.length > 0 && (
                 <Box mb={4}>
                   <Text size="small" bold>Bảng giá tham khảo:</Text>
@@ -371,18 +359,6 @@ export default function HomePage() {
             <Box>
               <Text.Title size="small">{venueDetail.name}</Text.Title>
               <Text size="xSmall" style={{ color: "#64748B", marginBottom: "16px" }}>{venueDetail.address}</Text>
-              
-              <Text size="small" bold>Giờ mở cửa chung:</Text>
-              <Text size="xSmall" style={{ marginBottom: "16px" }}>{venueDetail.openTime} - {venueDetail.closeTime}</Text>
-              
-              {venueDetail.operatingHours && venueDetail.operatingHours.length > 0 && (
-                <Box mb={4}>
-                  <Text size="small" bold>Lịch hoạt động chi tiết:</Text>
-                  {venueDetail.operatingHours.map((oh: any) => (
-                    <Text size="xSmall" key={oh.id}>• {translateDays(oh.daysOfWeek)}: {oh.startTime} - {oh.endTime}</Text>
-                  ))}
-                </Box>
-              )}
               
               {venueDetail.pricingRules && venueDetail.pricingRules.length > 0 && (
                 <Box mb={4}>

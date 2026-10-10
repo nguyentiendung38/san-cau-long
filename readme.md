@@ -16,17 +16,10 @@ Tên hệ thống: SÂN CẦU LÔNG HUE
 
 ---
 
-## 2. Tài khoản đăng nhập mặc định
+## 2. Tài khoản đăng nhập
 
-Sau khi cài đặt và khởi động hệ thống, bạn có thể đăng nhập bằng tài khoản demo sau:
-
-- Admin: admin@courtify.vn / admin123
-- Manager: manager@courtify.vn / manager123
-- Staff: staff@courtify.vn / staff123
-
-Khuyến nghị:
-- Admin hoặc Manager dùng để setup ban đầu
-- Staff dùng để thao tác giao dịch hàng ngày
+Hệ thống không tạo tài khoản mặc định hoặc dữ liệu demo. Sau khi cài đặt,
+cần tạo/cấu hình tài khoản quản trị trước khi đăng nhập.
 
 ---
 
@@ -85,7 +78,7 @@ Nội dung mẫu:
 
 ```env
 NODE_ENV=development
-DATABASE_URL="file:./prisma/dev.db"
+DATABASE_URL="file:./dev.db"
 JWT_SECRET="dev-jwt-secret"
 JWT_EXPIRES_IN="15m"
 JWT_REFRESH_SECRET="dev-refresh-secret"
@@ -112,30 +105,22 @@ npx prisma generate
 npx prisma db push
 ```
 
-Nếu cần dữ liệu mẫu ban đầu:
-
-```bash
-npm run db:seed
-```
-
 ### 4.4 Các lệnh Prisma hữu ích
 
 ```bash
 npx prisma studio
 npx prisma migrate dev
 npx prisma db push
-npm run db:seed
 ```
 
 ---
 
 ## 5. Cách sử dụng hệ thống theo đúng thứ tự
 
-### Bước 1: Đăng nhập
+### Bước 1: Tạo/cấu hình tài khoản quản trị
 
-- Vào giao diện web
-- Đăng nhập bằng tài khoản Admin hoặc Manager
-- Sau khi đăng nhập, hệ thống sẽ vào Dashboard
+Hệ thống không có tài khoản mẫu mặc định. Tạo hoặc cấu hình tài khoản quản trị
+trước khi đăng nhập.
 
 ### Bước 2: Thiết lập cơ sở và sân
 
@@ -311,18 +296,7 @@ cd apps/backend
 npx prisma studio
 ```
 
-### 7.3 Reset dữ liệu mẫu
-
-Nếu cần tạo lại dữ liệu demo:
-
-```bash
-cd apps/backend
-npm run db:seed
-```
-
-> Lưu ý: reset dữ liệu sẽ xóa dữ liệu hiện tại và tạo lại dữ liệu mẫu.
-
-### 7.4 Khi thay đổi schema
+### 7.3 Khi thay đổi schema
 
 ```bash
 cd apps/backend
@@ -336,6 +310,8 @@ npx prisma db push
 
 - Database dev mặc định là SQLite, không phải PostgreSQL
 - Khi chạy local, dữ liệu được lưu trong `apps/backend/prisma/dev.db`
+- Dữ liệu tạo mới được lưu trực tiếp vào database; thao tác xóa không tự khôi phục dữ liệu demo
+- Xóa cơ sở hoặc sân cũng xóa lịch đặt và hóa đơn liên quan
 - Nếu cần backup, sao chép file `dev.db`
 - Không nên xóa dữ liệu hệ thống khi chưa chắc chắn
 - Khi sửa bảng giá hoặc lịch đặt, cần kiểm tra kỹ để tránh sai thông tin
@@ -349,7 +325,6 @@ cd apps/backend
 npm install
 npx prisma generate
 npx prisma db push
-npm run db:seed
 npm run dev
 ```
 
@@ -364,4 +339,4 @@ Sau đó truy cập:
 - Frontend: http://localhost:5173
 - Backend: http://localhost:3000
 
-Đăng nhập bằng tài khoản demo và bắt đầu vận hành hệ thống.
+Đăng nhập bằng tài khoản quản trị đã được tạo/cấu hình để bắt đầu vận hành hệ thống.

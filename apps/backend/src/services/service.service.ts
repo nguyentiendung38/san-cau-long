@@ -141,11 +141,7 @@ export class ServiceService {
             throw new AppError(404, 'Không tìm thấy dịch vụ');
         }
 
-        // Soft delete - just mark as inactive
-        await prisma.service.update({
-            where: { id },
-            data: { isActive: false },
-        });
+        await prisma.service.delete({ where: { id } });
 
         return { success: true };
     }
