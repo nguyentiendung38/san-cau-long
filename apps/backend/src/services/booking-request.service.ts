@@ -115,7 +115,7 @@ export class BookingRequestService {
                 paymentMethod: data.paymentMethod || 'DEPOSIT_TRANSFER',
                 paymentAmount,
                 paymentProof: data.paymentProof,
-                orderedItems: data.orderedItems ? JSON.stringify(data.orderedItems) : null,
+                orderedItems: parsedOrderedItems && parsedOrderedItems.length > 0 ? JSON.stringify(parsedOrderedItems) : null,
                 voucherCode: data.voucherCode,
                 discountAmount: data.discountAmount || 0,
             },
