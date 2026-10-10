@@ -465,6 +465,33 @@ export class BookingService {
             },
         });
 
+        // Auto-cancel associated BookingRequest so the customer sees it in their history
+        if (existing.customerId) {
+            const customer = await prisma.customer.findUnique({ where: { id: existing.customerId } });
+            if (customer) {
+                const requests = await prisma.bookingRequest.findMany({
+                    where: {
+                        courtId: existing.courtId,
+                        date: existing.date,
+                        startTime: existing.startTime,
+                        endTime: existing.endTime,
+                        phone: customer.phone,
+                        status: 'APPROVED'
+                    }
+                });
+                
+                for (const req of requests) {
+                    await prisma.bookingRequest.update({
+                        where: { id: req.id },
+                        data: { 
+                            status: 'REJECTED',
+                            notes: req.notes ? req.notes + '\\n[Hủy bởi Admin]' : '[Hủy bởi Admin]'
+                        }
+                    });
+                }
+            }
+        }
+
         return booking;
     }
 
