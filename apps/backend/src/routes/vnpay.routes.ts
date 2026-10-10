@@ -22,7 +22,7 @@ const vnpay = new VNPay({
 
 router.post('/create-payment', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { amount, orderId, bankCode } = req.body;
+        const { amount, orderId, bankCode, source } = req.body;
         
         if (!orderId) {
             return res.status(400).json({ success: false, message: 'Thiếu orderId' });
@@ -40,7 +40,8 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
             return res.status(400).json({ success: false, message: 'Amount không hợp lệ' });
         }
 
-        const vnp_ReturnUrl = process.env.VNPAY_RETURN_URL?.trim() || 'http://localhost:3000/api/vnpay/callback';
+        const baseUrl = process.env.VNPAY_RETURN_URL?.trim() || 'http://localhost:3000/api/vnpay/callback';
+        const vnp_ReturnUrl = source === 'zalo' ? `${baseUrl}?source=zalo` : baseUrl;
         
         const ipAddr = '127.0.0.1';
         
@@ -127,6 +128,7 @@ const failedHtml = `
 
 router.get('/callback', async (req: Request, res: Response, next: NextFunction) => {
     try {
+        const source = req.query.source;
         const verify = vnpay.verifyReturnUrl(req.query as any);
         const orderId = verify.vnp_TxnRef ? verify.vnp_TxnRef.split('-')[0] : '';
 
@@ -135,14 +137,22 @@ router.get('/callback', async (req: Request, res: Response, next: NextFunction) 
                 await bookingRequestService.updatePaymentStatus(orderId, 'PAID');
                 await bookingRequestService.updateStatus(orderId, 'APPROVED');
             }
-            res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
-            return res.send(successHtml);
+            if (source === 'zalo') {
+                res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
+                return res.send(successHtml);
+            } else {
+                return res.redirect(`${frontendUrl}/trang-chu?payment=success`);
+            }
         } else {
             if (orderId) {
                 await bookingRequestService.updatePaymentStatus(orderId, 'FAILED');
             }
-            res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
-            return res.send(failedHtml);
+            if (source === 'zalo') {
+                res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
+                return res.send(failedHtml);
+            } else {
+                return res.redirect(`${frontendUrl}/trang-chu?payment=failed`);
+            }
         }
     } catch (error) {
         return res.redirect(`${frontendUrl}/trang-chu?payment=failed`);

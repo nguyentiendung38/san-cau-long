@@ -525,6 +525,10 @@ export default function PortalBookingVisual() {
                                             {visibleSlots.map(time => {
                                             const status = getSlotStatus(time);
                                             const isSelected = selectedSlots.includes(time);
+                                            const dateStr = format(selectedDate, 'yyyy-MM-dd');
+                                            const now = new Date();
+                                            const nowStr = format(now, 'yyyy-MM-dd');
+                                            const nowTime = format(now, 'HH:mm');
                                             return (
                                                 <button
                                                     key={time}
@@ -797,7 +801,7 @@ export default function PortalBookingVisual() {
                                             )}
                                         >
                                             <span className="text-lg">💳</span>
-                                            <span className="text-sm">VNPAY</span>
+                                            <span className="text-sm">Thanh toán online (VNPAY)</span>
                                         </button>
                                         <button
                                             type="button"
