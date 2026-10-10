@@ -177,7 +177,8 @@ export default function HomePage() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                  orderId: data.data.id,
-                 amount: data.data.paymentAmount || 100000
+                 amount: data.data.paymentAmount || 100000,
+                  source: 'zalo'
               })
            })
            .then(r => r.json())
