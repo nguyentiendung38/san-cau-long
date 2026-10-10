@@ -92,12 +92,22 @@ export class BookingRequestService {
             }
         }
 
+                let parsedOrderedItems = data.orderedItems;
+        if (typeof data.orderedItems === 'string') {
+            try {
+                parsedOrderedItems = JSON.parse(data.orderedItems);
+            } catch (e) {
+                console.error('Failed to parse orderedItems in create', e);
+                parsedOrderedItems = [];
+            }
+        }
+
         let paymentAmount = pricing.total;
 
         
         // C?ng thm ti?n d?ch v? (n?u c)
-        if (data.orderedItems && Array.isArray(data.orderedItems)) {
-            const itemsTotal = data.orderedItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
+        if (parsedOrderedItems && Array.isArray(parsedOrderedItems)) {
+            const itemsTotal = parsedOrderedItems.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
             paymentAmount += itemsTotal;
         }
 
