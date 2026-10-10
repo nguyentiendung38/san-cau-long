@@ -30,7 +30,7 @@ const updateStockSchema = z.object({
 });
 
 // GET /products - List all products
-router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { venueId, isActive, search, page, limit } = req.query;
         const result = await productService.findAll({

@@ -4,7 +4,7 @@ import { cn, formatCurrency } from '@/lib/utils';
 interface PaymentBreakdown {
     cash: number;
     bankTransfer: number;
-    momo: number;
+    vnpay: number;
     card: number;
 }
 
@@ -26,7 +26,7 @@ const PERIOD_LABELS: Record<string, string> = {
 const PAYMENT_METHODS = [
     { key: 'cash', label: 'Tiền mặt', icon: Wallet, color: 'text-green-500 bg-green-500/10' },
     { key: 'bankTransfer', label: 'Chuyển khoản', icon: Building2, color: 'text-blue-500 bg-blue-500/10' },
-    { key: 'momo', label: 'MoMo', icon: CreditCard, color: 'text-pink-500 bg-pink-500/10' },
+    { key: 'vnpay', label: 'VNPAY', icon: CreditCard, color: 'text-pink-500 bg-pink-500/10' },
     { key: 'card', label: 'Thẻ', icon: CreditCard, color: 'text-purple-500 bg-purple-500/10' },
 ];
 

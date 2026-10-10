@@ -35,7 +35,7 @@ export function useWebSocket<T = unknown>(
         url,
         autoConnect = true,
         reconnect = true,
-        reconnectInterval = 3000,
+        reconnectInterval = 3005,
         maxReconnectAttempts = 10,
         onOpen,
         onClose,

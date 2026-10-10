@@ -23,7 +23,7 @@ const updateServiceSchema = z.object({
 });
 
 // GET /services - List all services
-router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const { venueId, isActive, search, page, limit } = req.query;
         const result = await serviceService.findAll({

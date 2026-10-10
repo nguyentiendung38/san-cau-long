@@ -41,4 +41,20 @@ describe('booking price calculation', () => {
         expect(result.total).toBe(175000);
         expect(result.appliedRule).toBe('Giá mặc định, Giá buổi tối');
     });
+
+    it('does not charge only part of a slot range when some time has no price rule', () => {
+        const eveningRule: PricingRuleForCalculation = {
+            name: 'Giá buổi tối',
+            dayOfWeek: null,
+            startTime: '17:00',
+            endTime: '18:00',
+            pricePerHour: 200000,
+            priority: 5,
+        };
+        const result = calculatePriceFromRules([eveningRule], 'THURSDAY', '16:30', '17:30');
+
+        expect(result.total).toBe(0);
+        expect(result.pricePerHour).toBe(0);
+        expect(result.appliedRule).toBe('Chưa thiết lập giá cho toàn bộ khung giờ');
+    });
 });

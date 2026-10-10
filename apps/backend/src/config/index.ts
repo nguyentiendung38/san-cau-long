@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
+import { resolve } from 'node:path';
 
-dotenv.config();
+const backendRoot = resolve(__dirname, '../..');
+dotenv.config({
+    path: [resolve(backendRoot, '.env'), resolve(backendRoot, '../../.env')],
+});
 
 export const config = {
     env: process.env.NODE_ENV || 'development',
@@ -18,7 +22,7 @@ export const config = {
     },
 
     cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+        origin: function (origin, callback) { callback(null, true); },
     },
 
     pagination: {

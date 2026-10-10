@@ -147,6 +147,8 @@ export default function BookingCalendarPage() {
             const booking = calendarData?.bookings.find((b: Booking) => b.id === id);
             if (!booking) throw new Error('Booking not found');
 
+            const isPaid = booking.paymentStatus === 'PAID';
+            const paymentAmount = booking.paymentAmount || 0;
             let invoice;
             try {
                 let productItems = [];
@@ -168,8 +170,9 @@ export default function BookingCalendarPage() {
                     productItems,
                     serviceItems,
                     paymentMethod: booking.paymentMethod === 'DEPOSIT_TRANSFER' ? 'BANK_TRANSFER' : (booking.paymentMethod || 'CASH'),
-                    paymentStatus: booking.paymentStatus === 'PAID' ? 'PAID' : 'PENDING',
-                    depositAmount: (booking.paymentAmount || 0) > 0 ? booking.paymentAmount : undefined,
+                    paymentStatus: isPaid ? 'PAID' : 'PENDING',
+                    paidAmount: isPaid ? (paymentAmount || booking.totalAmount) : undefined,
+                    depositAmount: !isPaid && paymentAmount > 0 ? paymentAmount : undefined,
                 });
             } catch (error: any) {
                 // If invoice already exists for this booking (409 Conflict)

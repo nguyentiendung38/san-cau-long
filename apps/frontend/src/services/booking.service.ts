@@ -173,7 +173,7 @@ export interface BookingRequest {
     voucherCode?: string;
     discountAmount?: number;
     status: string;
-    paymentMethod?: 'MOMO' | 'DEPOSIT_TRANSFER';
+    paymentMethod?: 'MOMO' | 'VNPAY' | 'DEPOSIT_TRANSFER';
     paymentStatus?: 'PENDING' | 'PAID' | 'FAILED';
     paymentAmount?: number;
     paymentProof?: string;
@@ -219,4 +219,12 @@ export const bookingRequestApi = {
         });
         return { payUrl: response.data.payUrl };
     },
+    async createVnpayPayment(requestId: string, amount: number, bankCode?: string): Promise<{ payUrl: string }> {
+        const response = await api.post<{ success: boolean; payUrl: string }>('/vnpay/create-payment', {
+            orderId: requestId,
+            amount,
+            bankCode
+        });
+        return { payUrl: response.data.payUrl };
+    }
 };

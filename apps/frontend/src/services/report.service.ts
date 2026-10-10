@@ -46,8 +46,8 @@ export interface UpcomingBooking {
 }
 
 export const reportApi = {
-    async getDashboardStats(): Promise<DashboardStats> {
-        const response = await api.get<ApiResponse<DashboardStats>>('/reports/dashboard');
+    async getDashboardStats(period: 'day' | 'week' | 'month' = 'day'): Promise<DashboardStats> {
+        const response = await api.get<ApiResponse<DashboardStats>>(`/reports/dashboard?period=${period}`);
         return response.data.data!;
     },
 

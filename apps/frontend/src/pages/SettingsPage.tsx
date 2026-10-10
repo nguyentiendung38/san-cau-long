@@ -1065,7 +1065,7 @@ export default function SettingsPage() {
                                         <option value="SUNDAY">Chủ Nhật</option>
                                     </select>
                                     <p className="mt-1 text-xs text-foreground-secondary">
-                                        Áp dụng cho: {pricingForm.dayOfWeek ? dayOfWeekLabels[pricingForm.dayOfWeek] || pricingForm.dayOfWeek : allDaysLabel}
+                                        Áp dụng cho: {pricingForm.dayOfWeek ? dayOfWeekLabels[pricingForm.dayOfWeek] || pricingForm.dayOfWeek : "Tất cả các ngày"}
                                     </p>
                                 </div>
                                 <div>

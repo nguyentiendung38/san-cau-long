@@ -115,7 +115,7 @@ export default function PortalBookingVisual() {
     const [showForm, setShowForm] = useState(false);
     const [bookingForm, setBookingForm] = useState({ name: '', phone: '', notes: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState<'MOMO' | 'DEPOSIT_TRANSFER'>('MOMO');
+    const [paymentMethod, setPaymentMethod] = useState<'VNPAY' | 'DEPOSIT_TRANSFER'>('VNPAY');
     const [paymentProof, setPaymentProof] = useState<string>('');
     const [paymentProofName, setPaymentProofName] = useState<string>('');
     const [voucherCodeInput, setVoucherCodeInput] = useState('');
@@ -338,13 +338,14 @@ export default function PortalBookingVisual() {
                 window.dispatchEvent(new Event('storage'));
             }
 
-            if (paymentMethod === 'MOMO') {
-                toast({ title: 'Đang chuyển sang trang thanh toán MoMo...' });
-                const { payUrl } = await bookingRequestApi.createMomoPayment(bookingRequest.id, finalAmount);
-                if (!payUrl) {
-                    throw new Error('MoMo không trả về liên kết thanh toán. Vui lòng thử lại.');
-                }
+            
 
+            if (paymentMethod === 'VNPAY') {
+                toast({ title: 'Đang chuyển sang trang thanh toán VNPAY...' });
+                const { payUrl } = await bookingRequestApi.createVnpayPayment(bookingRequest.id, finalAmount);
+                if (!payUrl) {
+                    throw new Error('VNPAY không trả về liên kết thanh toán. Vui lòng thử lại.');
+                }
                 window.location.assign(payUrl);
                 return;
             }
@@ -353,7 +354,7 @@ export default function PortalBookingVisual() {
             navigate('/trang-chu');
         } catch (error: any) {
             toast({
-                title: paymentMethod === 'MOMO' ? 'Không thể mở thanh toán MoMo' : 'Có lỗi xảy ra',
+                title: paymentMethod === 'VNPAY' ? 'Không thể mở thanh toán VNPAY' : 'Có lỗi xảy ra',
                 description: error?.response?.data?.message || error?.message || 'Vui lòng thử lại.',
                 variant: 'error',
             });
@@ -533,11 +534,13 @@ export default function PortalBookingVisual() {
                                                     "py-2 px-1 rounded-xl text-[11px] sm:text-xs font-semibold transition-all border flex items-center justify-center gap-0.5 whitespace-nowrap",
                                                         status === 'available' && !isSelected && "bg-white text-gray-700 border-gray-200 hover:border-green-500 hover:text-green-600",
                                                         isSelected && "bg-green-500 text-white border-green-500 shadow-sm shadow-green-200 scale-105",
-                                                        (status === 'booked' || status === 'past') && "bg-gray-100 text-gray-400 border-gray-100 opacity-60 cursor-not-allowed"
+                                                        status === 'past' && "bg-gray-100 text-gray-400 border-gray-100 opacity-60 cursor-not-allowed",
+                                                        status === 'booked' && (dateStr === nowStr && time < nowTime || dateStr < nowStr ? "bg-red-50 text-red-500 border-red-200 opacity-60 cursor-not-allowed" : "bg-red-50 text-red-500 border-red-200 cursor-not-allowed")
                                                     )}
                                                 aria-label={`${time} đến ${getNextHalfHour(time)}`}
                                                 >
-                                                <span>{time}-{getNextHalfHour(time)}</span>
+                                                    {status === 'booked' && <X className="w-3.5 h-3.5 text-red-500" strokeWidth={3} />}
+                                                    <span>{time}-{getNextHalfHour(time)}</span>
                                                 </button>
                                             );
                                         })}
@@ -784,28 +787,28 @@ export default function PortalBookingVisual() {
 
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thanh toán</label>
-                                    <div className="grid grid-cols-2 gap-3">
+                                    <div className="flex flex-wrap justify-center gap-3">
                                         <button
                                             type="button"
-                                            onClick={() => setPaymentMethod('MOMO')}
+                                            onClick={() => setPaymentMethod('VNPAY')}
                                             className={cn(
-                                                "py-3 flex items-center justify-center gap-2 rounded-xl border-2 transition-all",
-                                                paymentMethod === 'MOMO' ? "border-pink-500 bg-pink-50/50 text-pink-700" : "border-gray-100 bg-white text-gray-500 hover:border-pink-200"
+                                                "py-2 px-4 flex items-center gap-1.5 rounded-lg border transition-all",
+                                                paymentMethod === 'VNPAY' ? "border-blue-500 bg-blue-50 text-blue-700 font-bold" : "border-gray-200 bg-white text-gray-600 font-medium hover:border-blue-200"
                                             )}
                                         >
-                                            <span className="text-xl">💳</span>
-                                            <span className="text-sm font-bold">MoMo</span>
+                                            <span className="text-lg">💳</span>
+                                            <span className="text-sm">VNPAY</span>
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setPaymentMethod('DEPOSIT_TRANSFER')}
                                             className={cn(
-                                                "py-3 flex items-center justify-center gap-2 rounded-xl border-2 transition-all",
-                                                paymentMethod === 'DEPOSIT_TRANSFER' ? "border-green-500 bg-green-50/50 text-green-700" : "border-gray-100 bg-white text-gray-500 hover:border-green-200"
+                                                "py-2 px-4 flex items-center gap-1.5 rounded-lg border transition-all",
+                                                paymentMethod === 'DEPOSIT_TRANSFER' ? "border-green-500 bg-green-50 text-green-700 font-bold" : "border-gray-200 bg-white text-gray-600 font-medium hover:border-green-200"
                                             )}
                                         >
-                                            <span className="text-xl">🏦</span>
-                                            <span className="text-sm font-bold">Chuyển khoản</span>
+                                            <span className="text-lg">🏦</span>
+                                            <span className="text-sm">Chuyển khoản</span>
                                         </button>
                                     </div>
 

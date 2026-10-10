@@ -7,6 +7,44 @@ const router = Router();
 // Lưu trữ session đơn giản trong bộ nhớ (production nên dùng Redis)
 const sessionStore = new Map<string, { messages: ChatMessage[]; updatedAt: Date }>();
 
+function getProviderStatus(error: unknown): number | undefined {
+    if (!error || typeof error !== 'object') return undefined;
+    const providerError = error as {
+        status?: unknown;
+        statusCode?: unknown;
+        response?: { status?: unknown };
+    };
+    const status = providerError.status ?? providerError.statusCode ?? providerError.response?.status;
+    return typeof status === 'number' ? status : undefined;
+}
+
+function getProviderErrorReasons(error: unknown): string[] {
+    if (!error || typeof error !== 'object') return [];
+    const details = (error as { errorDetails?: unknown }).errorDetails;
+    if (!Array.isArray(details)) return [];
+    return details
+        .filter((detail): detail is Record<string, unknown> => !!detail && typeof detail === 'object')
+        .map((detail) => detail.reason)
+        .filter((reason): reason is string => typeof reason === 'string');
+}
+
+function getProviderRetryAfterSeconds(error: unknown): number | undefined {
+    if (!error || typeof error !== 'object') return undefined;
+    const retryAfterSeconds = (error as { retryAfterSeconds?: unknown }).retryAfterSeconds;
+    return typeof retryAfterSeconds === 'number' && Number.isFinite(retryAfterSeconds)
+        ? retryAfterSeconds
+        : undefined;
+}
+
+function formatRetryAfter(retryAfterSeconds: number): string {
+    const totalMinutes = Math.ceil(retryAfterSeconds / 60);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) return `${minutes} phút`;
+    if (minutes === 0) return `${hours} giờ`;
+    return `${hours} giờ ${minutes} phút`;
+}
+
 // Dọn session cũ mỗi 30 phút
 setInterval(() => {
     const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
@@ -42,7 +80,7 @@ router.post('/message', async (req: Request, res: Response, next: NextFunction) 
         const history: ChatMessage[] = existingSession?.messages || [];
 
         // Xử lý tin nhắn
-        const { reply, updatedHistory } = await processChat(message.trim(), history);
+        const { reply, updatedHistory, bookingCreated } = await processChat(message.trim(), history);
 
         // Lưu session
         sessionStore.set(sid, {
@@ -56,22 +94,33 @@ router.post('/message', async (req: Request, res: Response, next: NextFunction) 
                 reply,
                 sessionId: sid,
                 messageCount: updatedHistory.length,
+                bookingCreated,
             },
         });
-    } catch (error: any) {
+    } catch (error: unknown) {
+        const providerStatus = getProviderStatus(error);
+
         // Lỗi Gemini API key
-        if (error.message?.includes('GEMINI_API_KEY')) {
+        if (error instanceof Error && error.message.includes('GEMINI_API_KEY')) {
             return res.status(503).json({
                 success: false,
                 message: 'Chatbot AI chưa được cấu hình. Vui lòng liên hệ quản trị viên để thêm GEMINI_API_KEY vào .env',
             });
         }
 
-        // Lỗi API quota
-        if (error.status === 429) {
+        if (providerStatus === 429) {
+            const retryAfterSeconds = getProviderRetryAfterSeconds(error);
+            console.warn('[Chatbot] Gemini rate limit response', {
+                status: providerStatus,
+                reasons: getProviderErrorReasons(error),
+                retryAfterSeconds,
+            });
+            if (retryAfterSeconds) res.setHeader('Retry-After', String(retryAfterSeconds));
             return res.status(429).json({
                 success: false,
-                message: 'Chatbot đang bận, vui lòng thử lại sau vài giây',
+                message: retryAfterSeconds
+                    ? `Gemini đang tạm từ chối yêu cầu của chatbot; điều này không nhất thiết có nghĩa là toàn bộ API bị lỗi. Nhà cung cấp báo thử lại sau khoảng ${formatRetryAfter(retryAfterSeconds)}. Quản trị viên nên kiểm tra giới hạn của model/project đang dùng.`
+                    : 'Gemini đang tạm giới hạn yêu cầu chatbot. Vui lòng chờ một chút rồi thử lại.',
             });
         }
 

@@ -240,7 +240,7 @@ export class InvoiceService {
                 paymentMethod,
                 paidAmount: paidAmount || 0,
                 depositAmount: depositAmount || 0,
-                paidAt: paidAt || null,
+                paidAt: paidAt || (finalPaymentStatus === 'PAID' ? new Date() : null),
                 notes,
                 items: {
                     create: items,

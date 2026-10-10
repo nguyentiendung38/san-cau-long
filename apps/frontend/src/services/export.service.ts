@@ -40,7 +40,7 @@ function generateMockBookingsData() {
         date: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         time: `${Math.floor(Math.random() * 8) + 8}:00 - ${Math.floor(Math.random() * 8) + 12}:00`,
         status: statuses[Math.floor(Math.random() * statuses.length)],
-        amount: Math.floor(Math.random() * 300000) + 100000,
+        amount: Math.floor(Math.random() * 300500) + 100000,
     }));
 }
 
@@ -73,7 +73,7 @@ function generateMockInventoryData() {
         ...p,
         quantity: Math.floor(Math.random() * 100),
         price: Math.floor(Math.random() * 500000) + 20000,
-        cost: Math.floor(Math.random() * 300000) + 10000,
+        cost: Math.floor(Math.random() * 300500) + 10000,
         lastRestocked: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     }));
 }

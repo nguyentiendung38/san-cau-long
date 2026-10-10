@@ -4,6 +4,7 @@ export interface ChatResponse {
     reply: string
     sessionId: string
     messageCount: number
+    bookingCreated?: boolean
 }
 
 export interface ChatStatusResponse {

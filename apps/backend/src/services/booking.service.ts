@@ -23,6 +23,7 @@ export function calculatePriceFromRules(
     const duration = (endMinutes - startMinutes) / 60;
     let total = 0;
     const appliedRules = new Set<string>();
+    let hasUnpricedSlot = false;
 
     for (let slotStart = startMinutes; slotStart < endMinutes;) {
         const slotEnd = Math.min(endMinutes, (Math.floor(slotStart / 30) + 1) * 30);
@@ -38,15 +39,21 @@ export function calculatePriceFromRules(
             const slotDuration = (slotEnd - slotStart) / 60;
             total += matchingRule.pricePerHour * slotDuration;
             appliedRules.add(matchingRule.name);
+        } else {
+            hasUnpricedSlot = true;
         }
         slotStart = slotEnd;
     }
 
     return {
-        pricePerHour: duration > 0 ? total / duration : 0,
+        pricePerHour: duration > 0 && !hasUnpricedSlot ? total / duration : 0,
         duration,
-        total,
-        appliedRule: appliedRules.size > 0 ? [...appliedRules].join(', ') : 'Chưa thiết lập giá',
+        total: hasUnpricedSlot ? 0 : total,
+        appliedRule: hasUnpricedSlot
+            ? 'Chưa thiết lập giá cho toàn bộ khung giờ'
+            : appliedRules.size > 0
+                ? [...appliedRules].join(', ')
+                : 'Chưa thiết lập giá',
     };
 }
 
@@ -293,14 +300,34 @@ export class BookingService {
             throw new AppError(409, 'Khung giờ này đã có người đặt', { conflicts });
         }
 
-        // Validate time within venue hours
-        const [venueOpenH] = court.venue.openTime.split(':').map(Number);
-        const [venueCloseH] = court.venue.closeTime.split(':').map(Number);
-        const [startH] = input.startTime.split(':').map(Number);
-        const [endH] = input.endTime.split(':').map(Number);
-
-        if (startH < venueOpenH || endH > venueCloseH) {
-            throw new AppError(400, `Sân mở cửa từ ${court.venue.openTime} đến ${court.venue.closeTime}`);
+        
+        const dateObj = new Date(input.date);
+        const dayNum = dateObj.getDay(); 
+        const operatingHours = await prisma.operatingHour.findMany({
+            where: { venueId: court.venue.id, isActive: true }
+        });
+        
+        if (operatingHours.length > 0) {
+            let isOpen = false;
+            let validStart = '';
+            let validEnd = '';
+            
+            for (const oh of operatingHours) {
+                if (oh.daysOfWeek && oh.daysOfWeek.includes(dayNum.toString())) {
+                    isOpen = true;
+                    validStart = oh.startTime;
+                    validEnd = oh.endTime;
+                    break;
+                }
+            }
+            
+            if (!isOpen) {
+                throw new AppError(400, 'Cơ sở không hoạt động vào ngày bạn chọn.');
+            }
+            
+            if (input.startTime < validStart || input.endTime > validEnd) {
+                throw new AppError(400, `Cơ sở chỉ mở cửa từ ${validStart} đến ${validEnd} vào ngày này.`);
+            }
         }
 
         // Calculate price
@@ -311,7 +338,7 @@ export class BookingService {
             input.endTime
         );
         
-        if (pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá') {
+        if (pricing.total <= 0 || pricing.appliedRule?.startsWith('Chưa thiết lập giá')) {
             throw new AppError(400, 'Khung giờ này ngoài giờ hoạt động (chưa thiết lập giá)');
         }
 
@@ -511,7 +538,7 @@ export class BookingService {
                     gte: startDate,
                     lte: endDate,
                 },
-                status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED'] },
+                status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
             },
             include: {
                 customer: {

@@ -60,13 +60,28 @@ router.get('/:id/availability', async (req: Request, res: Response, next: NextFu
             where: {
                 courtId: { in: courts.map((c: any) => c.id) },
                 date: { gte: startOfDay, lte: endOfDay },
-                status: { not: 'CANCELLED' }
+                status: { notIn: ['CANCELLED', 'COMPLETED'] }
             }
         });
 
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60000);
+        const pendingRequests = await prisma.bookingRequest.findMany({
+            where: {
+                courtId: { in: courts.map((c: any) => c.id) },
+                date: { gte: startOfDay, lte: endOfDay },
+                status: 'PENDING',
+                OR: [
+                    { paymentMethod: { not: 'VNPAY' } },
+                    { createdAt: { gte: fifteenMinsAgo } }
+                ]
+            }
+        });
+
+        const allBlockedSlots = [...bookings, ...pendingRequests];
+
         res.json({
             success: true,
-            data: { courts, bookings }
+            data: { courts, bookings: allBlockedSlots }
         });
     } catch (error) {
         next(error);

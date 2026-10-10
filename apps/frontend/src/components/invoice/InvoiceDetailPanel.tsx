@@ -68,7 +68,7 @@ const STATUS_CONFIG = {
 const PAYMENT_METHODS: Record<string, string> = {
     CASH: 'Tiền mặt',
     BANK_TRANSFER: 'Chuyển khoản',
-    MOMO: 'Ví MoMo',
+    VNPAY: 'Ví VNPAY',
     CARD: 'Thẻ tín dụng',
 };
 

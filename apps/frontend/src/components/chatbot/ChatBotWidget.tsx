@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { MessageCircle, X, Send, RotateCcw, Bot, User, Loader2, Sparkles } from 'lucide-react'
 import { chatbotService } from '@/services/chatbot.service'
 
@@ -10,6 +11,7 @@ interface Message {
 }
 
 export function ChatBotWidget() {
+    const queryClient = useQueryClient()
     const [isOpen, setIsOpen] = useState(false)
     const [messages, setMessages] = useState<Message[]>([])
     const [input, setInput] = useState('')
@@ -74,6 +76,13 @@ export function ChatBotWidget() {
             const response = await chatbotService.sendMessage(trimmed, sessionId)
 
             setSessionId(response.sessionId)
+            if (response.bookingCreated) {
+                await Promise.all([
+                    queryClient.invalidateQueries({ queryKey: ['calendar'] }),
+                    queryClient.invalidateQueries({ queryKey: ['bookings'] }),
+                    queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+                ])
+            }
 
             const botMsg: Message = {
                 id: `bot-${Date.now()}`,
@@ -99,7 +108,7 @@ export function ChatBotWidget() {
         } finally {
             setIsLoading(false)
         }
-    }, [input, isLoading, sessionId, isOpen])
+    }, [input, isLoading, sessionId, isOpen, queryClient])
 
     const sendQuickMessage = useCallback((text: string) => {
         if (isLoading) return
@@ -116,6 +125,13 @@ export function ChatBotWidget() {
         chatbotService.sendMessage(text, sessionId)
             .then((response) => {
                 setSessionId(response.sessionId)
+                if (response.bookingCreated) {
+                    void Promise.all([
+                        queryClient.invalidateQueries({ queryKey: ['calendar'] }),
+                        queryClient.invalidateQueries({ queryKey: ['bookings'] }),
+                        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+                    ])
+                }
                 const botMsg: Message = {
                     id: `bot-${Date.now()}`,
                     role: 'bot',
@@ -134,7 +150,7 @@ export function ChatBotWidget() {
                 }])
             })
             .finally(() => setIsLoading(false))
-    }, [isLoading, sessionId])
+    }, [isLoading, sessionId, queryClient])
 
     const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
         if (e.key === 'Enter' && !e.shiftKey) {

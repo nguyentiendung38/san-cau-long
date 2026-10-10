@@ -10,6 +10,8 @@ import { AppProps } from "zmp-ui/app";
 
 import HomePage from "@/pages/index";
 import ChatAIPage from "@/pages/chat-ai";
+import HistoryPage from "@/pages/history";
+import AvailabilityPage from "@/pages/availability";
 
 const Layout = () => {
   return (
@@ -19,6 +21,8 @@ const Layout = () => {
           <AnimationRoutes>
             <Route path="/" element={<HomePage />}></Route>
             <Route path="/chat-ai" element={<ChatAIPage />}></Route>
+            <Route path="/history" element={<HistoryPage />}></Route>
+            <Route path="/availability" element={<AvailabilityPage />}></Route>
           </AnimationRoutes>
         </ZMPRouter>
       </SnackbarProvider>

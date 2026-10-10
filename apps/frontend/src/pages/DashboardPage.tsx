@@ -327,7 +327,7 @@ export default function DashboardPage() {
     // Fetch dashboard stats based on period
     const { data: stats, isLoading: loadingStats } = useQuery({
         queryKey: ['dashboard', 'stats', periodFilter],
-        queryFn: () => reportApi.getDashboardStats(),
+        queryFn: () => reportApi.getDashboardStats(periodFilter),
     });
 
     // Fetch monthly revenue for growth %
@@ -359,8 +359,8 @@ export default function DashboardPage() {
     // Chart data transformation
     const chartData: ChartDataPoint[] = revenueChart?.map((item) => ({
         label: periodFilter === 'month'
-            ? item.date.split('-')[2] // Day only
-            : item.date.split('-').slice(1).join('/'), // MM/DD
+            ? item.date.split('/')[0] // Day only
+            : item.date,
         value: item.revenue,
         date: item.date,
     })) || [];

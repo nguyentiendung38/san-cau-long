@@ -30,11 +30,27 @@ export interface BookingStatusSummary {
     count: number;
 }
 
+function paidInvoiceDateFilter(start: Date, end: Date) {
+    return {
+        OR: [
+            { paidAt: { gte: start, lte: end } },
+            { paidAt: null, createdAt: { gte: start, lte: end } },
+        ],
+    };
+}
+
 export class ReportService {
-    async getDashboardStats(): Promise<DashboardStats> {
+    async getDashboardStats(period: 'day' | 'week' | 'month' = 'day'): Promise<DashboardStats> {
         const today = new Date();
-        const startOfToday = startOfDay(today);
-        const endOfToday = endOfDay(today);
+        let startOfPeriod;
+        let endOfPeriod = endOfDay(today);
+        if (period === 'month') {
+            startOfPeriod = startOfDay(subDays(today, 29));
+        } else if (period === 'week') {
+            startOfPeriod = startOfDay(subDays(today, 6));
+        } else {
+            startOfPeriod = startOfDay(today);
+        }
 
         // Get current hour for court availability
         const currentHour = today.getHours();
@@ -44,10 +60,7 @@ export class ReportService {
         const todayInvoices = await prisma.invoice.aggregate({
             where: {
                 paymentStatus: 'PAID',
-                paidAt: {
-                    gte: startOfToday,
-                    lte: endOfToday,
-                },
+                ...paidInvoiceDateFilter(startOfPeriod, endOfPeriod),
             },
             _sum: { total: true },
         });
@@ -56,8 +69,8 @@ export class ReportService {
         const todayBookings = await prisma.booking.count({
             where: {
                 date: {
-                    gte: startOfToday,
-                    lte: endOfToday,
+                    gte: startOfPeriod,
+                    lte: endOfPeriod,
                 },
                 status: { not: 'CANCELLED' },
             },
@@ -77,8 +90,8 @@ export class ReportService {
         const courtsInUse = await prisma.booking.count({
             where: {
                 date: {
-                    gte: startOfToday,
-                    lte: endOfToday,
+                    gte: startOfPeriod,
+                    lte: endOfPeriod,
                 },
                 status: 'IN_PROGRESS',
                 startTime: { lte: currentTime },
@@ -114,10 +127,7 @@ export class ReportService {
                 prisma.invoice.aggregate({
                     where: {
                         paymentStatus: 'PAID',
-                        paidAt: {
-                            gte: start,
-                            lte: end,
-                        },
+                        ...paidInvoiceDateFilter(start, end),
                     },
                     _sum: { total: true },
                 }),
@@ -152,20 +162,14 @@ export class ReportService {
             prisma.invoice.aggregate({
                 where: {
                     paymentStatus: 'PAID',
-                    paidAt: {
-                        gte: startCurrent,
-                        lte: endCurrent,
-                    },
+                    ...paidInvoiceDateFilter(startCurrent, endCurrent),
                 },
                 _sum: { total: true },
             }),
             prisma.invoice.aggregate({
                 where: {
                     paymentStatus: 'PAID',
-                    paidAt: {
-                        gte: startLast,
-                        lte: endLast,
-                    },
+                    ...paidInvoiceDateFilter(startLast, endLast),
                 },
                 _sum: { total: true },
             }),

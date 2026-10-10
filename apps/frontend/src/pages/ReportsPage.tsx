@@ -86,8 +86,8 @@ export default function ReportsPage() {
 
     // Fetch dashboard stats
     const { data: dashboardStats, isLoading: loadingStats } = useQuery({
-        queryKey: ['dashboard', 'stats'],
-        queryFn: () => reportApi.getDashboardStats(),
+        queryKey: ['dashboard', 'stats', period],
+        queryFn: () => reportApi.getDashboardStats(period === 'today' ? 'day' : period),
     });
 
     // Fetch monthly revenue
@@ -96,10 +96,12 @@ export default function ReportsPage() {
         queryFn: () => reportApi.getMonthlyRevenue(),
     });
 
+    const chartDays = period === 'today' ? 1 : period === 'week' ? 7 : 30;
+
     // Fetch revenue chart
     const { data: revenueChart } = useQuery({
-        queryKey: ['dashboard', 'revenue-chart', 7],
-        queryFn: () => reportApi.getRevenueChart(7),
+        queryKey: ['dashboard', 'revenue-chart', chartDays],
+        queryFn: () => reportApi.getRevenueChart(chartDays),
     });
 
     // Fetch top customers
@@ -215,7 +217,7 @@ export default function ReportsPage() {
             {/* Stats Cards */}
             <div className="grid grid-cols-4 gap-4 mb-6">
                 <StatCard
-                    title="Doanh thu hôm nay"
+                    title={period === 'today' ? 'Doanh thu hôm nay' : period === 'week' ? 'Doanh thu tuần này' : 'Doanh thu tháng này'}
                     value={formatCurrency(dashboardStats?.todayRevenue || 0)}
                     icon={DollarSign}
                     trend={monthlyRevenue?.growth && monthlyRevenue.growth >= 0 ? 'up' : 'down'}
@@ -245,12 +247,14 @@ export default function ReportsPage() {
                 />
             </div>
 
-            {/* Weekly Revenue Chart */}
+            {/* Revenue Chart */}
             <div className="bg-background-secondary border border-border rounded-lg p-6 mb-6">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center gap-2">
                         <BarChart3 className="w-5 h-5 text-primary-500" />
-                        <h3 className="font-semibold text-foreground">Doanh thu 7 ngày qua</h3>
+                        <h3 className="font-semibold text-foreground">
+                            {period === 'today' ? 'Doanh thu hôm nay' : period === 'week' ? 'Doanh thu 7 ngày qua' : 'Doanh thu 30 ngày qua'}
+                        </h3>
                     </div>
                     <span className="text-sm text-foreground-secondary">
                         Tổng: {formatCurrency(chartData.reduce((s, d) => s + d.revenue, 0))}

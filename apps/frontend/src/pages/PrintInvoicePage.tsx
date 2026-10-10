@@ -219,8 +219,8 @@ export default function PrintInvoicePage() {
 
                 {/* Footer */}
                 <div className="mt-10 pt-6 border-t border-gray-200 text-center text-sm text-gray-500">
-                    <p>Cảm ơn quý khách đã sử dụng dịch vụ của Courtify!</p>
-                    <p className="mt-1">Mọi thắc mắc xin liên hệ: 028 1234 5678 | info@courtify.vn</p>
+                    <p>Cảm ơn quý khách đã sử dụng dịch vụ của HUE!</p>
+                    <p className="mt-1">Mọi thắc mắc xin liên hệ: 028 1234 5678 | info@hue.vn</p>
                 </div>
             </div>
         </>

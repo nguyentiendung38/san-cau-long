@@ -7,7 +7,8 @@ const router = Router();
 // GET /reports/dashboard - Get dashboard stats
 router.get('/dashboard', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const stats = await reportService.getDashboardStats();
+        const period = (req.query.period as 'day' | 'week' | 'month') || 'day';
+        const stats = await reportService.getDashboardStats(period);
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);

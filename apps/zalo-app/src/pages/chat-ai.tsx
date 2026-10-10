@@ -3,7 +3,7 @@ import { Page, Header, Box, Text, useSnackbar } from "zmp-ui";
 import { useNavigate } from "zmp-ui";
 
 // Địa chỉ Backend AI Chatbot - cùng server với web quản lý
-const API_URL = "http://192.168.1.17:3005/api/chatbot";
+const API_URL = "http://127.0.0.1:3005/api/chatbot";
 
 interface Message {
   id: string;

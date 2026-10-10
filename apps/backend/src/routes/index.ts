@@ -49,8 +49,10 @@ router.use('/chatbot', chatbotRoutes);
 router.use('/zalo', zaloRoutes);
 router.use('/explore-contents', exploreContentRoutes);
 import momoRoutes from './momo.routes.js';
+import vnpayRoutes from './vnpay.routes.js';
 import portalAuthRoutes from './portal-auth.routes.js';
 router.use('/portal-auth', portalAuthRoutes);
 router.use('/momo', momoRoutes);
+router.use('/vnpay', vnpayRoutes);
 
 export default router;

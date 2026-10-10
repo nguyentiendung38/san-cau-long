@@ -53,7 +53,7 @@ type BookingStep = 'court' | 'time' | 'info' | 'confirm';
 const PAYMENT_METHODS = [
     { id: 'cash', label: 'Tiền mặt', icon: '💵' },
     { id: 'bank', label: 'Chuyển khoản', icon: '🏦' },
-    { id: 'momo', label: 'Ví MoMo', icon: '💜' },
+    { id: 'vnpay', label: 'Ví VNPAY', icon: '💜' },
 ];
 
 export function PublicBookingForm({

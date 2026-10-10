@@ -55,7 +55,7 @@ const getOperatingStatus = (venue: any) => {
 };
 
 export default function PortalPage() {
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     const activeTab = (searchParams.get('tab') as 'home' | 'account' | 'map' | 'explore' | 'history' | 'featured_courts') || 'home';
     const navigate = useNavigate();
 
@@ -99,7 +99,7 @@ export default function PortalPage() {
     // Auto hide toast
     useEffect(() => {
         if (favToast.show) {
-            const timer = setTimeout(() => setFavToast(prev => ({...prev, show: false})), 3000);
+            const timer = setTimeout(() => setFavToast(prev => ({...prev, show: false})), 3005);
             return () => clearTimeout(timer);
         }
     }, [favToast.id, favToast.show]);
@@ -110,13 +110,21 @@ export default function PortalPage() {
     useEffect(() => {
         const paymentStatus = searchParams.get('payment');
         if (paymentStatus === 'success') {
-            toast({ title: '✅ Đặt sân & thanh toán MoMo thành công!' });
-            searchParams.delete('payment');
+            toast({
+                title: 'Đặt sân thành công!',
+                description: 'Thanh toán VNPay đã được xác nhận.',
+                variant: 'success',
+            });
         } else if (paymentStatus === 'failed') {
-            toast({ title: '❌ Thanh toán MoMo thất bại hoặc bị hủy.', variant: 'error' });
-            searchParams.delete('payment');
+            toast({ title: 'Thanh toán VNPay thất bại hoặc bị hủy.', variant: 'error' });
+        } else {
+            return;
         }
-    }, [searchParams, toast]);
+
+        const nextSearchParams = new URLSearchParams(searchParams);
+        nextSearchParams.delete('payment');
+        setSearchParams(nextSearchParams, { replace: true });
+    }, [searchParams, setSearchParams, toast]);
     
     const queryClient = useQueryClient();
 

@@ -1,15 +1,15 @@
 @echo off
 echo ========================================
-echo   Courtify Development Server
+echo   Hue Development Server
 echo ========================================
 echo.
 
 echo [1/2] Starting Backend API on port 3000...
-start "Courtify Backend" cmd /k "cd /d %~dp0apps\backend && npm run dev"
+start "Hue Backend" cmd /k "cd /d %~dp0apps\backend && npm run dev"
 timeout /t 3 /nobreak >nul
 
 echo [2/2] Starting Frontend on port 5173...
-start "Courtify Frontend" cmd /k "cd /d %~dp0apps\frontend && npm run dev"
+start "Hue Frontend" cmd /k "cd /d %~dp0apps\frontend && npm run dev"
 timeout /t 3 /nobreak >nul
 
 echo.

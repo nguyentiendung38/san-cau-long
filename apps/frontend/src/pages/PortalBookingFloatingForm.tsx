@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 export function PortalBookingFloatingForm({ court, venue, onClose }: { court: Court, venue: Venue, onClose: () => void }) {
     const { toast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [paymentMethod, setPaymentMethod] = useState("MOMO");
+    const [paymentMethod, setPaymentMethod] = useState("VNPAY");
     
     // Default to today
     const now = new Date();
@@ -38,11 +38,11 @@ export function PortalBookingFloatingForm({ court, venue, onClose }: { court: Co
                 date: date,
                 startTime: startTime,
                 endTime: endTime,
-                paymentMethod: paymentMethod as "MOMO" | "DEPOSIT_TRANSFER",
+                paymentMethod: paymentMethod as "VNPAY" | "DEPOSIT_TRANSFER",
                 paymentAmount: price
             });
             
-            const payRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/momo/create-payment`, {
+            const payRes = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3005/api'}/vnpay/create-payment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -125,7 +125,7 @@ export function PortalBookingFloatingForm({ court, venue, onClose }: { court: Co
                 <div className="flex flex-col gap-2 pt-2 border-t border-gray-100">
                     <span className="text-gray-600 font-medium">Ph��ng th?c thanh to�n</span>
                     <div className="flex gap-2">
-                        <button type="button" onClick={() => setPaymentMethod('MOMO')} className={`flex-1 py-1.5 rounded-md border text-xs font-semibold ${paymentMethod === 'MOMO' ? 'border-pink-500 bg-pink-50 text-pink-600' : 'border-gray-200 text-gray-500'}`}>MoMo</button>
+                        <button type="button" onClick={() => setPaymentMethod('VNPAY')} className={`flex-1 py-1.5 rounded-md border text-xs font-semibold ${paymentMethod === 'VNPAY' ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-gray-200 text-gray-500'}`}>VNPAY</button>
                         <button type="button" onClick={() => setPaymentMethod('DEPOSIT_TRANSFER')} className={`flex-1 py-1.5 rounded-md border text-xs font-semibold ${paymentMethod === 'DEPOSIT_TRANSFER' ? 'border-[#19b251] bg-green-50 text-[#19b251]' : 'border-gray-200 text-gray-500'}`}>Ng�n h�ng</button>
                     </div>
                 </div>

@@ -95,10 +95,10 @@ export default function BookingRequestsPage() {
                                         </span>
                                         <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4 text-foreground-muted" /> {format(new Date(req.date), 'dd/MM/yyyy')}</span>
                                         <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-foreground-muted" /> {req.startTime} - {req.endTime}</span>
-                                        <span className={`font-semibold ${req.paymentMethod === 'MOMO' ? 'text-pink-500' : 'text-foreground-secondary'}`}>
+                                        <span className={`font-semibold ${req.paymentMethod === 'VNPAY' ? 'text-pink-500' : 'text-foreground-secondary'}`}>
                                             {req.paymentMethod === 'DEPOSIT_TRANSFER'
-                                                ? `Thanh toán QR · ${req.paymentStatus === 'PAID' ? 'Đã xác nhận' : 'Chờ kiểm tra'}`
-                                                : `MoMo online · ${req.paymentStatus === 'PAID' ? 'đã thanh toán qua momo' : 'Chờ thanh toán'}`}
+                                                ? (req.paymentStatus === 'PAID' ? 'Thanh toán QR · Đã xác nhận' : 'Chưa thanh toán · Chờ kiểm tra')
+                                                : `VNPAY online · ${req.paymentStatus === 'PAID' ? 'đã thanh toán qua vnpay' : 'Chờ thanh toán'}`}
                                         </span>
                                         {req.paymentProof && (
                                             <button 
@@ -148,7 +148,7 @@ export default function BookingRequestsPage() {
                                             Xác nhận thanh toán
                                         </button>
                                     )}
-                                    {req.status === 'PENDING' && (
+                                    {req.status === 'PENDING' && req.paymentMethod !== 'VNPAY' && (
                                         <>
                                             <button onClick={() => updateStatusMutation.mutate({ id: req.id, status: 'APPROVED' })} disabled={updateStatusMutation.isPending} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                                                 <Check className="w-4 h-4" /> Đã nhập vào lịch
@@ -158,7 +158,13 @@ export default function BookingRequestsPage() {
                                             </button>
                                         </>
                                     )}
-                                    <button onClick={() => deleteMutation.mutate(req.id)} disabled={deleteMutation.isPending} className="bg-background-tertiary hover:bg-background text-foreground-secondary border border-border px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 mt-auto disabled:opacity-50 disabled:cursor-not-allowed">
+
+                                      {req.status === 'PENDING' && req.paymentMethod === 'VNPAY' && (
+                                          <div className="bg-amber-50 text-amber-600 border border-amber-200 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center text-center">
+                                              Chờ khách thanh toán qua VNPAY...
+                                          </div>
+                                      )}
+                                      <button onClick={() => deleteMutation.mutate(req.id)} disabled={deleteMutation.isPending} className="bg-background-tertiary hover:bg-background text-foreground-secondary border border-border px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2 mt-auto disabled:opacity-50 disabled:cursor-not-allowed">
                                         <Trash2 className="w-4 h-4" /> Xóa bản ghi
                                     </button>
                                 </div>
