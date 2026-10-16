@@ -57,6 +57,7 @@ model Venue {
   email       String?
   description String?
   logo        String?
+  images      String?
   openTime    String   @default("06:00")
   closeTime   String   @default("23:00")
   isActive    Boolean  @default(true)
@@ -69,6 +70,7 @@ model Venue {
   operatingHours OperatingHour[]
   services       Service[]
   products       Product[]
+  reviews        VenueReview[]
   BookingRequest BookingRequest[]
 
   @@map("venues")
@@ -513,4 +515,23 @@ model OperatingHour {
 
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
   @@map("operating_hours")
+}
+
+/// VenueReview - Customer reviews submitted from the public portal
+model VenueReview {
+  id           String   @id @default(cuid())
+  venueId      String
+  customerName String
+  customerPhone String
+  rating       Int
+  content      String
+  images       String?
+  status       String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@index([venueId, status, createdAt])
+  @@map("venue_reviews")
 }

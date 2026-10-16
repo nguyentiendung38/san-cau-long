@@ -30,6 +30,7 @@ import PortalForgotPasswordPage from '@/pages/PortalForgotPasswordPage'
 
 import BookingRequestsPage from '@/pages/BookingRequestsPage'
 import ExploreContentPage from '@/pages/ExploreContentPage'
+import VenueReviewsPage from '@/pages/VenueReviewsPage'
 import PortalLayout from '@/components/portal/PortalLayout'
 
 function App() {
@@ -106,6 +107,7 @@ function App() {
                                     <Route path="/reports" element={<ReportsPage />} />
                                     <Route path="/settings" element={<SettingsPage />} />
                                     <Route path="/explore-content" element={<ExploreContentPage />} />
+                                    <Route path="/venue-reviews" element={<VenueReviewsPage />} />
                                     <Route path="*" element={<Navigate to="/" replace />} />
                                 </Routes>
                             </AppLayout>
@@ -122,4 +124,3 @@ function App() {
 }
 
 export default App
-

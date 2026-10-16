@@ -9,20 +9,19 @@ import {
     Pencil,
     Trash2,
     X,
-    Check,
-    AlertCircle
+    Check
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { venueApi, Venue, CreateVenueInput } from '@/services/venue.service';
 import { useToast } from '@/hooks/use-toast';
-import { cn } from '@/lib/utils';
 
 interface VenueFormData {
     name: string;
     address: string;
     phone: string;
     logo: string;
+    images: string[];
     openTime: string;
     closeTime: string;
 }
@@ -32,10 +31,10 @@ const defaultFormData: VenueFormData = {
     address: '',
     phone: '',
     logo: '',
+    images: [],
     openTime: '06:00',
     closeTime: '23:00',
 };
-
 
 const getOperatingStatus = (venue: any) => {
     if (!venue.operatingHours || venue.operatingHours.length === 0) {
@@ -67,6 +66,48 @@ const getOperatingStatus = (venue: any) => {
         text: `${pad(minH)}:${pad(minM)} - ${pad(maxH)}:${pad(maxM)}`,
         isOpen
     };
+};
+
+const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const MAX_SIZE = 1000;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > MAX_SIZE) {
+                        height = Math.round((height * MAX_SIZE) / width);
+                        width = MAX_SIZE;
+                    }
+                } else {
+                    if (height > MAX_SIZE) {
+                        width = Math.round((width * MAX_SIZE) / height);
+                        height = MAX_SIZE;
+                    }
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    resolve(e.target?.result as string);
+                    return;
+                }
+                ctx.drawImage(img, 0, 0, width, height);
+                // Nén sang JPEG chất lượng 0.8 (~50KB-80KB)
+                resolve(canvas.toDataURL('image/jpeg', 0.8));
+            };
+            img.onerror = () => resolve(e.target?.result as string);
+            img.src = e.target?.result as string;
+        };
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(file);
+    });
 };
 
 export default function VenuesPage() {
@@ -131,6 +172,7 @@ export default function VenuesPage() {
                 address: venue.address,
                 phone: venue.phone || '',
                 logo: venue.logo || '',
+                images: Array.isArray(venue.images) ? venue.images : (typeof venue.images === 'string' ? (() => { try { const p = JSON.parse(venue.images); return Array.isArray(p) ? p : [venue.images]; } catch { return [venue.images]; } })() : []),
                 openTime: venue.openTime,
                 closeTime: venue.closeTime,
             });
@@ -145,6 +187,13 @@ export default function VenuesPage() {
         setShowModal(false);
         setEditingVenue(null);
         setFormData(defaultFormData);
+    };
+
+    const handleRemoveGalleryImage = (indexToRemove: number) => {
+        setFormData((prev) => ({
+            ...prev,
+            images: prev.images.filter((_, idx) => idx !== indexToRemove),
+        }));
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -165,6 +214,7 @@ export default function VenuesPage() {
             address: formData.address.trim(),
             phone: formData.phone.trim() || undefined,
             logo: formData.logo.trim() || undefined,
+            images: formData.images,
             openTime: formData.openTime,
             closeTime: formData.closeTime,
         };
@@ -184,7 +234,10 @@ export default function VenuesPage() {
                     <h1 className="text-2xl font-bold text-foreground">Quản lý cơ sở</h1>
                     <p className="text-foreground-secondary">Quản lý các cơ sở, chi nhánh của bạn</p>
                 </div>
-                
+                <Button onClick={() => handleOpenModal()}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Thêm cơ sở mới
+                </Button>
             </div>
 
             {/* Venues Grid */}
@@ -219,8 +272,20 @@ export default function VenuesPage() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    
-                                    
+                                    <button
+                                        onClick={() => handleOpenModal(venue)}
+                                        className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                        title="Chỉnh sửa"
+                                    >
+                                        <Pencil className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                        onClick={() => setDeleteConfirm(venue.id)}
+                                        className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        title="Xóa"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                             </div>
 
@@ -367,6 +432,72 @@ export default function VenuesPage() {
                                     />
                                 </div>
 
+                                {/* Khu vực quản lý bộ sưu tập ảnh (Gallery) */}
+                                <div className="space-y-2.5 pt-1">
+                                    <label className="block text-sm font-medium text-foreground-secondary">
+                                        Hình ảnh cơ sở (Gallery)
+                                    </label>
+
+                                    {/* Khung tải ảnh từ file */}
+                                    <div className="p-3 rounded-xl border border-dashed border-border bg-background-tertiary/40 space-y-2">
+                                        <Input
+                                            accept="image/*"
+                                            className="cursor-pointer"
+                                            multiple
+                                            type="file"
+                                            onChange={async (e) => {
+                                                const files = e.target.files;
+                                                if (!files || files.length === 0) return;
+
+                                                // Nén và đọc ảnh trực tiếp từ máy tính
+                                                const compressedImages = await Promise.all(
+                                                    Array.from(files).map((file) => compressImage(file))
+                                                );
+                                                const validImages = compressedImages.filter(Boolean);
+
+                                                setFormData((prev) => ({
+                                                    ...prev,
+                                                    images: [...prev.images, ...validImages],
+                                                }));
+
+                                                e.target.value = ''; // Reset input
+                                            }}
+                                        />
+                                        <p className="text-[11px] text-foreground-muted">
+                                            Chọn ảnh từ máy tính (hệ thống sẽ tự động tối ưu & nén sắc nét) ({formData.images.length} ảnh)
+                                        </p>
+                                    </div>
+
+                                    {/* Phần hiển thị (Preview) */}
+                                    {formData.images.length > 0 && (
+                                        <div className="grid grid-cols-4 gap-2 pt-1 max-h-48 overflow-y-auto pr-1">
+                                            {formData.images.map((imgUrl, index) => (
+                                                <div
+                                                    key={`${imgUrl}-${index}`}
+                                                    className="relative group aspect-square rounded-md overflow-hidden border border-border bg-background-tertiary"
+                                                >
+                                                    <img
+                                                        src={imgUrl}
+                                                        alt={`Gallery ${index + 1}`}
+                                                        className="w-full h-full aspect-square object-cover rounded-md"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=400';
+                                                        }}
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveGalleryImage(index)}
+                                                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white flex items-center justify-center shadow-md transition-transform active:scale-95"
+                                                        title="Xóa ảnh"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div className="hidden grid-cols-2 gap-3">
                                     <div>
                                         <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
@@ -411,3 +542,5 @@ export default function VenuesPage() {
         </div>
     );
 }
+
+

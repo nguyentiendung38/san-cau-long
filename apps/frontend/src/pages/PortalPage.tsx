@@ -4,13 +4,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
     Search, MapPin, Map, CalendarCheck, Heart, User, Home, Flame, Compass, 
     Settings2, Calendar, ChevronRight, Info, ShieldCheck, Sparkles, Globe, X, ChevronLeft,
-    Star, Navigation, Clock, CalendarDays, Bell, BookOpen, Gift, LogOut
+    Star, Navigation, Clock, CalendarDays, Bell, BookOpen, Gift, LogOut, Phone
 } from 'lucide-react';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget';
 import { bookingRequestApi } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
 import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABELS, TYPE_ICONS } from '@/services/explore-content.service';
+import { venueReviewApi } from '@/services/venue-review.service';
 
 const TIME_SLOTS: string[] = [];
 for (let h = 6; h <= 23; h++) {
@@ -20,6 +21,34 @@ for (let h = 6; h <= 23; h++) {
         TIME_SLOTS.push(`${hour}:30`);
     }
 }
+
+const formatVnd = (amount: number) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+
+const readReviewImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error(`Không thể đọc ảnh ${file.name}`));
+    reader.onload = () => {
+        const image = new Image();
+        image.onerror = () => reject(new Error(`Ảnh ${file.name} không hợp lệ`));
+        image.onload = () => {
+            const maxSize = 1200;
+            const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(image.width * scale);
+            canvas.height = Math.round(image.height * scale);
+            const context = canvas.getContext('2d');
+            if (!context) {
+                reject(new Error('Trình duyệt không hỗ trợ xử lý ảnh'));
+                return;
+            }
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.78));
+        };
+        image.src = String(reader.result);
+    };
+    reader.readAsDataURL(file);
+});
 
 
 const getOperatingStatus = (venue: any) => {
@@ -68,10 +97,17 @@ export default function PortalPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterMode, setFilterMode] = useState<'all' | 'booked' | 'favorite'>('all');
-
-
-
-    
+    const [selectedVenueDetail, setSelectedVenueDetail] = useState<Venue | null>(null);
+    const [activeModalTab, setActiveModalTab] = useState<'info' | 'services' | 'images' | 'reviews'>('info');
+    const [venueDetailLoading, setVenueDetailLoading] = useState(false);
+    const [reviewName, setReviewName] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('portalUser') || '{}').name || ''; } catch { return ''; }
+    });
+    const [reviewPhone, setReviewPhone] = useState(() => localStorage.getItem('portalUserPhone') || '');
+    const [reviewRating, setReviewRating] = useState(5);
+    const [reviewContent, setReviewContent] = useState('');
+    const [reviewImages, setReviewImages] = useState<string[]>([]);
+    const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
     
     const [favToast, setFavToast] = useState<{show: boolean, isAdd: boolean, id: number}>({ show: false, isAdd: true, id: 0 });
@@ -141,12 +177,94 @@ export default function PortalPage() {
         queryFn: () => bookingRequestApi.getMyRequests(userPhone).then(data => data.filter((b: any) => !b.notes?.includes("Zalo"))),
         enabled: activeTab === 'history' && !!userPhone,
     });
+    const { data: venueReviews = [], isLoading: isLoadingReviews } = useQuery({
+        queryKey: ['venue-reviews-public', selectedVenueDetail?.id],
+        queryFn: () => venueReviewApi.getPublic(selectedVenueDetail!.id),
+        enabled: !!selectedVenueDetail && activeModalTab === 'reviews',
+    });
 
     const getByType = (type: ExploreContentType) => exploreItems.filter(item => item.type === type);
 
 
     const handleSelectVenue = (venue: Venue) => {
         navigate(`/dat-lich/${venue.id}`);
+    };
+
+    const openVenueDetail = async (venue: Venue) => {
+        setSelectedVenueDetail(venue);
+        setActiveModalTab('info');
+        setVenueDetailLoading(true);
+        try {
+            setSelectedVenueDetail(await venueApi.getById(venue.id));
+        } catch (error: any) {
+            toast({
+                title: 'Không thể tải thông tin sân',
+                description: error?.response?.data?.message || 'Vui lòng thử lại sau.',
+                variant: 'error',
+            });
+        } finally {
+            setVenueDetailLoading(false);
+        }
+    };
+
+    const handleReviewImageChange = async (files: FileList | null) => {
+        if (!files?.length) return;
+        const selectedFiles = Array.from(files);
+        if (reviewImages.length + selectedFiles.length > 5) {
+            toast({ title: 'Chỉ được tải tối đa 5 hình ảnh', variant: 'error' });
+            return;
+        }
+        if (selectedFiles.some((file) => !file.type.startsWith('image/'))) {
+            toast({ title: 'Vui lòng chỉ chọn tệp hình ảnh', variant: 'error' });
+            return;
+        }
+        try {
+            const encodedImages = await Promise.all(selectedFiles.map(readReviewImage));
+            setReviewImages((current) => [...current, ...encodedImages]);
+        } catch (error) {
+            toast({
+                title: 'Không thể tải hình ảnh',
+                description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+                variant: 'error',
+            });
+        }
+    };
+
+    const submitVenueReview = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (!selectedVenueDetail) return;
+        if (!reviewName.trim() || !reviewPhone.trim() || !reviewContent.trim()) {
+            toast({ title: 'Vui lòng nhập tên, số điện thoại và nội dung đánh giá', variant: 'error' });
+            return;
+        }
+        setReviewSubmitting(true);
+        try {
+            await venueReviewApi.createPublic({
+                venueId: selectedVenueDetail.id,
+                customerName: reviewName.trim(),
+                customerPhone: reviewPhone.trim(),
+                rating: reviewRating,
+                content: reviewContent.trim(),
+                images: reviewImages,
+            });
+            toast({
+                title: 'Đã gửi đánh giá',
+                variant: 'success',
+            });
+            setReviewContent('');
+            setReviewImages([]);
+            queryClient.invalidateQueries({ queryKey: ['venue-reviews-public', selectedVenueDetail.id] });
+            setActiveModalTab('info');
+            setSelectedVenueDetail(null);
+        } catch (error: any) {
+            toast({
+                title: 'Không thể gửi đánh giá',
+                description: error?.response?.data?.message || 'Vui lòng thử lại sau.',
+                variant: 'error',
+            });
+        } finally {
+            setReviewSubmitting(false);
+        }
     };
 
     useEffect(() => {
@@ -162,7 +280,42 @@ export default function PortalPage() {
         const fetchVenues = async () => {
             try {
                 const res = await venueApi.getAll();
-                setVenues(res.data || []);
+                const venueList = res.data || [];
+                setVenues(venueList);
+
+                const venueIds = venueList.map((venue) => venue.id);
+                try {
+                    let summaries;
+                    try {
+                        summaries = await venueReviewApi.getPublicSummaries(venueIds);
+                    } catch (summaryError) {
+                        console.warn('Unable to load venue review summaries; falling back to public reviews', summaryError);
+                        const reviewResults = await Promise.allSettled(
+                            venueList.map((venue) => venueReviewApi.getPublic(venue.id)),
+                        );
+                        summaries = reviewResults.flatMap((result, index) => {
+                            if (result.status === 'rejected') {
+                                console.warn(`Unable to load public reviews for venue ${venueIds[index]}`, result.reason);
+                                return [];
+                            }
+                            if (result.value.length === 0) return [];
+                            const ratingAverage = result.value.reduce((total, review) => total + review.rating, 0) / result.value.length;
+                            return [{ venueId: venueIds[index], ratingAverage, reviewCount: result.value.length }];
+                        });
+                    }
+
+                    const summariesByVenueId = new Map(summaries.map((summary) => [summary.venueId, summary]));
+                    setVenues(venueList.map((venue) => {
+                        const summary = summariesByVenueId.get(venue.id);
+                        return {
+                            ...venue,
+                            ratingAverage: summary?.ratingAverage ?? null,
+                            reviewCount: summary?.reviewCount ?? 0,
+                        };
+                    }));
+                } catch (summaryError) {
+                    console.warn('Unable to update venue ratings; keeping the venue list visible', summaryError);
+                }
             } catch (error) {
                 console.error('Failed to fetch venues', error);
             } finally {
@@ -186,11 +339,11 @@ export default function PortalPage() {
     });
 
     const filteredCourts = venues.flatMap(v => {
-        return (v.courts || []).map(c => ({
+        return (v.courts || []).map((c: any) => ({
             ...c,
             venue: v
         }));
-    }).filter(c => {
+    }).filter((c: any) => {
         const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
             (c.venue.name && c.venue.name.toLowerCase().includes(searchQuery.toLowerCase()));
         if (!matchesSearch) return false;
@@ -227,7 +380,7 @@ export default function PortalPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6] flex flex-col font-sans selection:bg-[#19b251]/30">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-gray-100 to-slate-200 flex flex-col font-sans selection:bg-[#19b251]/30">
             {/* Custom Fav Toast */}
             <div className={`fixed top-20 right-4 z-[9999] transition-all duration-300 transform ${favToast.show ? 'translate-y-0 opacity-100' : '-translate-y-4 opacity-0 pointer-events-none'}`}>
                 <div className="bg-[#f0fdf4] border border-[#86efac] shadow-lg rounded-xl p-4 flex items-start gap-3 min-w-[300px]">
@@ -326,12 +479,25 @@ export default function PortalPage() {
                                     return (
                                         <div key={venue.id} className="group bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
                                             {/* Image Section */}
-                                            <div className="h-40 relative bg-gray-100 cursor-pointer overflow-hidden border-b border-gray-100" onClick={() => handleSelectVenue(venue)}>
+                                            <div className="h-40 relative bg-gray-100 cursor-pointer overflow-hidden border-b border-gray-100" onClick={() => void openVenueDetail(venue)}>
                                                 <img 
                                                     src={venue.logo || "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=800&auto=format&fit=crop"} 
                                                     alt={venue.name} 
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                                                 />
+                                                {!!venue.reviewCount && (
+                                                    <div className="absolute top-3 right-3 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1.5 text-white shadow-md backdrop-blur-sm">
+                                                        <div className="flex items-center" aria-label={`Đánh giá ${venue.ratingAverage?.toFixed(1)} trên 5 sao`}>
+                                                            {[1, 2, 3, 4, 5].map((star) => (
+                                                                <Star
+                                                                    key={star}
+                                                                    className={`h-3.5 w-3.5 ${star <= Math.round(venue.ratingAverage || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-white/60'}`}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                        <span className="text-xs font-bold">{venue.ratingAverage?.toFixed(1)}</span>
+                                                    </div>
+                                                )}
                                             </div>
                                             
                                             {/* Info Section */}
@@ -343,7 +509,7 @@ export default function PortalPage() {
                                                 
                                                 {/* Info Text */}
                                                 <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                                    <h4 className="font-bold text-[#064e3b] text-sm line-clamp-1 cursor-pointer hover:text-[#19b251] transition-colors" onClick={() => handleSelectVenue(venue)}>
+                                                    <h4 className="font-bold text-[#064e3b] text-sm line-clamp-1 cursor-pointer hover:text-[#19b251] transition-colors" onClick={() => void openVenueDetail(venue)}>
                                                         {venue.name.toUpperCase()}
                                                     </h4>
                                                     <div className="flex items-center gap-1 mt-0.5 text-[11px]">
@@ -687,8 +853,328 @@ export default function PortalPage() {
                 </div>
             )}
 
+            {/* Modal Chi tiết cơ sở sân - ALO Booking Style */}
+            {selectedVenueDetail && (
+                <div
+                    className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+                    onClick={() => {
+                        setSelectedVenueDetail(null);
+                        setActiveModalTab('info');
+                    }}
+                >
+                    <div
+                        className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden border border-gray-100 flex flex-col relative animate-in zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* 1. Phần Đầu: Ảnh bìa (Cover Image) & Nút đóng X */}
+                        <div className="relative h-48 sm:h-56 w-full bg-gray-100 overflow-hidden">
+                            <img
+                                src={selectedVenueDetail.logo || "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=800&auto=format&fit=crop"}
+                                alt={selectedVenueDetail.name}
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-black/30" />
 
-<ChatBotWidget />
+                            {/* Nút (X) Close tròn mờ góc phải */}
+                            <button
+                                onClick={() => {
+                                    setSelectedVenueDetail(null);
+                                    setActiveModalTab('info');
+                                }}
+                                className="absolute top-4 right-4 w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-black/50 hover:bg-black/75 text-white flex items-center justify-center transition-all backdrop-blur-md cursor-pointer shadow-md"
+                                aria-label="Đóng"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* 2. Phần Profile & Nội dung với padding rộng rãi */}
+                        <div className="p-6 sm:p-8 pt-0 sm:pt-0">
+                            {/* Thẻ div bọc chung Logo và Tên sân */}
+                            <div className="flex flex-row items-start gap-4 -mt-12 mb-5">
+                                {/* Logo to trồi lên ảnh bìa */}
+                                <div className="w-24 h-24 rounded-full border-4 border-white bg-white shadow-lg p-1.5 overflow-hidden shrink-0 flex items-center justify-center relative z-10">
+                                    <img src="/images/courts/logo.jpg" alt="Logo HCE" className="w-full h-full object-contain p-1" />
+                                </div>
+                                {/* Tên sân & Tag đẩy xuống hẳn nền trắng */}
+                                <div className="flex-1 min-w-0 pt-12 sm:pt-14">
+                                    <h3 className="text-2xl font-black text-gray-900 break-words leading-tight">
+                                        {selectedVenueDetail.name}
+                                    </h3>
+                                    <div className="flex items-center gap-2 mt-1.5">
+                                        <span className="text-xs font-semibold text-[#19b251] bg-green-50 border border-green-200 px-3 py-0.5 rounded-full inline-block">
+                                            Cơ sở thể thao
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 3. Phần Menu: Tabs Thông tin, Dịch vụ, Hình ảnh, Đánh giá */}
+                            <div className="flex items-center border-b border-gray-200 text-sm font-medium mb-6">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveModalTab('info')}
+                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                        activeModalTab === 'info'
+                                            ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
+                                            : 'text-gray-500 hover:text-gray-800'
+                                    }`}
+                                >
+                                    Thông tin
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveModalTab('services')}
+                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                        activeModalTab === 'services'
+                                            ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
+                                            : 'text-gray-500 hover:text-gray-800'
+                                    }`}
+                                >
+                                    Bảng giá & Dịch vụ
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveModalTab('images')}
+                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                        activeModalTab === 'images'
+                                            ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
+                                            : 'text-gray-500 hover:text-gray-800'
+                                    }`}
+                                >
+                                    Hình ảnh
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveModalTab('reviews')}
+                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                        activeModalTab === 'reviews'
+                                            ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
+                                            : 'text-gray-500 hover:text-gray-800'
+                                    }`}
+                                >
+                                    Đánh giá
+                                </button>
+                            </div>
+
+                            {/* 4. Nội dung hiển thị theo Tab */}
+                            {activeModalTab === 'info' && (
+                                <div className="space-y-4">
+                                    {/* Giờ hoạt động & Trạng thái */}
+                                    <div className="flex items-center justify-between text-sm bg-gray-50/90 p-3.5 rounded-xl border border-gray-100">
+                                        <div className="flex items-center gap-2.5 text-gray-700 font-medium">
+                                            <Clock className="w-4 h-4 text-[#19b251] shrink-0" />
+                                            <span>
+                                                Giờ hoạt động: {selectedVenueDetail.openTime || '06:00'} - {selectedVenueDetail.closeTime || '23:30'}
+                                            </span>
+                                        </div>
+                                        {(() => {
+                                            const status = getOperatingStatus(selectedVenueDetail);
+                                            return (
+                                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${status.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                                                    <span>{status.isOpen ? 'Đang mở' : 'Đóng cửa'}</span>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+
+                                    {/* Địa chỉ */}
+                                    <div className="flex items-start gap-2.5 text-sm text-gray-600 px-1">
+                                        <MapPin className="w-4 h-4 text-[#f97316] shrink-0 mt-0.5" />
+                                        <span className="leading-relaxed">{selectedVenueDetail.address || 'Chưa cập nhật địa chỉ'}</span>
+                                    </div>
+
+                                    {/* Số điện thoại */}
+                                    {selectedVenueDetail.phone && (
+                                        <div className="flex items-center gap-2.5 text-sm text-gray-600 px-1">
+                                            <Phone className="w-4 h-4 text-blue-500 shrink-0" />
+                                            <span>Hotline: <strong className="text-gray-800">{selectedVenueDetail.phone}</strong></span>
+                                        </div>
+                                    )}
+
+                                    {/* Mô tả cơ sở */}
+                                    {selectedVenueDetail.description && (
+                                        <div className="bg-gray-50 rounded-xl p-3.5 text-sm text-gray-600 border border-gray-100 leading-relaxed max-h-24 overflow-y-auto">
+                                            {selectedVenueDetail.description}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeModalTab === 'images' && (
+                                !selectedVenueDetail.images?.length ? (
+                                    <div className="py-10 text-center text-sm text-gray-500 bg-gray-50/70 rounded-xl border border-gray-100">
+                                        Chưa có hình ảnh nào được tải lên
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-64 overflow-y-auto p-1">
+                                        {selectedVenueDetail.images?.map((img, index) => (
+                                            <img
+                                                key={index}
+                                                src={img}
+                                                alt={`${selectedVenueDetail.name} - ${index + 1}`}
+                                                className="w-full aspect-square object-cover rounded-xl shadow-sm border border-gray-100"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?auto=format&fit=crop&q=80&w=600';
+                                                }}
+                                            />
+                                        ))}
+                                    </div>
+                                )
+                            )}
+
+                            {activeModalTab === 'services' && (
+                                <div className="space-y-5 max-h-[52vh] overflow-y-auto pr-1">
+                                    {venueDetailLoading ? (
+                                        <div className="py-10 text-center text-sm text-gray-500">Đang tải thông tin...</div>
+                                    ) : (
+                                        <>
+                                            <section>
+                                                <h4 className="font-bold text-gray-800 mb-3">Bảng giá sân</h4>
+                                                {selectedVenueDetail.pricingRules?.length ? (
+                                                    <div className="space-y-2">
+                                                        {selectedVenueDetail.pricingRules.map((rule) => (
+                                                            <div key={rule.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3 flex flex-wrap items-center justify-between gap-2">
+                                                                <div>
+                                                                    <p className="font-semibold text-gray-800">{rule.name}</p>
+                                                                    <p className="text-xs text-gray-500">
+                                                                        {[rule.dayOfWeek, rule.startTime && rule.endTime ? `${rule.startTime} - ${rule.endTime}` : null].filter(Boolean).join(' · ') || 'Tất cả các ngày, cả ngày'}
+                                                                    </p>
+                                                                    {rule.description && <p className="text-xs text-gray-500 mt-1">{rule.description}</p>}
+                                                                </div>
+                                                                <span className="font-bold text-[#19b251]">{formatVnd(rule.pricePerHour)}/giờ</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-sm text-gray-500 rounded-xl bg-gray-50 p-4">Cơ sở chưa cập nhật bảng giá.</p>
+                                                )}
+                                            </section>
+                                            <section>
+                                                <h4 className="font-bold text-gray-800 mb-3">Kho & Dịch vụ</h4>
+                                                <div className="space-y-2">
+                                                    {selectedVenueDetail.products?.map((product) => (
+                                                        <div key={product.id} className="rounded-xl border border-gray-100 p-3 flex items-center justify-between gap-3">
+                                                            <div>
+                                                                <p className="font-medium text-gray-800">{product.name}</p>
+                                                                <p className="text-xs text-gray-500">Còn {product.stock} {product.unit}</p>
+                                                                {product.description && <p className="text-xs text-gray-500 mt-1">{product.description}</p>}
+                                                            </div>
+                                                            <span className="font-semibold text-gray-800">{formatVnd(product.price)}</span>
+                                                        </div>
+                                                    ))}
+                                                    {selectedVenueDetail.services?.map((service) => (
+                                                        <div key={service.id} className="rounded-xl border border-gray-100 p-3 flex items-center justify-between gap-3">
+                                                            <div>
+                                                                <p className="font-medium text-gray-800">{service.name}</p>
+                                                                <p className="text-xs text-gray-500">Dịch vụ · {service.unit}</p>
+                                                                {service.description && <p className="text-xs text-gray-500 mt-1">{service.description}</p>}
+                                                            </div>
+                                                            <span className="font-semibold text-gray-800">{formatVnd(service.price)}</span>
+                                                        </div>
+                                                    ))}
+                                                    {!selectedVenueDetail.products?.length && !selectedVenueDetail.services?.length && (
+                                                        <p className="text-sm text-gray-500 rounded-xl bg-gray-50 p-4">Cơ sở chưa cập nhật sản phẩm hoặc dịch vụ.</p>
+                                                    )}
+                                                </div>
+                                            </section>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeModalTab === 'reviews' && (
+                                <div className="space-y-3 max-h-[44vh] overflow-y-auto pr-1">
+                                    <form onSubmit={submitVenueReview} className="rounded-xl border border-green-100 bg-green-50/60 p-2.5 space-y-2">
+                                        <h4 className="text-sm font-bold text-gray-800">Gửi đánh giá của bạn</h4>
+                                        <div className="flex items-center gap-0.5" role="group" aria-label="Chọn số sao">
+                                            {[1, 2, 3, 4, 5].map((rating) => (
+                                                <button key={rating} type="button" onClick={() => setReviewRating(rating)} aria-label={`${rating} sao`}>
+                                                    <Star className={`w-4 h-4 ${rating <= reviewRating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />
+                                                </button>
+                                            ))}
+                                            <span className="ml-1.5 text-xs text-gray-600">{reviewRating}/5</span>
+                                        </div>
+                                        <div className="grid sm:grid-cols-2 gap-2">
+                                            <input value={reviewName} onChange={(event) => setReviewName(event.target.value)} maxLength={100} placeholder="Tên của bạn" className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:border-[#19b251]" />
+                                            <input value={reviewPhone} onChange={(event) => setReviewPhone(event.target.value)} maxLength={30} placeholder="Số điện thoại" className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:border-[#19b251]" />
+                                        </div>
+                                        <textarea value={reviewContent} onChange={(event) => setReviewContent(event.target.value)} maxLength={2000} rows={2} placeholder="Chia sẻ trải nghiệm của bạn..." className="w-full resize-y rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:border-[#19b251]" />
+                                        <div>
+                                            <label className="inline-flex cursor-pointer items-center rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                                                Chọn hình ảnh (tối đa 5)
+                                                <input type="file" accept="image/*" multiple className="sr-only" onChange={(event) => {
+                                                    void handleReviewImageChange(event.target.files);
+                                                    event.currentTarget.value = '';
+                                                }} />
+                                            </label>
+                                            {!!reviewImages.length && (
+                                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                                    {reviewImages.map((image, index) => (
+                                                        <div key={`${image.slice(-20)}-${index}`} className="relative">
+                                                            <img src={image} alt={`Ảnh đánh giá ${index + 1}`} className="h-12 w-12 rounded-lg object-cover" />
+                                                            <button type="button" onClick={() => setReviewImages((current) => current.filter((_, imageIndex) => imageIndex !== index))} className="absolute -right-2 -top-2 rounded-full bg-gray-900 p-1 text-white" aria-label="Xóa ảnh">
+                                                                <X className="h-3 w-3" />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <button type="submit" disabled={reviewSubmitting} className="rounded-lg bg-[#19b251] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#159a45] disabled:opacity-60">
+                                            {reviewSubmitting ? 'Đang gửi...' : 'Gửi đánh giá'}
+                                        </button>
+                                        <p className="text-[11px] text-gray-500">Đánh giá và hình ảnh sẽ được admin duyệt trước khi hiển thị công khai.</p>
+                                    </form>
+
+                                    <section className="space-y-2">
+                                        <h4 className="text-xs font-bold text-gray-800">Đánh giá từ khách hàng</h4>
+                                        {isLoadingReviews ? (
+                                            <p className="py-4 text-center text-xs text-gray-500">Đang tải đánh giá...</p>
+                                        ) : venueReviews.length === 0 ? (
+                                            <p className="rounded-xl bg-gray-50 p-3 text-center text-xs text-gray-500">Chưa có đánh giá được duyệt.</p>
+                                        ) : venueReviews.map((review) => (
+                                            <article key={review.id} className="rounded-xl border border-gray-100 p-2.5">
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-gray-800">{review.customerName}</p>
+                                                        <div className="mt-0.5 flex items-center gap-0.5">
+                                                            {[1, 2, 3, 4, 5].map((rating) => <Star key={rating} className={`h-3 w-3 ${rating <= review.rating ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'}`} />)}
+                                                        </div>
+                                                    </div>
+                                                    <time className="text-[11px] text-gray-400">{new Date(review.createdAt).toLocaleDateString('vi-VN')}</time>
+                                                </div>
+                                                <p className="mt-1.5 whitespace-pre-wrap text-xs text-gray-700">{review.content}</p>
+                                                {!!review.images.length && (
+                                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                                        {review.images.map((image, index) => <img key={index} src={image} alt={`Ảnh đánh giá ${index + 1}`} className="h-14 w-14 rounded-lg object-cover" />)}
+                                                    </div>
+                                                )}
+                                            </article>
+                                        ))}
+                                    </section>
+                                </div>
+                            )}
+
+                            {/* 5. Phần Nút: Nút ĐẶT LỊCH lớn màu vàng */}
+                            <button
+                                onClick={() => {
+                                    const venue = selectedVenueDetail;
+                                    setSelectedVenueDetail(null);
+                                    handleSelectVenue(venue);
+                                }}
+                                className="w-full mt-6 bg-[#eab308] hover:bg-[#ca8a04] active:scale-[0.99] text-white font-bold py-3.5 px-6 rounded-xl text-base shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 tracking-wide cursor-pointer"
+                            >
+                                <CalendarCheck className="w-5 h-5" />
+                                ĐẶT LỊCH
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <ChatBotWidget />
         </div>
     );
 }

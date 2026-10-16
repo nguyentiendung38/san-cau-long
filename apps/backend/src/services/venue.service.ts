@@ -8,12 +8,34 @@ export interface CreateVenueInput {
     email?: string;
     description?: string;
     logo?: string;
+    images?: string[] | string;
     openTime?: string;
     closeTime?: string;
 }
 
 export interface UpdateVenueInput extends Partial<CreateVenueInput> {
     isActive?: boolean;
+}
+
+function formatVenueResponse(venue: any) {
+    if (!venue) return venue;
+    let parsedImages: string[] = [];
+    if (venue.images) {
+        if (Array.isArray(venue.images)) {
+            parsedImages = venue.images;
+        } else if (typeof venue.images === 'string') {
+            try {
+                const parsed = JSON.parse(venue.images);
+                parsedImages = Array.isArray(parsed) ? parsed : [venue.images];
+            } catch {
+                parsedImages = venue.images ? [venue.images] : [];
+            }
+        }
+    }
+    return {
+        ...venue,
+        images: parsedImages,
+    };
 }
 
 export interface VenueQueryParams {
@@ -58,8 +80,30 @@ export class VenueService {
             prisma.venue.count({ where }),
         ]);
 
+        const reviewSummaries = venues.length > 0
+            ? await prisma.venueReview.groupBy({
+                by: ['venueId'],
+                where: {
+                    venueId: { in: venues.map((venue) => venue.id) },
+                    status: 'APPROVED',
+                },
+                _avg: { rating: true },
+                _count: { _all: true },
+            })
+            : [];
+        const reviewSummaryByVenueId = new Map(
+            reviewSummaries.map((summary) => [summary.venueId, {
+                ratingAverage: summary._avg.rating,
+                reviewCount: summary._count._all,
+            }]),
+        );
+
         return {
-            data: venues,
+            data: venues.map((venue) => ({
+                ...formatVenueResponse(venue),
+                ratingAverage: reviewSummaryByVenueId.get(venue.id)?.ratingAverage ?? null,
+                reviewCount: reviewSummaryByVenueId.get(venue.id)?.reviewCount ?? 0,
+            })),
             pagination: {
                 page,
                 limit,
@@ -99,10 +143,15 @@ export class VenueService {
             throw new AppError(404, 'Không tìm thấy cơ sở');
         }
 
-        return venue;
+        return formatVenueResponse(venue);
     }
 
     async create(input: CreateVenueInput) {
+        let imagesData: string | null = null;
+        if (input.images !== undefined) {
+            imagesData = Array.isArray(input.images) ? JSON.stringify(input.images) : (input.images || null);
+        }
+
         const venue = await prisma.venue.create({
             data: {
                 name: input.name,
@@ -111,12 +160,13 @@ export class VenueService {
                 email: input.email,
                 description: input.description,
                 logo: input.logo,
+                images: imagesData,
                 openTime: input.openTime || '06:00',
                 closeTime: input.closeTime || '23:00',
             },
         });
 
-        return venue;
+        return formatVenueResponse(venue);
     }
 
     async update(id: string, input: UpdateVenueInput) {
@@ -126,12 +176,17 @@ export class VenueService {
             throw new AppError(404, 'Không tìm thấy cơ sở');
         }
 
+        const data: any = { ...input };
+        if (input.images !== undefined) {
+            data.images = Array.isArray(input.images) ? JSON.stringify(input.images) : (input.images || null);
+        }
+
         const venue = await prisma.venue.update({
             where: { id },
-            data: input,
+            data,
         });
 
-        return venue;
+        return formatVenueResponse(venue);
     }
 
     async delete(id: string) {

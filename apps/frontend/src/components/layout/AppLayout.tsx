@@ -11,7 +11,7 @@ import {
     Search,
     ChevronDown,
     Package,
-    Building2, ClipboardList, Compass
+    Building2, ClipboardList, Compass, MessageSquareQuote
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
@@ -35,6 +35,7 @@ const navigation = [
     { name: 'Kho & Dịch vụ', href: '/inventory', icon: Package },
     { name: 'Báo cáo', href: '/reports', icon: BarChart3 },
     { name: 'Nội dung Khám phá', href: '/explore-content', icon: Compass },
+    { name: 'Đánh giá sân', href: '/venue-reviews', icon: MessageSquareQuote },
 ]
 
 export function AppLayout({ children }: AppLayoutProps) {

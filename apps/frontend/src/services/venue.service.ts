@@ -3,6 +3,23 @@ import api, { ApiResponse } from './api';
 export interface PricingRule { id: string; venueId: string; name: string; description?: string; dayOfWeek?: string; startTime?: string; endTime?: string; pricePerHour: number; priority: number; isActive: boolean;
     pricingRules?: PricingRule[]; }
 
+export interface VenueServiceItem {
+    id: string;
+    name: string;
+    description?: string | null;
+    price: number;
+    unit: string;
+}
+
+export interface VenueProductItem {
+    id: string;
+    name: string;
+    description?: string | null;
+    price: number;
+    stock: number;
+    unit: string;
+}
+
 export interface Venue {
     id: string;
     name: string;
@@ -11,9 +28,17 @@ export interface Venue {
     email?: string;
     description?: string;
     logo?: string;
+    images?: string[];
     openTime: string;
     closeTime: string;
     isActive: boolean;
+    ratingAverage?: number | null;
+    reviewCount?: number;
+    courts?: any[];
+    operatingHours?: any[];
+    pricingRules?: PricingRule[];
+    services?: VenueServiceItem[];
+    products?: VenueProductItem[];
     _count?: {
         courts: number;
         staff: number;
@@ -28,6 +53,7 @@ export interface CreateVenueInput {
     email?: string;
     description?: string;
     logo?: string;
+    images?: string[];
     openTime: string;
     closeTime: string;
 }
@@ -121,7 +147,5 @@ export const courtApi = {
 };
 
 export default { venueApi, courtApi };
-
-
 
 
