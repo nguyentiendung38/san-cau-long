@@ -57,4 +57,14 @@ describe('booking price calculation', () => {
         expect(result.pricePerHour).toBe(0);
         expect(result.appliedRule).toBe('Chưa thiết lập giá cho toàn bộ khung giờ');
     });
+
+    it('uses a stable name tie-breaker when matching rules have equal priority', () => {
+        const result = calculatePriceFromRules([
+            { ...defaultRule, name: 'B giá', pricePerHour: 200000 },
+            { ...defaultRule, name: 'A giá', pricePerHour: 100000 },
+        ], 'THURSDAY', '16:30', '17:00');
+
+        expect(result.total).toBe(50000);
+        expect(result.appliedRule).toBe('A giá');
+    });
 });

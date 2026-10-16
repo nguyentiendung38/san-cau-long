@@ -25,6 +25,7 @@ export interface CreateOperatingHourInput {
 }
 
 export interface UpdateOperatingHourInput {
+    venueId?: string;
     startTime?: string;
     endTime?: string;
     daysOfWeek?: string;

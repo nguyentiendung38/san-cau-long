@@ -151,24 +151,9 @@ export default function BookingCalendarPage() {
             const paymentAmount = booking.paymentAmount || 0;
             let invoice;
             try {
-                let productItems = [];
-                let serviceItems = [];
-                if (booking.orderedItems) {
-                    try {
-                        const items = JSON.parse(booking.orderedItems);
-                        productItems = items.filter((i: any) => i.type === 'product').map((i: any) => ({ productId: i.id, quantity: i.quantity, unitPrice: i.price }));
-                        serviceItems = items.filter((i: any) => i.type === 'service').map((i: any) => ({ serviceId: i.id, quantity: i.quantity, unitPrice: i.price }));
-                    } catch (e) {
-                        console.error('Failed to parse ordered items', e);
-                    }
-                }
-
-                // 1. Create Invoice via invoiceApi
                 invoice = await invoiceApi.create({
                     customerId: booking.customer?.id,
                     bookingIds: [booking.id],
-                    productItems,
-                    serviceItems,
                     paymentMethod: booking.paymentMethod === 'DEPOSIT_TRANSFER' ? 'BANK_TRANSFER' : (booking.paymentMethod || 'CASH'),
                     paymentStatus: isPaid ? 'PAID' : 'PENDING',
                     paidAmount: isPaid ? (paymentAmount || booking.totalAmount) : undefined,
@@ -189,7 +174,7 @@ export default function BookingCalendarPage() {
             }
 
             // 2. Mark booking as COMPLETED
-            if (booking.status === 'IN_PROGRESS') {
+            if (booking.status !== 'COMPLETED') {
                 await bookingApi.checkOut(id);
             }
 

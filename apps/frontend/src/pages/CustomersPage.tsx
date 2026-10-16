@@ -61,7 +61,6 @@ export default function CustomersPage() {
         queryFn: () => customerApi.getAll({
             search: searchQuery || undefined,
             membershipTier: selectedTier || undefined,
-            isRegistered: true,
             page,
             limit: 10,
         }),

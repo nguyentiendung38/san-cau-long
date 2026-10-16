@@ -52,7 +52,7 @@ router.get('/:id/availability', async (req: Request, res: Response, next: NextFu
         const prisma = new PrismaClient();
 
         const courts = await prisma.court.findMany({
-            where: { venueId: req.params.id, status: { not: 'INACTIVE' } },
+            where: { venueId: req.params.id, status: 'ACTIVE' },
             orderBy: { sortOrder: 'asc' }
         });
 
@@ -158,4 +158,3 @@ router.delete(
 );
 
 export default router;
-

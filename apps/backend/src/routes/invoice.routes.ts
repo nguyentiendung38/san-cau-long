@@ -8,16 +8,30 @@ const router = Router();
 // List invoices
 router.get('/', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { customerId, paymentStatus, startDate, endDate, page, limit } = req.query;
+        const { customerId, paymentStatus, startDate, endDate, search, page, limit } = req.query;
         const result = await invoiceService.findAll({
             customerId: customerId as string,
             paymentStatus: paymentStatus as string,
             startDate: startDate ? new Date(startDate as string) : undefined,
             endDate: endDate ? new Date(endDate as string) : undefined,
+            search: search as string,
             page: page ? parseInt(page as string) : 1,
             limit: limit ? parseInt(limit as string) : 20,
         });
         res.json({ success: true, ...result });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.get('/summary', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { startDate, endDate } = req.query;
+        const summary = await invoiceService.getSummary({
+            startDate: startDate ? new Date(startDate as string) : undefined,
+            endDate: endDate ? new Date(endDate as string) : undefined,
+        });
+        res.json({ success: true, data: summary });
     } catch (error) {
         next(error);
     }

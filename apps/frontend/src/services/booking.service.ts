@@ -178,11 +178,23 @@ export interface BookingRequest {
     paymentAmount?: number;
     paymentProof?: string;
     orderedItems?: string;
-    voucherCode?: string;
-    discountAmount?: number;
     venue?: { name: string };
     court?: { name: string };
     createdAt: string;
+}
+
+export function getBookingRequestTotal(request: Pick<BookingRequest, 'orderedItems' | 'paymentAmount'>): number {
+    if (request.orderedItems) {
+        try {
+            const parsed = JSON.parse(request.orderedItems);
+            if (typeof parsed?.totalAmount === 'number' && Number.isFinite(parsed.totalAmount)) {
+                return parsed.totalAmount;
+            }
+        } catch {
+            // Older requests store only item arrays; their paymentAmount is the available total.
+        }
+    }
+    return request.paymentAmount || 0;
 }
 
 export const bookingRequestApi = {

@@ -7,6 +7,10 @@ export interface CreateVenueInput {
     phone?: string;
     email?: string;
     description?: string;
+    termsAndServices?: string;
+    bankCode?: string | null;
+    bankAccountNumber?: string | null;
+    bankAccountName?: string | null;
     logo?: string;
     images?: string[] | string;
     openTime?: string;
@@ -159,6 +163,10 @@ export class VenueService {
                 phone: input.phone,
                 email: input.email,
                 description: input.description,
+                termsAndServices: input.termsAndServices,
+                bankCode: input.bankCode,
+                bankAccountNumber: input.bankAccountNumber,
+                bankAccountName: input.bankAccountName,
                 logo: input.logo,
                 images: imagesData,
                 openTime: input.openTime || '06:00',

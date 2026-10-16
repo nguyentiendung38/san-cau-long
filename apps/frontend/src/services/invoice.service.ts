@@ -30,6 +30,7 @@ export interface Invoice {
     paymentStatus: 'PENDING' | 'PAID' | 'PARTIAL' | 'REFUNDED';
     paymentMethod?: string;
     paidAmount: number;
+    depositAmount?: number;
     paidAt?: string;
     notes?: string;
     createdAt: string;
@@ -81,12 +82,20 @@ export interface DailySummary {
     totalRevenue: number;
 }
 
+export interface InvoiceSummary {
+    total: number;
+    pending: number;
+    paid: number;
+    totalRevenue: number;
+}
+
 export const invoiceApi = {
     async getAll(params?: {
         customerId?: string;
         paymentStatus?: string;
         startDate?: string;
         endDate?: string;
+        search?: string;
         page?: number;
         limit?: number;
     }): Promise<PaginatedResponse<Invoice>> {
@@ -95,6 +104,7 @@ export const invoiceApi = {
         if (params?.paymentStatus) queryParams.append('paymentStatus', params.paymentStatus);
         if (params?.startDate) queryParams.append('startDate', params.startDate);
         if (params?.endDate) queryParams.append('endDate', params.endDate);
+        if (params?.search) queryParams.append('search', params.search);
         if (params?.page) queryParams.append('page', String(params.page));
         if (params?.limit) queryParams.append('limit', String(params.limit));
 
@@ -136,6 +146,14 @@ export const invoiceApi = {
         if (date) queryParams.append('date', date);
 
         const response = await api.get<ApiResponse<DailySummary>>(`/invoices/summary/daily?${queryParams}`);
+        return response.data.data!;
+    },
+
+    async getSummary(params?: { startDate?: string; endDate?: string }): Promise<InvoiceSummary> {
+        const queryParams = new URLSearchParams();
+        if (params?.startDate) queryParams.append('startDate', params.startDate);
+        if (params?.endDate) queryParams.append('endDate', params.endDate);
+        const response = await api.get<ApiResponse<InvoiceSummary>>(`/invoices/summary?${queryParams}`);
         return response.data.data!;
     },
 };

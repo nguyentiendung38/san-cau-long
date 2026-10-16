@@ -37,14 +37,14 @@ export default function InventoryPage() {
     // Fetch products
     const { data: productsData, isLoading: loadingProducts } = useQuery({
         queryKey: ['products', searchQuery],
-        queryFn: () => productApi.getAll({ search: searchQuery, isActive: true }),
+        queryFn: () => productApi.getAll({ search: searchQuery, isActive: true, limit: 1000 }),
         enabled: activeTab === 'products',
     });
 
     // Fetch services
     const { data: servicesData, isLoading: loadingServices } = useQuery({
         queryKey: ['services', searchQuery],
-        queryFn: () => serviceApi.getAll({ search: searchQuery, isActive: true }),
+        queryFn: () => serviceApi.getAll({ search: searchQuery, isActive: true, limit: 1000 }),
         enabled: activeTab === 'services',
     });
 

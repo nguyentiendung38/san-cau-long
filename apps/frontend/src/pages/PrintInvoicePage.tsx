@@ -168,12 +168,12 @@ export default function PrintInvoicePage() {
                                 <span>Tổng cộng:</span>
                                 <span className="text-primary-600">{formatCurrency(invoice.total)}</span>
                             </div>
-                            {(invoice.depositAmount > 0 || invoice.paidAmount > 0) && (
+                            {((invoice.depositAmount ?? 0) > 0 || invoice.paidAmount > 0) && (
                                 <>
-                                    {invoice.depositAmount > 0 && (
+                                    {(invoice.depositAmount ?? 0) > 0 && (
                                         <div className="flex justify-between py-2 text-sm">
                                             <span className="text-gray-600">Khách đã cọc:</span>
-                                            <span className="text-green-600">-{formatCurrency(invoice.depositAmount)}</span>
+                                            <span className="text-green-600">-{formatCurrency(invoice.depositAmount ?? 0)}</span>
                                         </div>
                                     )}
                                     {invoice.paidAmount > 0 && (

@@ -9,7 +9,8 @@ import {
     Pencil,
     Trash2,
     X,
-    Check
+    Check,
+    AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +21,10 @@ interface VenueFormData {
     name: string;
     address: string;
     phone: string;
+    termsAndServices: string;
+    bankCode: string;
+    bankAccountNumber: string;
+    bankAccountName: string;
     logo: string;
     images: string[];
     openTime: string;
@@ -30,6 +35,10 @@ const defaultFormData: VenueFormData = {
     name: '',
     address: '',
     phone: '',
+    termsAndServices: '',
+    bankCode: '',
+    bankAccountNumber: '',
+    bankAccountName: '',
     logo: '',
     images: [],
     openTime: '06:00',
@@ -171,6 +180,10 @@ export default function VenuesPage() {
                 name: venue.name,
                 address: venue.address,
                 phone: venue.phone || '',
+                termsAndServices: venue.termsAndServices || '',
+                bankCode: venue.bankCode || '',
+                bankAccountNumber: venue.bankAccountNumber || '',
+                bankAccountName: venue.bankAccountName || '',
                 logo: venue.logo || '',
                 images: Array.isArray(venue.images) ? venue.images : (typeof venue.images === 'string' ? (() => { try { const p = JSON.parse(venue.images); return Array.isArray(p) ? p : [venue.images]; } catch { return [venue.images]; } })() : []),
                 openTime: venue.openTime,
@@ -208,11 +221,22 @@ export default function VenuesPage() {
             toast({ title: 'Vui lòng nhập địa chỉ', variant: 'error' });
             return;
         }
+        const hasBankDetails = [formData.bankCode, formData.bankAccountNumber, formData.bankAccountName]
+            .some((value) => value.trim());
+        if (hasBankDetails && [formData.bankCode, formData.bankAccountNumber, formData.bankAccountName]
+            .some((value) => !value.trim())) {
+            toast({ title: 'Vui lòng nhập đầy đủ ngân hàng, số tài khoản và tên chủ tài khoản', variant: 'error' });
+            return;
+        }
 
         const data: CreateVenueInput = {
             name: formData.name.trim(),
             address: formData.address.trim(),
             phone: formData.phone.trim() || undefined,
+            termsAndServices: formData.termsAndServices.trim() || undefined,
+            bankCode: formData.bankCode.trim().toUpperCase() || null,
+            bankAccountNumber: formData.bankAccountNumber.trim() || null,
+            bankAccountName: formData.bankAccountName.trim().toUpperCase() || null,
             logo: formData.logo.trim() || undefined,
             images: formData.images,
             openTime: formData.openTime,
@@ -423,6 +447,59 @@ export default function VenuesPage() {
 
                                 <div>
                                     <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
+                                        Điều khoản & dịch vụ dành cho khách hàng
+                                    </label>
+                                    <textarea
+                                        value={formData.termsAndServices}
+                                        onChange={(e) => setFormData({ ...formData, termsAndServices: e.target.value })}
+                                        placeholder={'Nhập các điều khoản, quy định sử dụng sân và dịch vụ...\nCó thể xuống dòng để trình bày từng mục.'}
+                                        rows={6}
+                                        maxLength={10000}
+                                        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                    <p className="mt-1 text-xs text-foreground-muted">
+                                        Nội dung sẽ hiển thị công khai trong trang chi tiết cơ sở.
+                                    </p>
+                                </div>
+
+                                <div className="space-y-3 rounded-xl border border-border p-3">
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-foreground">Tài khoản nhận chuyển khoản</h3>
+                                        <p className="mt-1 text-xs text-foreground-muted">
+                                            Thông tin này dùng để tạo QR tại bước đặt sân. Để trống cả 3 trường nếu chưa nhận chuyển khoản qua QR.
+                                        </p>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                        <div>
+                                            <label className="mb-1.5 block text-sm font-medium text-foreground-secondary">Mã ngân hàng VietQR</label>
+                                            <Input
+                                                value={formData.bankCode}
+                                                onChange={(e) => setFormData({ ...formData, bankCode: e.target.value })}
+                                                placeholder="VD: MB"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="mb-1.5 block text-sm font-medium text-foreground-secondary">Số tài khoản</label>
+                                            <Input
+                                                value={formData.bankAccountNumber}
+                                                onChange={(e) => setFormData({ ...formData, bankAccountNumber: e.target.value })}
+                                                placeholder="Nhập số tài khoản"
+                                                inputMode="numeric"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="mb-1.5 block text-sm font-medium text-foreground-secondary">Tên chủ tài khoản</label>
+                                        <Input
+                                            value={formData.bankAccountName}
+                                            onChange={(e) => setFormData({ ...formData, bankAccountName: e.target.value })}
+                                            placeholder="VD: NGUYEN VAN A"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
                                         Ảnh đại diện (Link/URL)
                                     </label>
                                     <Input
@@ -542,5 +619,3 @@ export default function VenuesPage() {
         </div>
     );
 }
-
-

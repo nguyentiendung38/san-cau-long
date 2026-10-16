@@ -1,5 +1,16 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/error.js';
+import { timeToMinutes } from '../utils/booking-rules.js';
+
+const validDaysOfWeek = new Set([
+    'MONDAY',
+    'TUESDAY',
+    'WEDNESDAY',
+    'THURSDAY',
+    'FRIDAY',
+    'SATURDAY',
+    'SUNDAY',
+]);
 
 export interface PricingRuleQueryParams {
     venueId?: string;
@@ -38,8 +49,21 @@ export class PricingRuleService {
             throw new AppError(400, 'Vui lòng nhập đủ giờ bắt đầu và giờ kết thúc');
         }
 
-        if (startTime && endTime && startTime >= endTime) {
-            throw new AppError(400, 'Giờ bắt đầu phải nhỏ hơn giờ kết thúc');
+        if (startTime && endTime) {
+            const start = timeToMinutes(startTime);
+            const end = timeToMinutes(endTime);
+            if (start === null || end === null || start >= end) {
+                throw new AppError(400, 'Giờ bắt đầu và kết thúc phải hợp lệ, giờ bắt đầu nhỏ hơn giờ kết thúc');
+            }
+            if (start % 30 !== 0 || end % 30 !== 0) {
+                throw new AppError(400, 'Khung giá phải theo mốc 30 phút');
+            }
+        }
+    }
+
+    private validateDayOfWeek(dayOfWeek?: string | null) {
+        if (dayOfWeek && !validDaysOfWeek.has(dayOfWeek)) {
+            throw new AppError(400, 'Ngày áp dụng bảng giá không hợp lệ');
         }
     }
 
@@ -120,11 +144,12 @@ export class PricingRuleService {
             throw new AppError(400, 'Vui lòng nhập tên khung giá');
         }
 
-        if (!Number.isFinite(Number(input.pricePerHour)) || Number(input.pricePerHour) < 0) {
-            throw new AppError(400, 'Giá phải là số và không được âm');
+        if (!Number.isFinite(Number(input.pricePerHour)) || Number(input.pricePerHour) <= 0) {
+            throw new AppError(400, 'Giá mỗi giờ phải lớn hơn 0');
         }
 
         this.validateTimeRange(input.startTime, input.endTime);
+        this.validateDayOfWeek(input.dayOfWeek);
 
         const rule = await prisma.pricingRule.create({
             data: {
@@ -160,9 +185,10 @@ export class PricingRuleService {
         const startTime = input.startTime !== undefined ? input.startTime : existing.startTime;
         const endTime = input.endTime !== undefined ? input.endTime : existing.endTime;
         this.validateTimeRange(startTime, endTime);
+        this.validateDayOfWeek(input.dayOfWeek !== undefined ? input.dayOfWeek : existing.dayOfWeek);
 
-        if (input.pricePerHour !== undefined && (!Number.isFinite(Number(input.pricePerHour)) || Number(input.pricePerHour) < 0)) {
-            throw new AppError(400, 'Giá phải là số và không được âm');
+        if (input.pricePerHour !== undefined && (!Number.isFinite(Number(input.pricePerHour)) || Number(input.pricePerHour) <= 0)) {
+            throw new AppError(400, 'Giá mỗi giờ phải lớn hơn 0');
         }
 
         const rule = await prisma.pricingRule.update({

@@ -1,5 +1,8 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/error.js';
+import { isWithinOperatingHours, timeToMinutes } from '../utils/booking-rules.js';
+import { parseBookingOrder, serializeBookingOrder } from '../utils/booking-order.js';
+import { voucherService } from './voucher.service.js';
 
 export interface PricingRuleForCalculation {
     name: string;
@@ -25,11 +28,14 @@ export function calculatePriceFromRules(
     const appliedRules = new Set<string>();
     let hasUnpricedSlot = false;
 
+    const sortedRules = [...pricingRules].sort((a, b) =>
+        b.priority - a.priority || a.name.localeCompare(b.name),
+    );
     for (let slotStart = startMinutes; slotStart < endMinutes;) {
         const slotEnd = Math.min(endMinutes, (Math.floor(slotStart / 30) + 1) * 30);
         const slotStartTime = `${String(Math.floor(slotStart / 60)).padStart(2, '0')}:${String(slotStart % 60).padStart(2, '0')}`;
         const slotEndTime = `${String(Math.floor(slotEnd / 60)).padStart(2, '0')}:${String(slotEnd % 60).padStart(2, '0')}`;
-        const matchingRule = pricingRules.find((rule) => {
+        const matchingRule = sortedRules.find((rule) => {
             if (rule.dayOfWeek && rule.dayOfWeek !== dayOfWeek) return false;
             return (!rule.startTime || rule.startTime <= slotStartTime) &&
                 (!rule.endTime || rule.endTime >= slotEndTime);
@@ -96,6 +102,33 @@ export interface BookingQueryParams {
 }
 
 export class BookingService {
+    private async ensureNoPendingRequestConflict(
+        courtId: string,
+        date: Date,
+        startTime: string,
+        endTime: string,
+        excludeRequestId?: string,
+    ) {
+        const startOfDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
+        const requests = await prisma.bookingRequest.findMany({
+            where: {
+                courtId,
+                date: { gte: startOfDay, lte: endOfDay },
+                status: 'PENDING',
+                ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
+            },
+            select: { startTime: true, endTime: true, paymentMethod: true, paymentStatus: true, createdAt: true },
+        });
+        const activeRequests = requests.filter((request) =>
+            request.paymentStatus !== 'FAILED' &&
+            (request.paymentMethod !== 'VNPAY' || request.createdAt >= new Date(Date.now() - 15 * 60_000)),
+        );
+        if (activeRequests.some((request) => startTime < request.endTime && request.startTime < endTime)) {
+            throw new AppError(409, 'Khung giờ này đang có yêu cầu đặt sân chờ xử lý');
+        }
+    }
+
     // Check if time slot is available
     async checkAvailability(
         courtId: string,
@@ -104,10 +137,8 @@ export class BookingService {
         endTime: string,
         excludeBookingId?: string
     ): Promise<{ available: boolean; conflicts: any[] }> {
-        const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
+        const startOfDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+        const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
 
         const where: any = {
             courtId,
@@ -273,7 +304,10 @@ export class BookingService {
         return booking;
     }
 
-    async create(input: CreateBookingInput) {
+    async create(
+        input: CreateBookingInput,
+        options: { totalAmountOverride?: number; bookingRequestId?: string } = {},
+    ) {
         // Check court exists and is active
         const court = await prisma.court.findUnique({
             where: { id: input.courtId },
@@ -286,6 +320,21 @@ export class BookingService {
 
         if (court.status !== 'ACTIVE') {
             throw new AppError(400, 'Sân hiện không hoạt động');
+        }
+        if (!court.venue.isActive) {
+            throw new AppError(400, 'Cơ sở hiện không nhận đặt sân');
+        }
+
+        const startMinutes = timeToMinutes(input.startTime);
+        const endMinutes = timeToMinutes(input.endTime);
+        if (
+            startMinutes === null ||
+            endMinutes === null ||
+            startMinutes >= endMinutes ||
+            startMinutes % 30 !== 0 ||
+            endMinutes % 30 !== 0
+        ) {
+            throw new AppError(400, 'Khung giờ đặt phải hợp lệ và theo khoảng 30 phút');
         }
 
         // Check availability
@@ -302,33 +351,24 @@ export class BookingService {
 
         
         const dateObj = new Date(input.date);
-        const dayNum = dateObj.getDay(); 
-        const operatingHours = await prisma.operatingHour.findMany({
-            where: { venueId: court.venue.id, isActive: true }
-        });
-        
-        if (operatingHours.length > 0) {
-            let isOpen = false;
-            let validStart = '';
-            let validEnd = '';
-            
-            for (const oh of operatingHours) {
-                if (oh.daysOfWeek && oh.daysOfWeek.includes(dayNum.toString())) {
-                    isOpen = true;
-                    validStart = oh.startTime;
-                    validEnd = oh.endTime;
-                    break;
-                }
-            }
-            
-            if (!isOpen) {
-                throw new AppError(400, 'Cơ sở không hoạt động vào ngày bạn chọn.');
-            }
-            
-            if (input.startTime < validStart || input.endTime > validEnd) {
-                throw new AppError(400, `Cơ sở chỉ mở cửa từ ${validStart} đến ${validEnd} vào ngày này.`);
-            }
+        if (Number.isNaN(dateObj.getTime())) {
+            throw new AppError(400, 'Ngày đặt sân không hợp lệ');
         }
+        const dayNum = dateObj.getUTCDay();
+        const operatingHours = await prisma.operatingHour.findMany({
+            where: { venueId: court.venueId, isActive: true }
+        });
+        if (!isWithinOperatingHours(operatingHours, dayNum, input.startTime, input.endTime)) {
+            throw new AppError(400, 'Cơ sở không hoạt động trong khung giờ bạn chọn.');
+        }
+
+        await this.ensureNoPendingRequestConflict(
+            input.courtId,
+            dateObj,
+            input.startTime,
+            input.endTime,
+            options.bookingRequestId,
+        );
 
         // Calculate price
         const pricing = await this.calculatePrice(
@@ -342,55 +382,57 @@ export class BookingService {
             throw new AppError(400, 'Khung giờ này ngoài giờ hoạt động (chưa thiết lập giá)');
         }
 
-        let finalTotalAmount = pricing.total;
-        
-        if (input.voucherCode && input.discountAmount) {
-            finalTotalAmount = Math.max(0, finalTotalAmount - input.discountAmount);
-            input.notes = input.notes ? input.notes + '\nÁp dụng voucher: ' + input.voucherCode + ' (-' + input.discountAmount + 'đ)' : 'Áp dụng voucher: ' + input.voucherCode + ' (-' + input.discountAmount + 'đ)';
-            
-            // Increment voucher usage
-            try {
-                await prisma.voucher.update({
-                    where: { code: input.voucherCode },
-                    data: { usageCount: { increment: 1 } }
-                });
-            } catch (e) {}
+        const order = parseBookingOrder(input.orderedItems);
+        const itemsTotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const subtotal = pricing.total + itemsTotal;
+        let discountAmount = input.discountAmount ?? order.discountAmount;
+        if (input.voucherCode && input.discountAmount === undefined && order.discountAmount === 0) {
+            discountAmount = (await voucherService.validate(input.voucherCode, subtotal)).discountAmount;
         }
+        if (!Number.isFinite(discountAmount) || discountAmount < 0 || discountAmount > subtotal) {
+            throw new AppError(400, 'Mức giảm giá không hợp lệ');
+        }
+        const finalTotalAmount = options.totalAmountOverride ?? Math.max(0, subtotal - discountAmount);
+        if (!Number.isFinite(finalTotalAmount) || finalTotalAmount < 0) {
+            throw new AppError(400, 'Tổng tiền lịch đặt không hợp lệ');
+        }
+        const storedOrder = serializeBookingOrder(
+            order.items,
+            discountAmount,
+            input.voucherCode ?? order.voucherCode,
+        );
 
-        if (input.orderedItems) {
-            try {
-                const items = JSON.parse(input.orderedItems);
-                if (Array.isArray(items)) {
-                    finalTotalAmount += items.reduce((sum: number, item: any) => sum + (item.price * item.quantity), 0);
-                }
-            } catch (e) {
-                console.error('Failed to parse ordered items in booking create', e);
+        let booking;
+        try {
+            booking = await prisma.booking.create({
+                data: {
+                    courtId: input.courtId,
+                    customerId: input.customerId,
+                    createdById: input.createdById,
+                    date: input.date,
+                    startTime: input.startTime,
+                    endTime: input.endTime,
+                    totalAmount: finalTotalAmount,
+                    notes: input.notes,
+                    orderedItems: storedOrder,
+                    paymentMethod: input.paymentMethod || 'DEPOSIT_TRANSFER',
+                    paymentStatus: input.paymentStatus || 'PENDING',
+                    paymentAmount: input.paymentAmount,
+                    paymentProof: input.paymentProof,
+                    status: 'CONFIRMED',
+                },
+                include: {
+                    court: { select: { name: true } },
+                    customer: { select: { name: true, phone: true } },
+                },
+            });
+            if (input.voucherCode) await voucherService.consume(input.voucherCode);
+        } catch (error) {
+            if (booking) {
+                await prisma.booking.delete({ where: { id: booking.id } });
             }
+            throw error;
         }
-
-        // Create booking
-        const booking = await prisma.booking.create({
-            data: {
-                courtId: input.courtId,
-                customerId: input.customerId,
-                createdById: input.createdById,
-                date: input.date,
-                startTime: input.startTime,
-                endTime: input.endTime,
-                totalAmount: finalTotalAmount,
-                notes: input.notes,
-                orderedItems: input.orderedItems,
-                paymentMethod: input.paymentMethod || 'DEPOSIT_TRANSFER',
-                paymentStatus: input.paymentStatus || 'PENDING',
-                paymentAmount: input.paymentAmount,
-                paymentProof: input.paymentProof,
-                status: 'CONFIRMED', // Auto-confirm for staff bookings
-            },
-            include: {
-                court: { select: { name: true } },
-                customer: { select: { name: true, phone: true } },
-            },
-        });
 
         // Update customer stats if linked
         if (input.customerId) {
@@ -409,10 +451,30 @@ export class BookingService {
             throw new AppError(404, 'Không tìm thấy lịch đặt sân');
         }
 
-        // If updating time, check availability
+        const updateData: {
+            startTime?: string;
+            endTime?: string;
+            notes?: string;
+            status?: string;
+            totalAmount?: number;
+        } = {};
+        if (input.notes !== undefined) updateData.notes = input.notes;
+        if (input.status !== undefined) updateData.status = input.status;
+
         if (input.startTime || input.endTime) {
             const startTime = input.startTime || existing.startTime;
             const endTime = input.endTime || existing.endTime;
+            const startMinutes = timeToMinutes(startTime);
+            const endMinutes = timeToMinutes(endTime);
+            if (
+                startMinutes === null ||
+                endMinutes === null ||
+                startMinutes >= endMinutes ||
+                startMinutes % 30 !== 0 ||
+                endMinutes % 30 !== 0
+            ) {
+                throw new AppError(400, 'Khung giờ đặt phải hợp lệ và theo khoảng 30 phút');
+            }
 
             const { available, conflicts } = await this.checkAvailability(
                 existing.courtId,
@@ -425,15 +487,31 @@ export class BookingService {
             if (!available) {
                 throw new AppError(409, 'Khung giờ này đã có người đặt', { conflicts });
             }
+            await this.ensureNoPendingRequestConflict(existing.courtId, existing.date, startTime, endTime);
 
-            // Recalculate price if time changed
+            const court = await prisma.court.findUnique({
+                where: { id: existing.courtId },
+                select: { venueId: true },
+            });
+            if (!court) throw new AppError(404, 'Không tìm thấy sân');
+            const operatingHours = await prisma.operatingHour.findMany({
+                where: { venueId: court.venueId, isActive: true },
+            });
+            if (!isWithinOperatingHours(operatingHours, existing.date.getUTCDay(), startTime, endTime)) {
+                throw new AppError(400, 'Cơ sở không hoạt động trong khung giờ bạn chọn.');
+            }
+
             const pricing = await this.calculatePrice(existing.courtId, existing.date, startTime, endTime);
-            input = { ...input, ...{ totalAmount: pricing.total } } as any;
+            const order = parseBookingOrder(existing.orderedItems);
+            const itemsTotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+            updateData.startTime = startTime;
+            updateData.endTime = endTime;
+            updateData.totalAmount = Math.max(0, pricing.total + itemsTotal - order.discountAmount);
         }
 
         const booking = await prisma.booking.update({
             where: { id },
-            data: input as any,
+            data: updateData,
             include: {
                 court: { select: { name: true } },
                 customer: { select: { name: true, phone: true } },
@@ -537,14 +615,6 @@ export class BookingService {
                 checkedOutAt: new Date(),
             },
         });
-
-        // Update customer total spent
-        if (existing.customerId) {
-            await prisma.customer.update({
-                where: { id: existing.customerId },
-                data: { totalSpent: { increment: existing.totalAmount } },
-            });
-        }
 
         return booking;
     }

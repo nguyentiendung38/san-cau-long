@@ -23,7 +23,6 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { invoiceApi, Invoice } from '@/services/invoice.service';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { exportReport } from '@/services/export.service';
 
 // Date period filter type
 type DatePeriod = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'custom';
@@ -139,13 +138,22 @@ export default function InvoicesPage() {
 
     // Fetch invoices
     const { data: invoicesData, isLoading } = useQuery({
-        queryKey: ['invoices', statusFilter, datePeriod, page],
+        queryKey: ['invoices', statusFilter, datePeriod, searchQuery, page],
         queryFn: () => invoiceApi.getAll({
             paymentStatus: statusFilter || undefined,
             startDate: dateRange.start.toISOString(),
             endDate: dateRange.end.toISOString(),
+            search: searchQuery || undefined,
             page,
             limit: 15,
+        }),
+    });
+
+    const { data: invoiceSummary } = useQuery({
+        queryKey: ['invoice-summary', dateRange.start.toISOString(), dateRange.end.toISOString()],
+        queryFn: () => invoiceApi.getSummary({
+            startDate: dateRange.start.toISOString(),
+            endDate: dateRange.end.toISOString(),
         }),
     });
 
@@ -190,32 +198,59 @@ export default function InvoicesPage() {
 
     const handleExport = async () => {
         try {
-            await exportReport({
-                reportType: 'bookings',
-                format: 'csv',
-                dateRange: {
-                    start: `${dateRange.start.getFullYear()}-${String(dateRange.start.getMonth()+1).padStart(2, '0')}-${String(dateRange.start.getDate()).padStart(2, '0')}`,
-                    end: `${dateRange.end.getFullYear()}-${String(dateRange.end.getMonth()+1).padStart(2, '0')}-${String(dateRange.end.getDate()).padStart(2, '0')}`,
-                },
+            const invoices: Invoice[] = [];
+            let exportPage = 1;
+            let totalPages = 1;
+            do {
+                const result = await invoiceApi.getAll({
+                    paymentStatus: statusFilter || undefined,
+                    startDate: dateRange.start.toISOString(),
+                    endDate: dateRange.end.toISOString(),
+                    search: searchQuery || undefined,
+                    page: exportPage,
+                    limit: 100,
+                });
+                invoices.push(...result.data);
+                totalPages = result.pagination.totalPages;
+                exportPage += 1;
+            } while (exportPage <= totalPages);
+
+            const escapeCsv = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
+            const rows = [
+                ['Mã hóa đơn', 'Ngày tạo', 'Khách hàng', 'Trạng thái', 'Tạm tính', 'Giảm giá', 'Tổng tiền', 'Đã thanh toán', 'Tiền cọc', 'Phương thức'],
+                ...invoices.map((invoice) => [
+                    invoice.invoiceNumber,
+                    new Date(invoice.createdAt).toLocaleString('vi-VN'),
+                    invoice.customer?.name || 'Khách lẻ',
+                    invoice.paymentStatus,
+                    invoice.subtotal,
+                    invoice.discount,
+                    invoice.total,
+                    invoice.paidAmount,
+                    invoice.depositAmount || 0,
+                    invoice.paymentMethod || '',
+                ]),
+            ];
+            const csv = `\uFEFF${rows.map((row) => row.map(escapeCsv).join(',')).join('\r\n')}`;
+            const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `hoa-don_${new Date().toISOString().slice(0, 10)}.csv`;
+            link.click();
+            URL.revokeObjectURL(url);
+            toast({ title: `Đã xuất ${invoices.length} hóa đơn`, variant: 'success' });
+        } catch (error: any) {
+            toast({
+                title: 'Không thể xuất báo cáo',
+                description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                variant: 'error',
             });
-            toast({ title: 'Đã xuất báo cáo!', variant: 'success' });
-        } catch {
-            toast({ title: 'Lỗi khi xuất báo cáo', variant: 'error' });
         }
     };
 
-    // Calculate stats
-    const stats = useMemo(() => ({
-        total: invoicesData?.pagination.total || 0,
-        pending: (invoicesData?.data || []).filter(i => i.paymentStatus === 'PENDING').length || 0,
-        paid: (invoicesData?.data || []).filter(i => i.paymentStatus === 'PAID').length || 0,
-        totalRevenue: (invoicesData?.data || []).filter(i => i.paymentStatus === 'PAID').reduce((sum, i) => sum + i.total, 0) || 0,
-    }), [invoicesData]);
+    const stats = invoiceSummary || { total: 0, pending: 0, paid: 0, totalRevenue: 0 };
 
-    // Filter by search
-    const filteredInvoices = (invoicesData?.data || []).filter(invoice =>
-        !searchQuery || invoice.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase())
-    ) || [];
+    const filteredInvoices = invoicesData?.data || [];
 
     // Get period label
     const getPeriodLabel = () => {
@@ -259,7 +294,7 @@ export default function InvoicesPage() {
                 <div className="bg-background-secondary border border-border rounded-xl p-4">
                     <div className="flex items-center gap-2 text-foreground-secondary text-sm mb-1">
                         <Clock className="w-4 h-4" />
-                        Chờ thanh toán
+                        Chưa thanh toán đủ
                     </div>
                     <div className="text-2xl font-bold text-yellow-400">{stats.pending}</div>
                 </div>
@@ -304,7 +339,10 @@ export default function InvoicesPage() {
                         type="text"
                         placeholder="Tìm theo mã hóa đơn..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                            setSearchQuery(e.target.value);
+                            setPage(1);
+                        }}
                         className="w-full pl-10 pr-4 py-2 bg-background-secondary border border-border rounded-lg text-foreground placeholder:text-foreground-secondary focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                 </div>
@@ -376,7 +414,7 @@ export default function InvoicesPage() {
                                                         >
                                                             <Eye className="w-4 h-4 text-foreground-secondary" />
                                                         </button>
-                                                        {invoice.paymentStatus === 'PENDING' && (
+                                                        {['PENDING', 'PARTIAL'].includes(invoice.paymentStatus) && (
                                                             <>
                                                                 <button
                                                                     onClick={() => payMutation.mutate(invoice.id)}
@@ -394,16 +432,18 @@ export default function InvoicesPage() {
                                                                 </button>
                                                             </>
                                                         )}
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setDeletingInvoiceId(invoice.id);
-                                                            }}
-                                                            className="p-2 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                            title="Xóa vĩnh viễn"
-                                                        >
-                                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                                        </button>
+                                                        {!['PAID', 'PARTIAL'].includes(invoice.paymentStatus) && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setDeletingInvoiceId(invoice.id);
+                                                                }}
+                                                                className="p-2 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                                title="Xóa vĩnh viễn"
+                                                            >
+                                                                <Trash2 className="w-4 h-4 text-red-500" />
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
@@ -547,7 +587,7 @@ export default function InvoicesPage() {
                         </div>
 
                         {/* Actions */}
-                        {selectedInvoice.paymentStatus === 'PENDING' && (
+                        {['PENDING', 'PARTIAL'].includes(selectedInvoice.paymentStatus) && (
                             <div className="flex gap-3 p-4 border-t border-border">
                                 <Button
                                     variant="ghost"

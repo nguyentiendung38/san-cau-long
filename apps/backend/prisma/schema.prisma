@@ -56,6 +56,10 @@ model Venue {
   phone       String?
   email       String?
   description String?
+  termsAndServices String?
+  bankCode    String?
+  bankAccountNumber String?
+  bankAccountName String?
   logo        String?
   images      String?
   openTime    String   @default("06:00")

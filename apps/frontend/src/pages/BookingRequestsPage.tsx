@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, X, Clock, Calendar, User, Phone, Trash2, Image as ImageIcon } from 'lucide-react';
-import { bookingRequestApi } from '@/services/booking.service';
+import { bookingRequestApi, getBookingRequestTotal } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
+import { formatCurrency } from '@/lib/utils';
 import { format } from 'date-fns';
 import { useState } from 'react';
 
@@ -9,7 +10,7 @@ export default function BookingRequestsPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
     const [selectedProof, setSelectedProof] = useState<string | null>(null);
-    const [depositConfirmModal, setDepositConfirmModal] = useState<{ isOpen: boolean, reqId: string, name: string, defaultAmount: number }>({ isOpen: false, reqId: '', name: '', defaultAmount: 0 });
+    const [depositConfirmModal, setDepositConfirmModal] = useState<{ isOpen: boolean, reqId: string, name: string }>({ isOpen: false, reqId: '', name: '' });
     const [depositAmount, setDepositAmount] = useState<string>('');
 
     const { data: requests, isLoading } = useQuery({
@@ -97,9 +98,15 @@ export default function BookingRequestsPage() {
                                         <span className="flex items-center gap-1.5"><Clock className="w-4 h-4 text-foreground-muted" /> {req.startTime} - {req.endTime}</span>
                                         <span className={`font-semibold ${req.paymentMethod === 'VNPAY' ? 'text-pink-500' : 'text-foreground-secondary'}`}>
                                             {req.paymentMethod === 'DEPOSIT_TRANSFER'
-                                                ? (req.paymentStatus === 'PAID' ? 'Thanh toán QR · Đã xác nhận' : 'Chưa thanh toán · Chờ kiểm tra')
+                                            ? (req.paymentStatus === 'PAID' ? 'Chuyển khoản · Đã xác nhận tiền nhận' : 'Chưa xác nhận thanh toán')
                                                 : `VNPAY online · ${req.paymentStatus === 'PAID' ? 'đã thanh toán qua vnpay' : 'Chờ thanh toán'}`}
                                         </span>
+                                        {getBookingRequestTotal(req) > 0 && (
+                                            <span className="font-semibold text-foreground">
+                                            Tổng tiền: {formatCurrency(getBookingRequestTotal(req))}
+                                            {req.paymentStatus === 'PAID' && ` · Đã nhận: ${formatCurrency(req.paymentAmount || 0)}`}
+                                            </span>
+                                        )}
                                         {req.paymentProof && (
                                             <button 
                                                 onClick={() => setSelectedProof(req.paymentProof as string)} 
@@ -117,7 +124,9 @@ export default function BookingRequestsPage() {
                                             <span>
                                                 {(() => {
                                                     try {
-                                                        const items = JSON.parse(req.orderedItems);
+                                                        const parsed = JSON.parse(req.orderedItems);
+                                                        const items = Array.isArray(parsed) ? parsed : parsed.items;
+                                                        if (!Array.isArray(items)) return req.orderedItems;
                                                         return items.map((i: any) => `${i.quantity} x ${i.name}`).join(', ');
                                                     } catch (e) {
                                                         return req.orderedItems;
@@ -140,8 +149,8 @@ export default function BookingRequestsPage() {
                                     {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.paymentStatus === 'PENDING' && req.paymentProof && (
                                         <button
                                             onClick={() => {
-                                                setDepositConfirmModal({ isOpen: true, reqId: req.id, name: req.name, defaultAmount: req.paymentAmount || 0 });
-                                                setDepositAmount(req.paymentAmount ? req.paymentAmount.toString() : '');
+                                                setDepositConfirmModal({ isOpen: true, reqId: req.id, name: req.name });
+                                                setDepositAmount('');
                                             }}
                                             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                                         >
@@ -228,8 +237,8 @@ export default function BookingRequestsPage() {
                                 <button 
                                     onClick={() => {
                                         const amount = parseFloat(depositAmount);
-                                        if (isNaN(amount) || amount < 0) {
-                                            toast({ title: 'Vui lòng nhập số tiền hợp lệ', variant: 'error' });
+                                        if (!Number.isFinite(amount) || amount <= 0) {
+                                            toast({ title: 'Vui lòng nhập số tiền đã nhận hợp lệ', variant: 'error' });
                                             return;
                                         }
                                         confirmDepositMutation.mutate({ id: depositConfirmModal.reqId, amount });

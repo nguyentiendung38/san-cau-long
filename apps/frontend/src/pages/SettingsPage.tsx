@@ -297,7 +297,7 @@ export default function SettingsPage() {
 
     const { data: pricingRulesData, isLoading: loadingPricingRules } = useQuery({
         queryKey: ['pricing-rules'],
-        queryFn: () => pricingRuleApi.getAll({ isActive: true }),
+        queryFn: () => pricingRuleApi.getAll({ isActive: true, limit: 1000 }),
     });
 
     const { data: operatingHoursData, isLoading: loadingOperatingHours } = useQuery({
@@ -432,15 +432,25 @@ export default function SettingsPage() {
         }
     };
 
-    const removePricingRule = async (rule: PricingRule) => {
+    const removePricingRule = (rule: PricingRule) => {
         setDeletingPricingRule(rule);
+    };
+
+    const confirmDeletePricingRule = async () => {
+        if (!deletingPricingRule) return;
         try {
-            if (false) await pricingRuleApi.delete(rule.id);
+            await pricingRuleApi.delete(deletingPricingRule.id);
             queryClient.invalidateQueries({ queryKey: ['pricing-rules'] });
             queryClient.invalidateQueries({ queryKey: ['venue'] });
             toast({ title: 'Đã xóa', description: 'Đã xóa khung giá thành công', variant: 'success' });
-        } catch {
-            toast({ title: 'Lỗi', description: 'Không thể xóa khung giá', variant: 'error' });
+        } catch (error: any) {
+            toast({
+                title: 'Không thể xóa khung giá',
+                description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                variant: 'error',
+            });
+        } finally {
+            setDeletingPricingRule(null);
         }
     };
 
@@ -498,24 +508,47 @@ export default function SettingsPage() {
             daysOfWeek: operatingHourForm.daysOfWeek,
         };
 
-        if (editingOperatingHour) {
-            await operatingHourApi.update(editingOperatingHour.id, payload);
-            toast({ title: 'Đã cập nhật khung giờ', variant: 'success' });
-        } else {
-            await operatingHourApi.create(payload);
-            toast({ title: 'Đã thêm khung giờ', variant: 'success' });
+        try {
+            if (editingOperatingHour) {
+                await operatingHourApi.update(editingOperatingHour.id, payload);
+                toast({ title: 'Đã cập nhật khung giờ', variant: 'success' });
+            } else {
+                await operatingHourApi.create(payload);
+                toast({ title: 'Đã thêm khung giờ', variant: 'success' });
+            }
+            setIsOperatingHourModalOpen(false);
+            setEditingOperatingHour(null);
+            queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
+            queryClient.invalidateQueries({ queryKey: ['venues'] });
+        } catch (error: any) {
+            toast({
+                title: 'Không thể lưu giờ hoạt động',
+                description: error?.response?.data?.message || 'Vui lòng kiểm tra khung giờ và thử lại.',
+                variant: 'error',
+            });
         }
-        setIsOperatingHourModalOpen(false);
-        queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
-        queryClient.invalidateQueries({ queryKey: ['venues'] });
     };
 
-    const deleteOperatingHour = async (id: string) => {
+    const deleteOperatingHour = (id: string) => {
         setDeletingOperatingHourId(id);
-        if (false) await operatingHourApi.delete(id);
-        toast({ title: 'Đã xóa khung giờ', variant: 'success' });
-        queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
-        queryClient.invalidateQueries({ queryKey: ['venues'] });
+    };
+
+    const confirmDeleteOperatingHour = async () => {
+        if (!deletingOperatingHourId) return;
+        try {
+            await operatingHourApi.delete(deletingOperatingHourId);
+            toast({ title: 'Đã xóa khung giờ', variant: 'success' });
+            queryClient.invalidateQueries({ queryKey: ['operating-hours'] });
+            queryClient.invalidateQueries({ queryKey: ['venues'] });
+        } catch (error: any) {
+            toast({
+                title: 'Không thể xóa khung giờ',
+                description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                variant: 'error',
+            });
+        } finally {
+            setDeletingOperatingHourId(null);
+        }
     };
 
     const openVoucherModal = (voucher?: Voucher) => {
@@ -558,11 +591,25 @@ export default function SettingsPage() {
         }
     };
 
-    const deleteVoucher = async (id: string) => {
+    const deleteVoucher = (id: string) => {
         setDeletingVoucherId(id);
-        if (false) await voucherApi.delete(id);
-        toast({ title: 'Đã xóa mã ưu đãi', variant: 'success' });
-        queryClient.invalidateQueries({ queryKey: ['vouchers'] });
+    };
+
+    const confirmDeleteVoucher = async () => {
+        if (!deletingVoucherId) return;
+        try {
+            await voucherApi.delete(deletingVoucherId);
+            toast({ title: 'Đã xóa mã ưu đãi', variant: 'success' });
+            queryClient.invalidateQueries({ queryKey: ['vouchers'] });
+        } catch (error: any) {
+            toast({
+                title: 'Không thể xóa mã ưu đãi',
+                description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                variant: 'error',
+            });
+        } finally {
+            setDeletingVoucherId(null);
+        }
     };
 
     const tabs = [
@@ -783,7 +830,10 @@ export default function SettingsPage() {
                                                     <p className="text-sm text-foreground-secondary">{days} · {timeRange}</p>
                                                 </div>
                                                 <div className="flex items-center gap-4">
-                                                    <span className="font-semibold text-primary-500">{formatCurrency(rule.pricePerHour)}/giờ</span>
+                                                    <span className="text-right">
+                                                        <span className="block font-semibold text-primary-500">{formatCurrency(rule.pricePerHour)}/giờ</span>
+                                                        <span className="block text-xs text-foreground-muted">Ưu tiên {rule.priority}</span>
+                                                    </span>
                                                     <Button variant="ghost" size="sm" onClick={() => openPricingModal(rule)}>
                                                         <Edit2 className="w-4 h-4" />
                                                     </Button>
@@ -956,6 +1006,7 @@ export default function SettingsPage() {
                                     <label className="block text-sm font-medium text-foreground mb-1">Từ giờ</label>
                                     <Input
                                         type="time"
+                                        step={1800}
                                         value={operatingHourForm.startTime}
                                         onChange={(e) => setOperatingHourForm(prev => ({ ...prev, startTime: e.target.value }))}
                                     />
@@ -964,6 +1015,7 @@ export default function SettingsPage() {
                                     <label className="block text-sm font-medium text-foreground mb-1">Đến giờ</label>
                                     <Input
                                         type="time"
+                                        step={1800}
                                         value={operatingHourForm.endTime}
                                         onChange={(e) => setOperatingHourForm(prev => ({ ...prev, endTime: e.target.value }))}
                                     />
@@ -1076,7 +1128,7 @@ export default function SettingsPage() {
                                         onChange={(e) => setPricingForm(prev => ({ ...prev, priority: Number(e.target.value) || 0 }))}
                                     />
                                     <p className="mt-1 text-xs text-foreground-secondary">
-                                        Khi nhiều khung giá cùng khớp, số lớn hơn được áp dụng trước.
+                                        Giá trị cao hơn được ưu tiên; nếu bằng nhau, tên khung giá xếp theo alphabet quyết định.
                                     </p>
                                 </div>
                             </div>
@@ -1086,6 +1138,7 @@ export default function SettingsPage() {
                                     <label className="block text-sm font-medium text-foreground mb-1">Giờ bắt đầu</label>
                                     <Input
                                         type="time"
+                                        step={1800}
                                         value={pricingForm.startTime}
                                         onChange={(e) => setPricingForm(prev => ({ ...prev, startTime: e.target.value }))}
                                     />
@@ -1094,6 +1147,7 @@ export default function SettingsPage() {
                                     <label className="block text-sm font-medium text-foreground mb-1">Giờ kết thúc</label>
                                     <Input
                                         type="time"
+                                        step={1800}
                                         value={pricingForm.endTime}
                                         onChange={(e) => setPricingForm(prev => ({ ...prev, endTime: e.target.value }))}
                                     />
@@ -1104,9 +1158,13 @@ export default function SettingsPage() {
                                 <label className="block text-sm font-medium text-foreground mb-1">Giá / giờ</label>
                                 <Input
                                     type="number"
+                                    min={1}
                                     value={pricingForm.pricePerHour}
                                     onChange={(e) => setPricingForm(prev => ({ ...prev, pricePerHour: Number(e.target.value) || 0 }))}
                                 />
+                                <p className="mt-1 text-xs text-foreground-secondary">
+                                    Giá áp dụng theo giờ; hệ thống tự tính một nửa giá cho mỗi khung 30 phút.
+                                </p>
                             </div>
 
                             <div className="flex justify-end gap-3 pt-4 border-t border-border">
@@ -1206,10 +1264,9 @@ export default function SettingsPage() {
             )}
 
             <ConfirmModal isOpen={!!deletingVenue} onClose={() => setDeletingVenue(null)} onConfirm={() => deletingVenue && deleteMutation.mutate(deletingVenue.id)} title="Xóa cơ sở" description={`Bạn có chắc chắn muốn xóa "${deletingVenue?.name}"?`} confirmText="Xóa vĩnh viễn" />
-            <ConfirmModal isOpen={!!deletingPricingRule} onClose={() => setDeletingPricingRule(null)} onConfirm={() => deletingPricingRule && (async () => { try { await pricingRuleApi.delete(deletingPricingRule.id); queryClient.invalidateQueries({ queryKey: ['pricing-rules'] }); toast({ title: 'Đã xóa bảng giá', variant: 'success' }); } catch(e) {} setDeletingPricingRule(null); })()} title="Xóa bảng giá" description={`Bạn có chắc chắn muốn xóa "${deletingPricingRule?.name}"?`} confirmText="Xóa vĩnh viễn" />
-            <ConfirmModal isOpen={!!deletingOperatingHourId} onClose={() => setDeletingOperatingHourId(null)} onConfirm={() => deletingOperatingHourId && (async () => { try { await operatingHourApi.delete(deletingOperatingHourId); queryClient.invalidateQueries({ queryKey: ['operating-hours'] }); queryClient.invalidateQueries({ queryKey: ['venues'] });
-        queryClient.invalidateQueries({ queryKey: ['venues'] }); toast({ title: 'Đã xóa khung giờ', variant: 'success' }); } catch(e) {} setDeletingOperatingHourId(null); })()} title="Xóa khung giờ" description="Bạn có chắc chắn muốn xóa khung giờ này?" confirmText="Xóa vĩnh viễn" />
-            <ConfirmModal isOpen={!!deletingVoucherId} onClose={() => setDeletingVoucherId(null)} onConfirm={() => deletingVoucherId && (async () => { try { await voucherApi.delete(deletingVoucherId); queryClient.invalidateQueries({ queryKey: ['vouchers'] }); toast({ title: 'Đã xóa mã ưu đãi', variant: 'success' }); } catch(e) {} setDeletingVoucherId(null); })()} title="Xóa mã ưu đãi" description="Bạn có chắc chắn muốn xóa mã này?" confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingPricingRule} onClose={() => setDeletingPricingRule(null)} onConfirm={() => { void confirmDeletePricingRule(); }} title="Xóa bảng giá" description={`Bạn có chắc chắn muốn xóa "${deletingPricingRule?.name}"?`} confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingOperatingHourId} onClose={() => setDeletingOperatingHourId(null)} onConfirm={() => { void confirmDeleteOperatingHour(); }} title="Xóa khung giờ" description="Bạn có chắc chắn muốn xóa khung giờ này?" confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingVoucherId} onClose={() => setDeletingVoucherId(null)} onConfirm={() => { void confirmDeleteVoucher(); }} title="Xóa mã ưu đãi" description="Bạn có chắc chắn muốn xóa mã này?" confirmText="Xóa vĩnh viễn" />
 
         </div>
     );

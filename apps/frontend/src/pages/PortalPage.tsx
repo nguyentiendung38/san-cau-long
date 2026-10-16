@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { 
-    Search, MapPin, Map, CalendarCheck, Heart, User, Home, Flame, Compass, 
+    Search, MapPin, Map as MapIcon, CalendarCheck, Heart, User, Home, Flame, Compass,
     Settings2, Calendar, ChevronRight, Info, ShieldCheck, Sparkles, Globe, X, ChevronLeft,
     Star, Navigation, Clock, CalendarDays, Bell, BookOpen, Gift, LogOut, Phone
 } from 'lucide-react';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget';
-import { bookingRequestApi } from '@/services/booking.service';
+import { bookingRequestApi, getBookingRequestTotal } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
 import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABELS, TYPE_ICONS } from '@/services/explore-content.service';
 import { venueReviewApi } from '@/services/venue-review.service';
@@ -95,10 +95,13 @@ export default function PortalPage() {
     
     const [venues, setVenues] = useState<Venue[]>([]);
     const [loading, setLoading] = useState(true);
+    const [venuesError, setVenuesError] = useState(false);
+    const [venueReloadKey, setVenueReloadKey] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
-    const [filterMode, setFilterMode] = useState<'all' | 'booked' | 'favorite'>('all');
+    const [filterMode, setFilterMode] = useState<'all' | 'favorite' | 'open' | 'rated'>('all');
+    const [venueSort, setVenueSort] = useState<'recommended' | 'rating' | 'courts' | 'name'>('recommended');
     const [selectedVenueDetail, setSelectedVenueDetail] = useState<Venue | null>(null);
-    const [activeModalTab, setActiveModalTab] = useState<'info' | 'services' | 'images' | 'reviews'>('info');
+    const [activeModalTab, setActiveModalTab] = useState<'info' | 'services' | 'images' | 'reviews' | 'terms'>('info');
     const [venueDetailLoading, setVenueDetailLoading] = useState(false);
     const [reviewName, setReviewName] = useState(() => {
         try { return JSON.parse(localStorage.getItem('portalUser') || '{}').name || ''; } catch { return ''; }
@@ -167,15 +170,24 @@ export default function PortalPage() {
     const { data: exploreItems = [] } = useQuery<ExploreContent[]>({
         queryKey: ['explore-contents-public', exploreFilter],
         queryFn: () => exploreContentPublicApi.getAll(exploreFilter === 'all' ? undefined : exploreFilter.toUpperCase()),
-        enabled: activeTab === 'explore',
+        enabled: activeTab === 'explore' || activeTab === 'home',
     });
 
     const [userPhone, setUserPhone] = useState(localStorage.getItem('portalUserPhone') || '');
     const [tempPhone, setTempPhone] = useState('');
-    const { data: myRequests = [], isLoading: isLoadingRequests } = useQuery<any[]>({
+    const [historyFilter, setHistoryFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+    const { data: myRequests = [], isLoading: isLoadingRequests, isError: requestsError, refetch: refetchRequests } = useQuery<any[]>({
         queryKey: ['my-requests', userPhone],
         queryFn: () => bookingRequestApi.getMyRequests(userPhone).then(data => data.filter((b: any) => !b.notes?.includes("Zalo"))),
         enabled: activeTab === 'history' && !!userPhone,
+    });
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const filteredRequests = myRequests.filter((request: any) => {
+        if (historyFilter === 'all') return true;
+        const requestDate = new Date(request.date);
+        requestDate.setHours(0, 0, 0, 0);
+        return historyFilter === 'upcoming' ? requestDate >= today : requestDate < today;
     });
     const { data: venueReviews = [], isLoading: isLoadingReviews } = useQuery({
         queryKey: ['venue-reviews-public', selectedVenueDetail?.id],
@@ -188,6 +200,10 @@ export default function PortalPage() {
 
     const handleSelectVenue = (venue: Venue) => {
         navigate(`/dat-lich/${venue.id}`);
+    };
+
+    const handleSelectCourt = (venue: Venue, courtId: string) => {
+        navigate(`/dat-lich/${venue.id}/${courtId}`);
     };
 
     const openVenueDetail = async (venue: Venue) => {
@@ -274,12 +290,14 @@ export default function PortalPage() {
         };
         window.addEventListener('portal-phone-updated', handlePhoneUpdate);
         return () => window.removeEventListener('portal-phone-updated', handlePhoneUpdate);
-    }, []);
+    }, [venueReloadKey]);
 
     useEffect(() => {
         const fetchVenues = async () => {
+            setLoading(true);
+            setVenuesError(false);
             try {
-                const res = await venueApi.getAll();
+                const res = await venueApi.getAll({ isActive: true });
                 const venueList = res.data || [];
                 setVenues(venueList);
 
@@ -318,6 +336,7 @@ export default function PortalPage() {
                 }
             } catch (error) {
                 console.error('Failed to fetch venues', error);
+                setVenuesError(true);
             } finally {
                 setLoading(false);
             }
@@ -325,18 +344,27 @@ export default function PortalPage() {
         fetchVenues();
     }, []);
 
-    const filteredVenues = venues.filter(v => {
-        const matchesSearch = v.name.toLowerCase().includes(searchQuery.toLowerCase()) || (v.address && v.address.toLowerCase().includes(searchQuery.toLowerCase()));
+    const filteredVenues = venues.filter(venue => {
+        const normalizedQuery = searchQuery.trim().toLowerCase();
+        const matchesSearch = venue.name.toLowerCase().includes(normalizedQuery) || (venue.address && venue.address.toLowerCase().includes(normalizedQuery));
         if (!matchesSearch) return false;
-        
-        if (filterMode === 'favorite') {
-            return favoriteVenueIds.includes(v.id);
-        }
-        if (filterMode === 'booked') {
-            return bookedVenueIds.includes(v.id);
-        }
+        if (filterMode === 'favorite') return favoriteVenueIds.includes(venue.id);
+        if (filterMode === 'open') return getOperatingStatus(venue).isOpen;
+        if (filterMode === 'rated') return (venue.reviewCount || 0) > 0;
         return true;
+    }).sort((first, second) => {
+        if (venueSort === 'rating') return (second.ratingAverage || 0) - (first.ratingAverage || 0);
+        if (venueSort === 'courts') return (second._count?.courts || second.courts?.length || 0) - (first._count?.courts || first.courts?.length || 0);
+        if (venueSort === 'name') return first.name.localeCompare(second.name, 'vi');
+        return 0;
     });
+
+    const homeHighlights = exploreItems.filter(item => item.type === 'EVENT' || item.type === 'DEAL').slice(0, 3);
+
+    const openVenueDirections = (venue: Venue) => {
+        const destination = encodeURIComponent([venue.name, venue.address].filter(Boolean).join(', '));
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank', 'noopener,noreferrer');
+    };
 
     const filteredCourts = venues.flatMap(v => {
         return (v.courts || []).map((c: any) => ({
@@ -405,158 +433,379 @@ export default function PortalPage() {
 
             {/* Main Content Areas */}
             {activeTab === 'home' && (
-                <div className="flex flex-col flex-1 pb-24 px-4 pt-4 max-w-[1400px] mx-auto w-full">
-                    
-                    {/* Search & Actions Bar (White pill container - wider and less rounded) */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 mb-5 flex flex-col md:flex-row items-center p-2 relative z-10 w-full h-[52px]">
-                        <div className="relative flex-1 w-full flex items-center pl-3">
-                            <div className="w-7 h-7 bg-green-50 text-[#19b251] rounded-full flex items-center justify-center mr-2 shrink-0">
-                                <Search className="w-4 h-4" />
+                <div className="flex flex-col flex-1 gap-6 pb-24 px-4 py-6 max-w-[1240px] mx-auto w-full">
+                    <section className="relative isolate overflow-hidden rounded-[28px] bg-gradient-to-br from-[#063d2c] via-[#087a4c] to-[#16a36a] px-6 py-8 text-white shadow-[0_24px_60px_-28px_rgba(6,61,44,0.65)] sm:px-10 sm:py-10 lg:min-h-[300px] lg:px-14">
+                        <div className="absolute -right-16 -top-24 -z-10 h-72 w-72 rounded-full border-[36px] border-white/5" />
+                        <div className="absolute -bottom-40 right-24 -z-10 h-80 w-80 rounded-full bg-lime-300/10 blur-2xl" />
+                        <div className="absolute right-8 top-8 hidden h-20 w-20 rotate-12 items-center justify-center rounded-3xl border border-white/20 bg-white/10 text-4xl shadow-xl backdrop-blur-sm sm:flex">
+                            🏸
+                        </div>
+
+                        <div className="max-w-2xl">
+                            <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-emerald-50 backdrop-blur-sm">
+                                <Sparkles className="h-3.5 w-3.5 text-lime-300" />
+                                SÂN THỂ THAO GẦN BẠN
+                            </span>
+                            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[42px]">
+                                Sẵn sàng cho một
+                                <span className="block text-lime-300">trận đấu thật hay?</span>
+                            </h1>
+                            <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50/85 sm:text-base">
+                                Tìm sân phù hợp, xem thông tin và đặt lịch nhanh chóng ngay trên điện thoại.
+                            </p>
+                            <div className="mt-6 flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => document.getElementById('venue-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-lime-300 px-5 py-3 text-sm font-bold text-emerald-950 shadow-lg shadow-black/10 transition hover:bg-lime-200"
+                                >
+                                    Tìm sân ngay
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
+                                <span className="inline-flex items-center gap-2 text-sm font-medium text-white/80">
+                                    <ShieldCheck className="h-4 w-4 text-lime-300" />
+                                    Đặt sân tiện lợi, xác nhận nhanh
+                                </span>
                             </div>
-                            <input 
-                                type="text"
-                                placeholder="Tìm kiếm..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="w-full bg-transparent text-gray-800 py-1.5 pr-4 focus:outline-none font-medium text-sm"
-                            />
                         </div>
-                        <div className="flex items-center gap-4 px-4 h-full md:border-l border-gray-200 text-gray-500 text-sm font-medium">
-                            <button className="flex items-center justify-center hover:text-[#19b251] transition shrink-0 px-2">
-                                <Settings2 className="w-4 h-4" />
-                            </button>
-                            <div className="w-px h-5 bg-gray-200 mx-1 hidden md:block"></div>
-                            <button onClick={() => setActiveTab('map')} className="flex items-center gap-1.5 hover:text-[#19b251] transition-colors whitespace-nowrap">
-                                <Map className="w-4 h-4" />
-                                <span>Bản đồ</span>
-                            </button>
-                            <div className="w-px h-5 bg-gray-200 mx-1 hidden md:block"></div>
-                            <button onClick={() => {
-                                const savedPhone = localStorage.getItem('portalUserPhone');
-                                if (savedPhone) setUserPhone(savedPhone);
-                                setActiveTab('history');
-                            }} className="flex items-center gap-1.5 hover:text-[#19b251] transition-colors whitespace-nowrap">
-                                <CalendarCheck className="w-4 h-4" />
-                                <span>Sân đã đặt</span>
-                            </button>
+                    </section>
+
+                    {homeHighlights.length > 0 && (
+                        <section aria-label="Ưu đãi và sự kiện" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                            {homeHighlights.map(item => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setExploreFilter(item.type.toLowerCase());
+                                        setActiveTab('explore');
+                                    }}
+                                    className="group relative flex min-h-28 items-end overflow-hidden rounded-2xl border border-gray-100 bg-gray-900 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                                >
+                                    {item.imageUrl && (
+                                        <img src={item.imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-45 transition duration-500 group-hover:scale-105" />
+                                    )}
+                                    <span className="absolute inset-0 bg-gradient-to-t from-gray-950/80 via-gray-900/20 to-transparent" />
+                                    <span className="relative z-10">
+                                        <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur">
+                                            {TYPE_ICONS[item.type]} {TYPE_LABELS[item.type]}
+                                            {item.badge && <span className="ml-1 text-lime-200">{item.badge}</span>}
+                                        </span>
+                                        <span className="block line-clamp-1 text-sm font-bold text-white">{item.title}</span>
+                                        {item.price && <span className="mt-0.5 block text-xs font-semibold text-lime-200">{item.price}</span>}
+                                    </span>
+                                </button>
+                            ))}
+                        </section>
+                    )}
+
+                    <section className="rounded-2xl border border-gray-100 bg-white p-3 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.35)] sm:p-4">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                            <label className="flex min-h-12 flex-1 items-center gap-3 rounded-xl bg-gray-50 px-4 ring-1 ring-inset ring-gray-100 transition focus-within:bg-white focus-within:ring-2 focus-within:ring-emerald-500/30">
+                                <Search className="h-5 w-5 shrink-0 text-emerald-700" />
+                                <input
+                                    type="search"
+                                    placeholder="Tìm theo tên sân hoặc địa chỉ..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full bg-transparent py-3 text-sm text-gray-800 outline-none placeholder:text-gray-400"
+                                />
+                            </label>
+                            <div className="flex gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('map')}
+                                    className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800 sm:flex-none"
+                                >
+                                    <MapIcon className="h-4 w-4" />
+                                    Bản đồ
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const savedPhone = localStorage.getItem('portalUserPhone');
+                                        if (savedPhone) setUserPhone(savedPhone);
+                                        setActiveTab('history');
+                                    }}
+                                    className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-gray-700 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800 sm:flex-none"
+                                >
+                                    <CalendarCheck className="h-4 w-4" />
+                                    Lịch đã đặt
+                                </button>
+                            </div>
                         </div>
-                    </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+                            <span className="mr-1 inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500">
+                                <Settings2 className="h-3.5 w-3.5" />
+                                Lọc sân
+                            </span>
+                            {([
+                                { value: 'all', label: 'Tất cả sân', count: venues.length },
+                                { value: 'favorite', label: 'Yêu thích', count: favoriteVenueIds.length },
+                                { value: 'open', label: 'Đang mở', count: venues.filter(venue => getOperatingStatus(venue).isOpen).length },
+                                { value: 'rated', label: 'Có đánh giá', count: venues.filter(venue => (venue.reviewCount || 0) > 0).length },
+                            ] as const).map(option => (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setFilterMode(option.value)}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-semibold transition ${
+                                        filterMode === option.value
+                                            ? 'bg-emerald-700 text-white shadow-sm'
+                                            : 'bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-800'
+                                    }`}
+                                >
+                                    {option.value === 'favorite' && <Heart className="h-3.5 w-3.5" />}
+                                    {option.value === 'open' && <Clock className="h-3.5 w-3.5" />}
+                                    {option.value === 'rated' && <Star className="h-3.5 w-3.5" />}
+                                    {option.label}
+                                    <span className={filterMode === option.value ? 'text-emerald-100' : 'text-gray-400'}>{option.count}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </section>
 
-                    {/* Banner Cố Định - Sharper corners, smaller height */}
-                    <div className="bg-gradient-to-r from-[#0d8f3e] to-[#16a54f] rounded-xl p-8 md:p-10 text-white relative overflow-hidden shadow-sm flex flex-col items-center justify-center text-center mb-6 min-h-[220px]">
-                        <span className="absolute top-4 left-4 px-2 py-1 bg-[#ff4757] text-white text-[10px] font-black rounded-md shadow-sm uppercase">HOT</span>
-                        
-                        <h2 className="text-3xl md:text-4xl lg:text-5xl font-black italic tracking-wide uppercase drop-shadow-sm leading-tight z-10">
-                            QUẢN LÝ SÂN CẦU LÔNG <br/> TRƯỜNG ĐẠI HỌC KINH TẾ HUẾ
-                        </h2>
-                        <p className="mt-3 font-bold text-sm md:text-base tracking-wide drop-shadow-sm opacity-95 z-10">
-                            Hệ thống đặt sân nhanh chóng & tiện lợi
-                        </p>
-                    </div>
+                    <section id="venue-list" className="scroll-mt-6">
+                        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">Khám phá địa điểm</p>
+                                <h2 className="mt-1 text-2xl font-black tracking-tight text-gray-900 sm:text-[28px]">Chọn sân phù hợp</h2>
+                            </div>
+                            {!loading && (
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="venue-sort" className="text-xs font-medium text-gray-500">Sắp xếp</label>
+                                    <select
+                                        id="venue-sort"
+                                        value={venueSort}
+                                        onChange={event => setVenueSort(event.target.value as typeof venueSort)}
+                                        className="rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-semibold text-gray-700 outline-none focus:border-emerald-500"
+                                    >
+                                        <option value="recommended">Gợi ý</option>
+                                        <option value="rating">Đánh giá cao</option>
+                                        <option value="courts">Nhiều sân</option>
+                                        <option value="name">Tên A–Z</option>
+                                    </select>
+                                    <p className="hidden text-sm text-gray-500 sm:block">
+                                        {filteredVenues.length} địa điểm
+                                    </p>
+                                </div>
+                            )}
+                        </div>
 
-                    {/* Danh sách Sân (Venues) */}
-                    <div className="w-full">
                         {loading ? (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {[1,2,3].map(i => (
-                                    <div key={i} className="animate-pulse flex flex-col gap-3">
-                                        <div className="bg-gray-200 h-44 rounded-xl"></div>
-                                        <div className="bg-gray-200 h-5 w-3/4 rounded mt-2"></div>
-                                        <div className="bg-gray-200 h-4 w-1/2 rounded"></div>
+                            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                                {[1, 2, 3].map(i => (
+                                    <div key={i} className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+                                        <div className="animate-pulse">
+                                            <div className="h-48 rounded-xl bg-gray-200" />
+                                            <div className="mt-4 h-5 w-3/4 rounded bg-gray-200" />
+                                            <div className="mt-3 h-4 w-1/2 rounded bg-gray-100" />
+                                            <div className="mt-5 h-10 rounded-xl bg-gray-100" />
+                                        </div>
                                     </div>
                                 ))}
                             </div>
+                        ) : venuesError ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-12 text-center">
+                                <p className="font-semibold text-amber-900">Không thể tải danh sách cơ sở</p>
+                                <p className="mt-1 text-sm text-amber-800">Kiểm tra kết nối rồi thử tải lại.</p>
+                                <button
+                                    type="button"
+                                    onClick={() => setVenueReloadKey(key => key + 1)}
+                                    className="mt-4 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-800"
+                                >
+                                    Thử lại
+                                </button>
+                            </div>
                         ) : filteredVenues.length === 0 ? (
-                            <div className="text-center py-12">
-                                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <Search className="w-6 h-6 text-gray-400" />
+                            <div className="rounded-2xl border border-dashed border-gray-200 bg-white px-5 py-16 text-center">
+                                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                                    {filterMode === 'favorite' ? <Heart className="h-6 w-6" /> : <Search className="h-6 w-6" />}
                                 </div>
-                                <p className="text-gray-500 font-medium">Không tìm thấy cơ sở nào</p>
+                                <p className="mt-4 font-semibold text-gray-800">
+                                    {filterMode === 'favorite' && !searchQuery ? 'Bạn chưa có sân yêu thích' : 'Không tìm thấy sân phù hợp'}
+                                </p>
+                                <p className="mt-1 text-sm text-gray-500">
+                                    {filterMode === 'favorite' && !searchQuery
+                                        ? 'Chạm vào biểu tượng trái tim trên sân để lưu lại nhé.'
+                                        : 'Thử đổi từ khóa tìm kiếm hoặc chọn bộ lọc khác.'}
+                                </p>
+                                {filterMode !== 'all' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setFilterMode('all')}
+                                        className="mt-4 rounded-lg px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50"
+                                    >
+                                        Xem tất cả sân
+                                    </button>
+                                )}
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                {filteredVenues.map((venue) => {
+                            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                                {filteredVenues.map(venue => {
+                                    const status = getOperatingStatus(venue);
+                                    const isFavorite = favoriteVenueIds.includes(venue.id);
                                     return (
-                                        <div key={venue.id} className="group bg-white rounded-xl overflow-hidden border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col">
-                                            {/* Image Section */}
-                                            <div className="h-40 relative bg-gray-100 cursor-pointer overflow-hidden border-b border-gray-100" onClick={() => void openVenueDetail(venue)}>
-                                                <img 
-                                                    src={venue.logo || "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=800&auto=format&fit=crop"} 
-                                                    alt={venue.name} 
-                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                        <article key={venue.id} className="group flex flex-col overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_8px_26px_-18px_rgba(15,23,42,0.35)] transition duration-300 hover:-translate-y-1 hover:border-emerald-100 hover:shadow-[0_20px_40px_-24px_rgba(6,95,70,0.35)]">
+                                            <div className="relative h-48 cursor-pointer overflow-hidden bg-emerald-50" onClick={() => void openVenueDetail(venue)}>
+                                                <img
+                                                    src={venue.logo || "https://images.unsplash.com/photo-1626224583764-f87db24ac4ea?q=80&w=1000&auto=format&fit=crop"}
+                                                    alt={venue.name}
+                                                    className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                                                 />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
+                                                <span className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold shadow-sm backdrop-blur-md ${
+                                                    status.isOpen ? 'bg-white/95 text-emerald-800' : 'bg-white/90 text-gray-600'
+                                                }`}>
+                                                    <span className={`h-1.5 w-1.5 rounded-full ${status.isOpen ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+                                                    {status.isOpen ? 'Đang mở cửa' : status.text === 'Chưa cập nhật giờ' ? 'Chưa cập nhật giờ' : 'Đang đóng cửa'}
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    aria-label={isFavorite ? `Bỏ yêu thích ${venue.name}` : `Thêm ${venue.name} vào yêu thích`}
+                                                    onClick={e => toggleFavorite(venue.id, e)}
+                                                    className={`absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full shadow-md backdrop-blur-md transition ${
+                                                        isFavorite ? 'bg-white text-rose-500' : 'bg-black/25 text-white hover:bg-white hover:text-rose-500'
+                                                    }`}
+                                                >
+                                                    <Heart className={`h-5 w-5 ${isFavorite ? 'fill-current' : ''}`} />
+                                                </button>
                                                 {!!venue.reviewCount && (
-                                                    <div className="absolute top-3 right-3 flex items-center gap-1.5 rounded-full bg-black/75 px-2.5 py-1.5 text-white shadow-md backdrop-blur-sm">
-                                                        <div className="flex items-center" aria-label={`Đánh giá ${venue.ratingAverage?.toFixed(1)} trên 5 sao`}>
-                                                            {[1, 2, 3, 4, 5].map((star) => (
-                                                                <Star
-                                                                    key={star}
-                                                                    className={`h-3.5 w-3.5 ${star <= Math.round(venue.ratingAverage || 0) ? 'fill-yellow-400 text-yellow-400' : 'text-white/60'}`}
-                                                                />
-                                                            ))}
-                                                        </div>
+                                                    <div className="absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-lg bg-black/45 px-2.5 py-1.5 text-white backdrop-blur-md">
+                                                        <Star className="h-4 w-4 fill-amber-300 text-amber-300" />
                                                         <span className="text-xs font-bold">{venue.ratingAverage?.toFixed(1)}</span>
+                                                        <span className="text-[11px] text-white/80">({venue.reviewCount} đánh giá)</span>
                                                     </div>
                                                 )}
-                                            </div>
-                                            
-                                            {/* Info Section */}
-                                            <div className="flex items-center gap-3 p-3.5">
-                                                {/* Logo icon */}
-                                                <div className="w-10 h-10 shrink-0 bg-white rounded-full border border-gray-100 p-1 flex items-center justify-center overflow-hidden">
-                                                    <img src="https://cdn-icons-png.flaticon.com/512/7576/7576974.png" alt="logo" className="w-full h-full object-contain" />
-                                                </div>
-                                                
-                                                {/* Info Text */}
-                                                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                                    <h4 className="font-bold text-[#064e3b] text-sm line-clamp-1 cursor-pointer hover:text-[#19b251] transition-colors" onClick={() => void openVenueDetail(venue)}>
-                                                        {venue.name.toUpperCase()}
-                                                    </h4>
-                                                    <div className="flex items-center gap-1 mt-0.5 text-[11px]">
-                                                        <span className="font-medium text-[#f97316] shrink-0">(74.0km)</span>
-                                                        <span className="text-gray-500 line-clamp-1">{venue.address}</span>
-                                                    </div>
-                                                    
-                                                    {(() => {
-                                                        const status = getOperatingStatus(venue);
-                                                        return (
-                                                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] font-medium">
-                                                                <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded ${status.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                                    <div className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
-                                                                    <span>{status.isOpen ? 'Đang mở cửa' : 'Đóng cửa'}</span>
-                                                                </div>
-                                                                <div className="flex items-center gap-1 text-gray-500">
-                                                                    <Clock className="w-3 h-3" />
-                                                                    <span>{status.text}</span>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })()}
-
-                                                </div>
-                                                
-                                                {/* Direct Booking Button */}
-                                                <button 
-                                                    onClick={(e) => { e.stopPropagation(); handleSelectVenue(venue); }} 
-                                                    className="shrink-0 bg-[#eab308] hover:bg-[#ca8a04] text-white font-bold tracking-wide py-1.5 px-3 rounded-md text-xs shadow-sm transition-colors ml-1"
+                                                <button
+                                                    type="button"
+                                                    onClick={event => {
+                                                        event.stopPropagation();
+                                                        openVenueDirections(venue);
+                                                    }}
+                                                    aria-label={`Chỉ đường đến ${venue.name}`}
+                                                    className="absolute right-3 top-[60px] flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-emerald-800 shadow-md transition hover:scale-105 hover:bg-lime-200"
                                                 >
-                                                    ĐẶT LỊCH
+                                                    <Navigation className="h-4 w-4" />
                                                 </button>
                                             </div>
-                                        </div>
+
+                                            <div className="flex flex-1 flex-col p-4">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <button type="button" onClick={() => void openVenueDetail(venue)} className="text-left">
+                                                        <h3 className="line-clamp-1 text-base font-bold text-gray-900 transition-colors group-hover:text-emerald-800">{venue.name}</h3>
+                                                    </button>
+                                                    {!!venue.courts?.length && (
+                                                        <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+                                                            {venue.courts.length} sân khả dụng
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="mt-2 flex items-start gap-2 text-sm text-gray-500">
+                                                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                                                    <span className="line-clamp-2 leading-5">{venue.address}</span>
+                                                </div>
+                                                {!!venue.courts?.length && (
+                                                    <div className="mt-4">
+                                                        <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">Chọn sân để đặt</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {venue.courts.map(court => (
+                                                                <button
+                                                                    key={court.id}
+                                                                    type="button"
+                                                                    onClick={() => handleSelectCourt(venue, court.id)}
+                                                                    className="rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-800 transition hover:border-emerald-500 hover:bg-emerald-700 hover:text-white"
+                                                                >
+                                                                    {court.name}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                                                    <Clock className="h-3.5 w-3.5 text-gray-400" />
+                                                    <span>{status.text}</span>
+                                                </div>
+                                                <div className="mt-auto flex items-center justify-between gap-3 border-t border-gray-100 pt-4 mt-4">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void openVenueDetail(venue)}
+                                                        className="text-sm font-semibold text-gray-600 transition hover:text-emerald-800"
+                                                    >
+                                                        Xem chi tiết
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSelectVenue(venue)}
+                                                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2"
+                                                    >
+                                                        Đặt sân
+                                                        <ChevronRight className="h-4 w-4" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </article>
                                     );
                                 })}
                             </div>
                         )}
-                    </div>
+                    </section>
                 </div>
             )}
 
             {/* Map View */}
             {activeTab === 'map' && (
-                <div className="flex flex-col min-h-[calc(100vh-80px)] pb-24">
+                <div className="hidden">
                     <div className="flex-1 relative">
                         <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3826.6404207967107!2d107.60194437592682!3d16.443078629319736!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3141a165ca6ab627%3A0xf296b18480a09d08!2zVHLGsOG7nW5nIMSQ4bqhaSBo4buNYyBLaW5oIHThur8sIMSQ4bqhaSBo4buNYyBIdeG6vw!5e0!3m2!1svi!2s!4v1790410473151!5m2!1svi!2s" width="100%" height="100%" style={{ border: 0, minHeight: '80vh' }} allowFullScreen={true} loading="lazy"></iframe>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'map' && (
+                <div className="min-h-[calc(100vh-80px)] bg-gray-50 px-4 pb-28 pt-6">
+                    <div className="mx-auto max-w-5xl">
+                        <h1 className="text-2xl font-black text-gray-900">Cơ sở & chỉ đường</h1>
+                        <p className="mt-1 text-sm text-gray-600">Mở chỉ đường đến địa chỉ cơ sở do quản trị viên cập nhật.</p>
+                        {loading ? (
+                            <div className="mt-6 rounded-2xl bg-white p-8 text-center text-gray-500">Đang tải danh sách cơ sở...</div>
+                        ) : venuesError ? (
+                            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
+                                <p className="font-semibold text-amber-900">Không thể tải danh sách cơ sở.</p>
+                                <button onClick={() => setVenueReloadKey(key => key + 1)} className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white">Thử lại</button>
+                            </div>
+                        ) : venues.length === 0 ? (
+                            <div className="mt-6 rounded-2xl bg-white p-8 text-center text-gray-500">Chưa có cơ sở nào để hiển thị.</div>
+                        ) : (
+                            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                                {venues.map(venue => (
+                                    <article key={venue.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                                        <h2 className="font-bold text-gray-900">{venue.name}</h2>
+                                        <p className="mt-2 flex items-start gap-2 text-sm text-gray-600">
+                                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                                            <span>{venue.address || 'Chưa cập nhật địa chỉ'}</span>
+                                        </p>
+                                        {venue.phone && <p className="mt-2 text-sm text-gray-600">Điện thoại: {venue.phone}</p>}
+                                        <div className="mt-4 flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => openVenueDirections(venue)}
+                                                className="flex-1 rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-50"
+                                            >
+                                                Chỉ đường
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSelectVenue(venue)}
+                                                className="flex-1 rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-800"
+                                            >
+                                                Đặt sân
+                                            </button>
+                                        </div>
+                                    </article>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -798,6 +1047,11 @@ export default function PortalPage() {
                             <div className="flex justify-center py-20">
                                 <div className="w-8 h-8 border-4 border-[#19b251] border-t-transparent rounded-full animate-spin"></div>
                             </div>
+                        ) : requestsError ? (
+                            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
+                                <p className="font-semibold text-amber-900">Không thể tải lịch đặt của bạn.</p>
+                                <button onClick={() => void refetchRequests()} className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white">Thử lại</button>
+                            </div>
                         ) : myRequests.length === 0 ? (
                             <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 flex flex-col items-center">
                                 <CalendarDays className="w-16 h-16 text-gray-300 mb-4" />
@@ -805,8 +1059,28 @@ export default function PortalPage() {
                                 <button onClick={() => setActiveTab('home')} className="mt-4 px-6 py-2 bg-[#19b251] text-white font-bold rounded-full text-sm">Đặt sân ngay</button>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {myRequests.map((req: any) => (
+                            <>
+                                <div className="mb-4 flex gap-2 overflow-x-auto">
+                                    {([
+                                        { value: 'upcoming', label: 'Sắp tới' },
+                                        { value: 'past', label: 'Đã qua' },
+                                        { value: 'all', label: 'Tất cả' },
+                                    ] as const).map(option => (
+                                        <button
+                                            key={option.value}
+                                            onClick={() => setHistoryFilter(option.value)}
+                                            className={`shrink-0 rounded-full border px-4 py-2 text-sm font-bold ${historyFilter === option.value ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-gray-200 bg-white text-gray-600'}`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                {filteredRequests.length === 0 ? (
+                                    <div className="rounded-2xl border border-gray-100 bg-white py-16 text-center text-gray-500">
+                                        Không có lịch đặt trong mục này.
+                                    </div>
+                                ) : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {filteredRequests.map((req: any) => (
                                     <div key={req.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
                                         <div className="p-4 border-b border-gray-50 flex justify-between items-start">
                                             <div>
@@ -840,14 +1114,17 @@ export default function PortalPage() {
                                             </div>
                                             <div className="flex justify-between">
                                                 <span className="text-gray-500">Thanh toán:</span>
-                                                <span className={`font-semibold ${req.paymentStatus === 'PAID' ? 'text-green-600' : 'text-orange-500'}`}>
-                                                    {req.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                                                <span className={`text-right font-semibold ${req.paymentStatus === 'PAID' ? 'text-green-600' : 'text-orange-500'}`}>
+                                                    {req.paymentMethod === 'VNPAY' ? 'VNPay' : 'Chuyển khoản'} · {req.paymentStatus === 'PAID' ? 'Đã xác nhận tiền nhận' : 'Chờ xác nhận'}
+                                                    {getBookingRequestTotal(req) > 0 && <span className="block text-xs">Tổng: {formatVnd(getBookingRequestTotal(req))}</span>}
+                                                    {req.paymentStatus === 'PAID' && <span className="block text-xs">Đã nhận: {formatVnd(req.paymentAmount || 0)}</span>}
                                                 </span>
                                             </div>
                                         </div>
                                     </div>
                                 ))}
-                            </div>
+                                </div>}
+                            </>
                         )}
                     </div>
                 </div>
@@ -909,12 +1186,12 @@ export default function PortalPage() {
                                 </div>
                             </div>
 
-                            {/* 3. Phần Menu: Tabs Thông tin, Dịch vụ, Hình ảnh, Đánh giá */}
-                            <div className="flex items-center border-b border-gray-200 text-sm font-medium mb-6">
+                            {/* 3. Phần Menu: Thông tin cơ sở, dịch vụ, hình ảnh, đánh giá và điều khoản */}
+                            <div className="mb-6 flex items-center gap-1 overflow-x-auto border-b border-gray-200 text-sm font-medium">
                                 <button
                                     type="button"
                                     onClick={() => setActiveModalTab('info')}
-                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                    className={`shrink-0 whitespace-nowrap px-4 pb-2.5 transition-colors cursor-pointer ${
                                         activeModalTab === 'info'
                                             ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
                                             : 'text-gray-500 hover:text-gray-800'
@@ -925,7 +1202,7 @@ export default function PortalPage() {
                                 <button
                                     type="button"
                                     onClick={() => setActiveModalTab('services')}
-                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                    className={`shrink-0 whitespace-nowrap px-4 pb-2.5 transition-colors cursor-pointer ${
                                         activeModalTab === 'services'
                                             ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
                                             : 'text-gray-500 hover:text-gray-800'
@@ -936,7 +1213,7 @@ export default function PortalPage() {
                                 <button
                                     type="button"
                                     onClick={() => setActiveModalTab('images')}
-                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                    className={`shrink-0 whitespace-nowrap px-4 pb-2.5 transition-colors cursor-pointer ${
                                         activeModalTab === 'images'
                                             ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
                                             : 'text-gray-500 hover:text-gray-800'
@@ -947,13 +1224,24 @@ export default function PortalPage() {
                                 <button
                                     type="button"
                                     onClick={() => setActiveModalTab('reviews')}
-                                    className={`pb-2.5 px-4 transition-colors cursor-pointer ${
+                                    className={`shrink-0 whitespace-nowrap px-4 pb-2.5 transition-colors cursor-pointer ${
                                         activeModalTab === 'reviews'
                                             ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
                                             : 'text-gray-500 hover:text-gray-800'
                                     }`}
                                 >
                                     Đánh giá
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveModalTab('terms')}
+                                    className={`shrink-0 whitespace-nowrap px-4 pb-2.5 transition-colors cursor-pointer ${
+                                        activeModalTab === 'terms'
+                                            ? 'text-[#19b251] border-b-2 border-[#19b251] font-bold'
+                                            : 'text-gray-500 hover:text-gray-800'
+                                    }`}
+                                >
+                                    Điều khoản & dịch vụ
                                 </button>
                             </div>
 
@@ -1082,6 +1370,26 @@ export default function PortalPage() {
                                         </>
                                     )}
                                 </div>
+                            )}
+
+                            {activeModalTab === 'terms' && (
+                                <section className="max-h-[52vh] overflow-y-auto rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4 sm:p-5">
+                                    <div className="mb-3 flex items-center gap-2">
+                                        <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-700" />
+                                        <h4 className="font-bold text-gray-900">Điều khoản & dịch vụ</h4>
+                                    </div>
+                                    {venueDetailLoading ? (
+                                        <p className="py-6 text-center text-sm text-gray-500">Đang tải thông tin...</p>
+                                    ) : selectedVenueDetail.termsAndServices?.trim() ? (
+                                        <div className="whitespace-pre-wrap break-words text-sm leading-7 text-gray-700">
+                                            {selectedVenueDetail.termsAndServices}
+                                        </div>
+                                    ) : (
+                                        <p className="rounded-xl border border-dashed border-emerald-200 bg-white/70 px-4 py-6 text-center text-sm leading-6 text-gray-500">
+                                            Cơ sở chưa cập nhật điều khoản và dịch vụ. Vui lòng liên hệ cơ sở nếu bạn cần thêm thông tin.
+                                        </p>
+                                    )}
+                                </section>
                             )}
 
                             {activeModalTab === 'reviews' && (

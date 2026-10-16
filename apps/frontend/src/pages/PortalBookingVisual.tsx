@@ -57,6 +57,7 @@ export default function PortalBookingVisual() {
     const [viewMonth, setViewMonth] = useState<Date>(new Date());
     const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
     const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
+    const [slotPeriod, setSlotPeriod] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
     const [showPricing, setShowPricing] = useState(false);
     const [operatingHours, setOperatingHours] = useState<OperatingHour[]>([]);
 
@@ -138,7 +139,14 @@ export default function PortalBookingVisual() {
     // Fetch Venue
     useEffect(() => {
         if (!venueId) return;
-        venueApi.getById(venueId).then(res => setVenue(res)).catch(() => {
+        venueApi.getById(venueId).then(res => {
+            if (!res.isActive) {
+                toast({ title: 'Cơ sở hiện không nhận đặt sân', variant: 'error' });
+                navigate('/trang-chu');
+                return;
+            }
+            setVenue(res);
+        }).catch(() => {
             toast({ title: 'Không tìm thấy cơ sở', variant: 'error' });
             navigate(-1);
         });
@@ -149,6 +157,9 @@ export default function PortalBookingVisual() {
         if (!venue) return;
         const fetchAvailability = async () => {
             setLoading(true);
+            setOperatingHours([]);
+            setProducts([]);
+            setServices([]);
             try {
                 const dateStr = format(selectedDate, 'yyyy-MM-dd');
                 const res = await venueApi.getAvailability(venue.id, dateStr);
@@ -157,13 +168,9 @@ export default function PortalBookingVisual() {
                 setBookings(res.bookings);
                 
                 if (availableCourts.length > 0) {
-                    // Auto select court if provided in URL, else first court
-                    if (courtId) {
-                        const c = availableCourts.find((c: Court) => c.id === courtId);
-                        setSelectedCourt(c || availableCourts[0]);
-                    } else {
-                        setSelectedCourt(availableCourts[0]);
-                    }
+                    setSelectedCourt(current => availableCourts.find(
+                        (court: Court) => court.id === (courtId || current?.id),
+                    ) || availableCourts[0]);
                 } else {
                     setSelectedCourt(null);
                 }
@@ -172,14 +179,19 @@ export default function PortalBookingVisual() {
 
                 try {
                     const [prodRes, servRes, opRes] = await Promise.all([
-                        productApi.getAll({ venueId: venue.id, isActive: true }),
-                        serviceApi.getAll({ venueId: venue.id, isActive: true }),
+                        productApi.getAll({ venueId: venue.id, isActive: true, limit: 1000 }),
+                        serviceApi.getAll({ venueId: venue.id, isActive: true, limit: 1000 }),
                         operatingHourApi.getAll({ venueId: venue.id, isActive: true })
                     ]);
                     setProducts(prodRes.data || []);
                     setServices(servRes.data || []);
                     setOperatingHours(opRes.data || []);
-                } catch (e) { console.error('Failed to fetch inventory or hours:', e); }
+                } catch {
+                    setOperatingHours([]);
+                    setProducts([]);
+                    setServices([]);
+                    toast({ title: 'Không thể tải giờ hoạt động hoặc dịch vụ', variant: 'error' });
+                }
 
             } catch {
                 toast({ title: 'Lỗi tải dữ liệu', variant: 'error' });
@@ -211,6 +223,24 @@ export default function PortalBookingVisual() {
         });
     }, [venue, operatingHours, selectedDate]);
 
+    const filteredTimeSlots = useMemo(() => visibleSlots.filter((time) => {
+        const hour = Number(time.slice(0, 2));
+        if (slotPeriod === 'morning') return hour < 12;
+        if (slotPeriod === 'afternoon') return hour >= 12 && hour < 18;
+        if (slotPeriod === 'evening') return hour >= 18;
+        return true;
+    }), [visibleSlots, slotPeriod]);
+
+    const timeSlotCounts = useMemo(() => ({
+        all: visibleSlots.length,
+        morning: visibleSlots.filter((time) => Number(time.slice(0, 2)) < 12).length,
+        afternoon: visibleSlots.filter((time) => {
+            const hour = Number(time.slice(0, 2));
+            return hour >= 12 && hour < 18;
+        }).length,
+        evening: visibleSlots.filter((time) => Number(time.slice(0, 2)) >= 18).length,
+    }), [visibleSlots]);
+
     const getSlotStatus = (time: string) => {
         if (!selectedCourt) return 'unavailable';
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
@@ -226,6 +256,17 @@ export default function PortalBookingVisual() {
             b.endTime > time
         );
         if (isBooked) return 'booked';
+
+        const slotEnd = getNextHalfHour(time);
+        const dayOfWeek = format(selectedDate, 'EEEE').toUpperCase();
+        const matchingRule = [...(venue?.pricingRules || [])]
+            .sort((a: any, b: any) => b.priority - a.priority || a.name.localeCompare(b.name))
+            .find((rule: any) =>
+                (!rule.dayOfWeek || rule.dayOfWeek === dayOfWeek) &&
+                (!rule.startTime || rule.startTime <= time) &&
+                (!rule.endTime || rule.endTime >= slotEnd),
+            );
+        if (!matchingRule || matchingRule.pricePerHour <= 0) return 'unpriced';
         
         return 'available';
     };
@@ -234,12 +275,31 @@ export default function PortalBookingVisual() {
         const status = getSlotStatus(time);
         if (status !== 'available') return;
 
-        setSelectedSlots(prev => {
-            if (prev.includes(time)) {
-                return prev.filter(t => t !== time);
+        const selectedIndex = selectedSlots.indexOf(time);
+        if (selectedIndex !== -1) {
+            if (selectedSlots.length > 1 && selectedIndex > 0 && selectedIndex < selectedSlots.length - 1) {
+                toast({
+                    title: 'Giữ khung giờ liền nhau',
+                    variant: 'error',
+                });
+                return;
             }
-            return [...prev, time].sort();
-        });
+            setSelectedSlots(selectedIndex === 0 ? selectedSlots.slice(1) : selectedSlots.slice(0, -1));
+            return;
+        }
+
+        if (selectedSlots.length > 0) {
+            const firstSlot = selectedSlots[0];
+            const lastSlot = selectedSlots[selectedSlots.length - 1];
+            if (getNextHalfHour(time) !== firstSlot && getNextHalfHour(lastSlot) !== time) {
+                toast({
+                    title: 'Vui lòng chọn giờ liên tiếp',
+                    variant: 'error',
+                });
+                return;
+            }
+        }
+        setSelectedSlots([...selectedSlots, time].sort());
     };
 
     const totalAmount = useMemo(() => {
@@ -255,7 +315,9 @@ export default function PortalBookingVisual() {
             
             let pricePerHour = 0;
             if (venue.pricingRules && venue.pricingRules.length > 0) {
-                const rules = [...venue.pricingRules].sort((a: any, b: any) => b.priority - a.priority);
+                const rules = [...venue.pricingRules].sort((a: any, b: any) =>
+                    b.priority - a.priority || a.name.localeCompare(b.name),
+                );
                 for (const rule of rules) {
                     const matchDay = !rule.dayOfWeek || rule.dayOfWeek === dayOfWeek;
                     const matchTime = (!rule.startTime || rule.startTime <= slotStart) && (!rule.endTime || rule.endTime >= slotEnd);
@@ -271,6 +333,14 @@ export default function PortalBookingVisual() {
     }, [selectedSlots, selectedCourt, venue, selectedDate, orderedItems]);
 
     const finalAmount = Math.max(0, totalAmount - (appliedVoucher?.discountAmount || 0));
+    useEffect(() => {
+        setAppliedVoucher(null);
+        setVoucherCodeInput('');
+    }, [totalAmount]);
+
+    const bankTransferConfigured = Boolean(
+        venue?.bankCode && venue?.bankAccountNumber && venue?.bankAccountName,
+    );
 
     const handleCheckVoucher = async () => {
         if (!voucherCodeInput) {
@@ -298,6 +368,10 @@ export default function PortalBookingVisual() {
         if (selectedSlots.length === 0 || !selectedCourt || !venue) return;
         if (!bookingForm.name || !bookingForm.phone) {
             toast({ title: 'Vui lòng điền đủ thông tin liên hệ', variant: 'error' });
+            return;
+        }
+        if (paymentMethod === 'DEPOSIT_TRANSFER' && !bankTransferConfigured) {
+            toast({ title: 'Cơ sở chưa cấu hình tài khoản nhận chuyển khoản', variant: 'error' });
             return;
         }
         if (paymentMethod === 'DEPOSIT_TRANSFER' && !paymentProof) {
@@ -367,10 +441,18 @@ export default function PortalBookingVisual() {
         setOrderedItems(prev => {
             const existing = prev.find(i => i.id === item.id && i.type === type);
             if (!existing) {
+                if (type === 'product' && (item as Product).stock < 1) {
+                    toast({ title: 'Sản phẩm đã hết hàng', variant: 'error' });
+                    return prev;
+                }
                 if (delta > 0) return [...prev, { id: item.id, name: item.name, price: item.price, quantity: 1, type }];
                 return prev;
             }
             const newQty = existing.quantity + delta;
+            if (delta > 0 && type === 'product' && newQty > (item as Product).stock) {
+                toast({ title: 'Số lượng vượt tồn kho hiện có', variant: 'error' });
+                return prev;
+            }
             if (newQty <= 0) return prev.filter(i => i.id !== item.id || i.type !== type);
             return prev.map(i => i.id === item.id && i.type === type ? { ...i, quantity: newQty } : i);
         });
@@ -479,11 +561,19 @@ export default function PortalBookingVisual() {
                     {/* Court Selector */}
                     {courts.length > 0 ? (
                         <>
-                            <div className="mb-6">
+                            <div className="mb-6 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm sm:p-5">
                                 <div className="flex items-center justify-between mb-3">
-                                    <h2 className="text-base font-bold text-gray-800">Chọn sân</h2>
+                                    <div>
+                                        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">Bước 1</p>
+                                        <h2 className="mt-1 text-base font-bold text-gray-900">Chọn sân</h2>
+                                    </div>
+                                    {selectedCourt && (
+                                        <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+                                            Đang chọn · {selectedCourt.name}
+                                        </span>
+                                    )}
                                 </div>
-                                <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+                                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
                                     {courts.map(court => (
                                         <button
                                             key={court.id}
@@ -492,10 +582,10 @@ export default function PortalBookingVisual() {
                                                 setSelectedSlots([]);
                                             }}
                                             className={cn(
-                                                "px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all border",
+                                                "min-h-11 rounded-xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-all",
                                                 selectedCourt?.id === court.id
-                                                    ? "bg-green-600 text-white border-green-600 shadow-md"
-                                                    : "bg-white text-gray-600 border-gray-200 hover:border-green-300 hover:bg-green-50"
+                                                    ? "border-emerald-700 bg-emerald-700 text-white shadow-md shadow-emerald-900/10"
+                                                    : "border-gray-200 bg-gray-50 text-gray-700 hover:border-emerald-300 hover:bg-emerald-50"
                                             )}
                                         >
                                             {court.name}
@@ -505,53 +595,137 @@ export default function PortalBookingVisual() {
                             </div>
 
                             {/* Time Slots Grid */}
-                            <div className="mb-6">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h2 className="text-base font-bold text-gray-800">Chọn giờ</h2>
-                                    <div className="flex items-center gap-3 text-[10px] font-medium text-gray-500">
-                                        <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-white border border-gray-300" /> Trống</span>
-                                        <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-green-500" /> Đang chọn</span>
-                                        <span className="flex items-center gap-1"><div className="w-2.5 h-2.5 rounded-full bg-gray-200" /> Đã đặt/Qua</span>
+                            <section className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_12px_35px_-28px_rgba(15,23,42,0.5)] sm:rounded-3xl">
+                                <div className="border-b border-gray-100 bg-gradient-to-r from-emerald-50/80 via-white to-white px-4 py-4 sm:px-6 sm:py-5">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">Bước 2</p>
+                                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                                                <h2 className="text-lg font-black tracking-tight text-gray-900">Chọn khung giờ</h2>
+                                                {selectedSlots.length > 0 && (
+                                                    <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">
+                                                        {selectedSlots.length} khung · {getDurationLabel(
+                                                            selectedSlots[0],
+                                                            getNextHalfHour(selectedSlots[selectedSlots.length - 1]),
+                                                        )}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+                                                Mỗi khung giờ kéo dài 30 phút. Chọn một hoặc nhiều khung giờ còn trống.
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-3 rounded-xl bg-white/80 px-3 py-2 text-[11px] font-medium text-gray-600 ring-1 ring-gray-100">
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <span className="h-2.5 w-2.5 rounded-full border border-emerald-300 bg-white" />
+                                                Còn trống
+                                            </span>
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                                                Đã chọn
+                                            </span>
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
+                                                Không khả dụng
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
-                                
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+
+                                <div className="p-4 sm:p-6">
                                     {visibleSlots.length === 0 ? (
-                                        <div className="text-center py-6 text-gray-500 text-sm">
-                                            Cơ sở không mở cửa vào ngày này.
+                                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/70 px-4 py-10 text-center">
+                                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">🕒</div>
+                                            <p className="mt-3 font-semibold text-gray-800">Không có giờ hoạt động</p>
+                                            <p className="mt-1 text-sm text-gray-500">Cơ sở không mở cửa vào ngày bạn đã chọn.</p>
                                         </div>
                                     ) : (
-                                        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2.5">
-                                            {visibleSlots.map(time => {
-                                            const status = getSlotStatus(time);
-                                            const isSelected = selectedSlots.includes(time);
-                                            const dateStr = format(selectedDate, 'yyyy-MM-dd');
-                                            const now = new Date();
-                                            const nowStr = format(now, 'yyyy-MM-dd');
-                                            const nowTime = format(now, 'HH:mm');
-                                            return (
-                                                <button
-                                                    key={time}
-                                                    disabled={status !== 'available'}
-                                                    onClick={() => handleSlotClick(time)}
-                                                    className={cn(
-                                                    "py-2 px-1 rounded-xl text-[11px] sm:text-xs font-semibold transition-all border flex items-center justify-center gap-0.5 whitespace-nowrap",
-                                                        status === 'available' && !isSelected && "bg-white text-gray-700 border-gray-200 hover:border-green-500 hover:text-green-600",
-                                                        isSelected && "bg-green-500 text-white border-green-500 shadow-sm shadow-green-200 scale-105",
-                                                        status === 'past' && "bg-gray-100 text-gray-400 border-gray-100 opacity-60 cursor-not-allowed",
-                                                        status === 'booked' && (dateStr === nowStr && time < nowTime || dateStr < nowStr ? "bg-red-50 text-red-500 border-red-200 opacity-60 cursor-not-allowed" : "bg-red-50 text-red-500 border-red-200 cursor-not-allowed")
-                                                    )}
-                                                aria-label={`${time} đến ${getNextHalfHour(time)}`}
-                                                >
-                                                    {status === 'booked' && <X className="w-3.5 h-3.5 text-red-500" strokeWidth={3} />}
-                                                    <span>{time}-{getNextHalfHour(time)}</span>
-                                                </button>
-                                            );
-                                        })}
-                                        </div>
+                                        <>
+                                            <div className="-mx-1 mb-5 flex gap-2 overflow-x-auto px-1 pb-1">
+                                                {([
+                                                    { value: 'all', label: 'Tất cả' },
+                                                    { value: 'morning', label: 'Buổi sáng' },
+                                                    { value: 'afternoon', label: 'Buổi chiều' },
+                                                    { value: 'evening', label: 'Buổi tối' },
+                                                ] as const).map(period => (
+                                                    <button
+                                                        key={period.value}
+                                                        type="button"
+                                                        onClick={() => setSlotPeriod(period.value)}
+                                                        className={cn(
+                                                            "inline-flex min-h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition sm:text-sm",
+                                                            slotPeriod === period.value
+                                                                ? "border-emerald-700 bg-emerald-700 text-white shadow-sm"
+                                                                : "border-gray-200 bg-white text-gray-600 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
+                                                        )}
+                                                    >
+                                                        {period.label}
+                                                        <span className={cn(
+                                                            "rounded-full px-1.5 py-0.5 text-[10px]",
+                                                            slotPeriod === period.value ? "bg-white/15 text-white" : "bg-gray-100 text-gray-500"
+                                                        )}>
+                                                            {timeSlotCounts[period.value]}
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+
+                                            {filteredTimeSlots.length === 0 ? (
+                                                <div className="rounded-xl bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                                                    Không có khung giờ trong buổi này.
+                                                </div>
+                                            ) : (
+                                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-2.5 lg:grid-cols-4 xl:grid-cols-5">
+                                                    {filteredTimeSlots.map(time => {
+                                                        const status = getSlotStatus(time);
+                                                        const isSelected = selectedSlots.includes(time);
+                                                        const isUnavailable = status === 'booked' || status === 'past' || status === 'unavailable' || status === 'unpriced';
+                                                        const statusLabel = isSelected
+                                                            ? 'Đã chọn'
+                                                            : status === 'booked'
+                                                                ? 'Đã có lịch'
+                                                                : status === 'past'
+                                                                    ? 'Đã qua'
+                                                                    : status === 'unpriced'
+                                                                        ? 'Chưa có giá'
+                                                                    : status === 'unavailable'
+                                                                        ? 'Không khả dụng'
+                                                                        : 'Còn trống';
+                                                        return (
+                                                            <button
+                                                                key={time}
+                                                                type="button"
+                                                                disabled={isUnavailable}
+                                                                onClick={() => handleSlotClick(time)}
+                                                                aria-pressed={isSelected}
+                                                                aria-label={`${time} đến ${getNextHalfHour(time)} · ${statusLabel}`}
+                                                                className={cn(
+                                                                    "group relative flex min-h-11 items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 sm:min-h-12 sm:px-3",
+                                                                    isSelected && "border-emerald-700 bg-emerald-700 text-white shadow-md shadow-emerald-900/15",
+                                                                    status === 'available' && !isSelected && "border-gray-200 bg-white text-gray-800 hover:-translate-y-0.5 hover:border-emerald-400 hover:bg-emerald-50/60 hover:shadow-sm",
+                                                                    isUnavailable && "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-400"
+                                                                )}
+                                                            >
+                                                                <span className="whitespace-nowrap text-xs font-bold tracking-tight sm:text-sm">
+                                                                    {time} - {getNextHalfHour(time)}
+                                                                </span>
+                                                                <span className={cn(
+                                                                    "shrink-0 rounded-full px-1.5 py-1 text-[9px] font-bold sm:px-2",
+                                                                    isSelected && "bg-white/15 text-white",
+                                                                    status === 'available' && !isSelected && "bg-emerald-50 text-emerald-700",
+                                                                    isUnavailable && "bg-gray-100 text-gray-500"
+                                                                )}>
+                                                                    {statusLabel}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
-                            </div>
+                            </section>
                             
                             {/* Inventory Toggle */}
                             {(products.length > 0 || services.length > 0) && (
@@ -791,42 +965,65 @@ export default function PortalBookingVisual() {
 
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thanh toán</label>
-                                    <div className="flex flex-wrap justify-center gap-3">
+                                    <div className="grid grid-cols-2 gap-2 sm:gap-3">
                                         <button
                                             type="button"
                                             onClick={() => setPaymentMethod('VNPAY')}
                                             className={cn(
-                                                "py-2 px-4 flex items-center gap-1.5 rounded-lg border transition-all",
+                                                "min-w-0 py-2.5 px-2.5 sm:px-4 flex items-center justify-center gap-1.5 rounded-xl border transition-all",
                                                 paymentMethod === 'VNPAY' ? "border-blue-500 bg-blue-50 text-blue-700 font-bold" : "border-gray-200 bg-white text-gray-600 font-medium hover:border-blue-200"
                                             )}
                                         >
-                                            <span className="text-lg">💳</span>
-                                            <span className="text-sm">Thanh toán online (VNPAY)</span>
+                                            <span className="shrink-0 text-base sm:text-lg">💳</span>
+                                            <span className="text-xs sm:text-sm">Thanh toán VNPay</span>
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setPaymentMethod('DEPOSIT_TRANSFER')}
+                                            disabled={!bankTransferConfigured}
                                             className={cn(
-                                                "py-2 px-4 flex items-center gap-1.5 rounded-lg border transition-all",
+                                                "min-w-0 py-2.5 px-2.5 sm:px-4 flex items-center justify-center gap-1.5 rounded-xl border transition-all disabled:cursor-not-allowed disabled:opacity-50",
                                                 paymentMethod === 'DEPOSIT_TRANSFER' ? "border-green-500 bg-green-50 text-green-700 font-bold" : "border-gray-200 bg-white text-gray-600 font-medium hover:border-green-200"
                                             )}
                                         >
-                                            <span className="text-lg">🏦</span>
-                                            <span className="text-sm">Chuyển khoản</span>
+                                            <span className="shrink-0 text-base sm:text-lg">🏦</span>
+                                            <span className="text-xs sm:text-sm">Chuyển khoản</span>
                                         </button>
                                     </div>
+                                    {!bankTransferConfigured && (
+                                        <p className="mt-2 text-xs text-amber-700">
+                                            Chuyển khoản chưa được bật vì cơ sở chưa khai báo tài khoản nhận tiền trong quản trị.
+                                        </p>
+                                    )}
 
                                     {paymentMethod === 'DEPOSIT_TRANSFER' && (
                                         <div className="mt-4 p-5 border border-green-200 bg-green-50 rounded-2xl animate-in fade-in slide-in-from-top-2">
-                                            <div className="text-center mb-4">
-                                                <p className="text-sm font-bold text-green-800 mb-3">Quét mã QR để cọc sân</p>
-                                                <div className="bg-white p-2 rounded-2xl inline-block border border-green-100 shadow-sm mx-auto mb-3">
-                                                    <img src={`https://img.vietqr.io/image/MB-0359850125-compact2.png?amount=${totalAmount}&addInfo=Coc%20san%20${bookingForm.phone || 'khach'}&accountName=NGUYEN%20VAN%20A`} alt="QR" className="w-40 h-40 object-contain" />
+                                            {bankTransferConfigured ? (
+                                                <div className="text-center mb-4">
+                                                    <p className="text-sm font-bold text-green-800 mb-3">Quét mã QR chuyển khoản</p>
+                                                    <div className="bg-white p-2 rounded-2xl inline-block border border-green-100 shadow-sm mx-auto mb-3">
+                                                        <img
+                                                            src={`https://img.vietqr.io/image/${encodeURIComponent(venue.bankCode)}-${encodeURIComponent(venue.bankAccountNumber)}-compact2.png?amount=${Math.round(finalAmount)}&addInfo=${encodeURIComponent(`Dat san ${bookingForm.phone || ''} ${selectedCourt?.name || ''}`)}&accountName=${encodeURIComponent(venue.bankAccountName)}`}
+                                                            alt="Mã QR chuyển khoản"
+                                                            className="w-40 h-40 object-contain"
+                                                        />
+                                                    </div>
+                                                    <div className="text-xs font-medium text-green-700">
+                                                        {venue.bankCode} - {venue.bankAccountNumber}<br />
+                                                        Chủ TK: {venue.bankAccountName}
+                                                    </div>
+                                                    <p className="mt-2 text-sm font-bold text-green-900">
+                                                        Số tiền: {formatCurrency(finalAmount)}
+                                                    </p>
+                                                    <p className="mt-1 text-xs text-green-700">
+                                                        Nội dung chuyển khoản được điền sẵn trong mã QR.
+                                                    </p>
                                                 </div>
-                                                <div className="text-xs font-medium text-green-700">
-                                                    MB Bank - 0359850125<br/>Chủ TK: NGUYEN VAN A
-                                                </div>
-                                            </div>
+                                            ) : (
+                                                <p className="text-sm font-medium text-amber-800">
+                                                    Cơ sở chưa cấu hình tài khoản nhận chuyển khoản. Vui lòng chọn VNPay hoặc liên hệ cơ sở.
+                                                </p>
+                                            )}
 
                                             <div className="flex flex-col items-start justify-center">
                                                 <label className="text-sm font-bold text-gray-700 mb-2">Tải ảnh chụp giao dịch *</label>

@@ -27,6 +27,10 @@ export interface Venue {
     phone?: string;
     email?: string;
     description?: string;
+    termsAndServices?: string;
+    bankCode?: string | null;
+    bankAccountNumber?: string | null;
+    bankAccountName?: string | null;
     logo?: string;
     images?: string[];
     openTime: string;
@@ -34,7 +38,7 @@ export interface Venue {
     isActive: boolean;
     ratingAverage?: number | null;
     reviewCount?: number;
-    courts?: any[];
+    courts?: Court[];
     operatingHours?: any[];
     pricingRules?: PricingRule[];
     services?: VenueServiceItem[];
@@ -52,6 +56,10 @@ export interface CreateVenueInput {
     phone?: string;
     email?: string;
     description?: string;
+    termsAndServices?: string;
+    bankCode?: string | null;
+    bankAccountNumber?: string | null;
+    bankAccountName?: string | null;
     logo?: string;
     images?: string[];
     openTime: string;
@@ -147,5 +155,3 @@ export const courtApi = {
 };
 
 export default { venueApi, courtApi };
-
-
