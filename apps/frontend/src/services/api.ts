@@ -16,7 +16,7 @@ export const api = axios.create({
 api.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
         const token = useAuthStore.getState().accessToken
-        if (token) {
+        if (token && !config.headers.Authorization) {
             config.headers.Authorization = `Bearer ${token}`
         }
         return config
@@ -32,7 +32,8 @@ api.interceptors.response.use(
         const authState = useAuthStore.getState()
         const isAuthRequest = originalRequest?.url?.includes('/auth/login') ||
             originalRequest?.url?.includes('/auth/register') ||
-            originalRequest?.url?.includes('/portal-auth/')
+            originalRequest?.url?.includes('/portal-auth/') ||
+            originalRequest?.url?.includes('/booking-requests/public')
 
         // Refresh once for concurrent requests instead of rotating the same refresh token repeatedly.
         if (

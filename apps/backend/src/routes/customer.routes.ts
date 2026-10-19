@@ -1,6 +1,7 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { customerService } from '../services/customer.service.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import { z } from 'zod';
 
 const router = Router();
 
@@ -119,9 +120,13 @@ router.delete(
 router.post(
     '/:id/points',
     authenticate,
+    authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'),
     async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { points, reason } = req.body;
+            const { points, reason } = z.object({
+                points: z.number().int().refine((value) => value !== 0, 'Điểm điều chỉnh không được bằng 0'),
+                reason: z.string().trim().min(3).max(500),
+            }).parse(req.body);
             const customer = await customerService.addPoints(req.params.id, points, reason);
             res.json({
                 success: true,

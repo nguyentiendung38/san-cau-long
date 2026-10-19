@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import { config } from './config/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import routes from './routes/index.js';
+import { bookingRequestService } from './services/booking-request.service.js';
+import { notificationService } from './services/notification.service.js';
 
 const app = express();
 
@@ -39,6 +41,17 @@ app.use(errorHandler);
 
 // Start server
 const server = app.listen(config.port, () => {
+    const runMaintenance = () => {
+        void bookingRequestService.expireUnpaidBankTransferRequests().catch((error) => {
+            console.error('Không thể giải phóng yêu cầu đặt sân hết hạn:', error instanceof Error ? error.message : error);
+        });
+        void notificationService.runDue();
+    };
+    runMaintenance();
+    const maintenanceInterval = setInterval(() => {
+        runMaintenance();
+    }, 60_000);
+    maintenanceInterval.unref();
     console.log(`
   ╔═══════════════════════════════════════════════╗
   ║                                               ║

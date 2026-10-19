@@ -33,6 +33,7 @@ export interface CreatePricingRuleInput {
 }
 
 export interface UpdatePricingRuleInput {
+    venueId?: string;
     name?: string;
     description?: string | null;
     dayOfWeek?: string | null;
@@ -182,6 +183,11 @@ export class PricingRuleService {
             throw new AppError(404, 'Không tìm thấy khung giá');
         }
 
+        if (input.venueId && input.venueId !== existing.venueId) {
+            const venue = await prisma.venue.findUnique({ where: { id: input.venueId } });
+            if (!venue) throw new AppError(404, 'Không tìm thấy cơ sở');
+        }
+
         const startTime = input.startTime !== undefined ? input.startTime : existing.startTime;
         const endTime = input.endTime !== undefined ? input.endTime : existing.endTime;
         this.validateTimeRange(startTime, endTime);
@@ -194,6 +200,7 @@ export class PricingRuleService {
         const rule = await prisma.pricingRule.update({
             where: { id },
             data: {
+                ...(input.venueId !== undefined ? { venueId: input.venueId } : {}),
                 ...(input.name !== undefined ? { name: input.name.trim() || existing.name } : {}),
                 ...(input.description !== undefined ? { description: input.description?.trim() || null } : {}),
                 ...(input.dayOfWeek !== undefined ? { dayOfWeek: input.dayOfWeek || null } : {}),

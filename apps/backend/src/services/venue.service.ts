@@ -200,43 +200,19 @@ export class VenueService {
     async delete(id: string) {
         const existing = await prisma.venue.findUnique({
             where: { id },
-            select: { id: true },
+            select: { id: true, isActive: true },
         });
 
         if (!existing) {
             throw new AppError(404, 'Không tìm thấy cơ sở');
         }
 
-        await prisma.$transaction(async (tx) => {
-            const [bookings, services, products] = await Promise.all([
-                tx.booking.findMany({
-                    where: { court: { venueId: id } },
-                    select: { id: true },
-                }),
-                tx.service.findMany({ where: { venueId: id }, select: { id: true } }),
-                tx.product.findMany({ where: { venueId: id }, select: { id: true } }),
-            ]);
-            const relatedItems = await tx.invoiceItem.findMany({
-                where: {
-                    OR: [
-                        { bookingId: { in: bookings.map((booking) => booking.id) } },
-                        { serviceId: { in: services.map((service) => service.id) } },
-                        { productId: { in: products.map((product) => product.id) } },
-                    ],
-                },
-                select: { invoiceId: true },
-            });
-            const invoiceIds = [...new Set(relatedItems.map((item) => item.invoiceId))];
-
-            if (invoiceIds.length > 0) {
-                await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
-            }
-
-            await tx.bookingRequest.deleteMany({ where: { venueId: id } });
-            await tx.venue.delete({ where: { id } });
+        await prisma.venue.update({
+            where: { id },
+            data: { isActive: false },
         });
 
-        return { message: 'Đã xóa cơ sở thành công' };
+        return { message: 'Đã ngừng hoạt động cơ sở; dữ liệu lịch đặt và hóa đơn được giữ nguyên' };
     }
 
     async getStats(id: string) {

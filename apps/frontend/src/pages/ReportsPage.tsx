@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { format } from 'date-fns';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
     TrendingUp,
@@ -16,6 +17,7 @@ import { reportApi } from '@/services/report.service';
 import { exportApi } from '@/services/export.service';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { venueApi, Venue } from '@/services/venue.service';
 
 // Simple bar component for charts
 function Bar({ value, maxValue, label, color }: { value: number; maxValue: number; label: string; color: string }) {
@@ -82,6 +84,14 @@ function StatCard({
 
 export default function ReportsPage() {
     const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today');
+    const todayDate = format(new Date(), 'yyyy-MM-dd');
+    const monthAgoDate = new Date();
+    monthAgoDate.setDate(monthAgoDate.getDate() - 29);
+    const monthAgo = format(monthAgoDate, 'yyyy-MM-dd');
+    const [occupancyStart, setOccupancyStart] = useState(monthAgo);
+    const [occupancyEnd, setOccupancyEnd] = useState(todayDate);
+    const [occupancyVenueId, setOccupancyVenueId] = useState('');
+    const [occupancyCourtId, setOccupancyCourtId] = useState('');
     const { toast } = useToast();
 
     // Fetch dashboard stats
@@ -108,6 +118,21 @@ export default function ReportsPage() {
     const { data: topCustomers } = useQuery({
         queryKey: ['reports', 'top-customers'],
         queryFn: () => reportApi.getTopCustomers(5),
+    });
+    const { data: occupancyVenues } = useQuery({
+        queryKey: ['reports', 'occupancy-venues'],
+        queryFn: () => venueApi.getAll({ limit: 100 }),
+    });
+    const selectedOccupancyVenue = occupancyVenues?.data.find((venue: Venue) => venue.id === occupancyVenueId);
+    const { data: occupancyReport, isLoading: occupancyLoading } = useQuery({
+        queryKey: ['reports', 'occupancy', occupancyStart, occupancyEnd, occupancyVenueId, occupancyCourtId],
+        queryFn: () => reportApi.getOccupancyReport({
+            startDate: occupancyStart,
+            endDate: occupancyEnd,
+            venueId: occupancyVenueId || undefined,
+            courtId: occupancyCourtId || undefined,
+        }),
+        enabled: !!occupancyStart && !!occupancyEnd && occupancyStart <= occupancyEnd,
     });
 
     // Export mutations
@@ -272,6 +297,54 @@ export default function ReportsPage() {
                     ))}
                 </div>
             </div>
+
+            {/* Top Customers */}
+            <section className="bg-background-secondary border border-border rounded-lg p-6 mb-6">
+                <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+                    <div>
+                        <h3 className="font-semibold text-foreground">Mức độ lấp đầy sân</h3>
+                        <p className="text-sm text-foreground-secondary mt-1">Thời gian hoạt động thực tế theo giờ mở cửa đã cấu hình.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        <input aria-label="Từ ngày" type="date" value={occupancyStart} max={occupancyEnd} onChange={(event) => setOccupancyStart(event.target.value)} className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
+                        <input aria-label="Đến ngày" type="date" value={occupancyEnd} min={occupancyStart} onChange={(event) => setOccupancyEnd(event.target.value)} className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground" />
+                        <select aria-label="Cơ sở" value={occupancyVenueId} onChange={(event) => { setOccupancyVenueId(event.target.value); setOccupancyCourtId(''); }} className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground">
+                            <option value="">Tất cả cơ sở</option>
+                            {occupancyVenues?.data.map((venue: Venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
+                        </select>
+                        <select aria-label="Sân" value={occupancyCourtId} onChange={(event) => setOccupancyCourtId(event.target.value)} className="rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground">
+                            <option value="">Tất cả sân</option>
+                            {selectedOccupancyVenue?.courts?.map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+                {occupancyLoading ? <p className="py-8 text-center text-foreground-secondary">Đang tải báo cáo...</p> : occupancyReport ? (
+                    <>
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+                            {[
+                                ['Giờ hoạt động', `${occupancyReport.availableHours.toFixed(1)} giờ`],
+                                ['Giờ đã đặt', `${occupancyReport.bookedHours.toFixed(1)} giờ`],
+                                ['Tỷ lệ lấp đầy', `${occupancyReport.occupancyRate}%`],
+                                ['Lịch đã hủy', String(occupancyReport.cancellations)],
+                                ['Khách không đến', String(occupancyReport.noShows)],
+                            ].map(([label, value]) => <div key={label} className="rounded-lg border border-border bg-background p-3"><p className="text-xs text-foreground-secondary">{label}</p><p className="mt-1 font-bold text-foreground">{value}</p></div>)}
+                        </div>
+                        {!!occupancyReport.recommendations.length && <div className="mb-5 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+                            <h4 className="font-semibold text-foreground mb-2">Cơ hội khuyến mãi theo dữ liệu</h4>
+                            <ul className="space-y-1 text-sm text-foreground-secondary">
+                                {occupancyReport.recommendations.slice(0, 8).map((item, index) => <li key={`${item.courtId}-${item.hourLabel}-${index}`}><strong className="text-foreground">{item.courtName}, {item.hourLabel}</strong>: lấp đầy {item.occupancyRate}% ({item.bookedHours.toFixed(1)}/{item.availableHours.toFixed(1)} giờ). {item.suggestion}</li>)}
+                            </ul>
+                        </div>}
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead><tr className="border-b border-border text-left text-foreground-secondary"><th className="py-2 pr-3">Cơ sở</th><th className="py-2 pr-3">Sân</th><th className="py-2 pr-3">Khung giờ</th><th className="py-2 pr-3">Giờ mở cửa</th><th className="py-2 pr-3">Giờ đặt</th><th className="py-2 pr-3">Lấp đầy</th><th className="py-2">Hủy / vắng</th></tr></thead>
+                                <tbody>{occupancyReport.rows.map((row, index) => <tr key={`${row.courtId}-${row.hour}-${index}`} className="border-b border-border/50"><td className="py-2 pr-3">{row.venueName}</td><td className="py-2 pr-3">{row.courtName}</td><td className="py-2 pr-3">{row.hourLabel}</td><td className="py-2 pr-3">{row.availableHours.toFixed(1)}</td><td className="py-2 pr-3">{row.bookedHours.toFixed(1)}</td><td className="py-2 pr-3">{row.occupancyRate}%</td><td className="py-2">{row.cancellations} / {row.noShows}</td></tr>)}</tbody>
+                            </table>
+                            {!occupancyReport.rows.length && <p className="py-6 text-center text-foreground-secondary">Không có giờ hoạt động được cấu hình trong khoảng ngày này.</p>}
+                        </div>
+                    </>
+                ) : null}
+            </section>
 
             {/* Top Customers */}
             <div className="bg-background-secondary border border-border rounded-lg p-6">

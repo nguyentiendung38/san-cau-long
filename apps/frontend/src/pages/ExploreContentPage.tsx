@@ -37,10 +37,11 @@ export default function ExploreContentPage() {
     const [form, setForm] = useState<ExploreContentInput & { actionText?: string; actionUrl?: string }>(EMPTY_FORM);
     const [deleteConfirm, setDeleteConfirm] = useState<ExploreContent | null>(null);
 
-    const { data: items = [], isLoading } = useQuery({
-        queryKey: ['explore-contents', filterType],
-        queryFn: () => exploreContentApi.getAll(filterType === 'all' ? undefined : filterType),
+    const { data: allItems = [], isLoading } = useQuery({
+        queryKey: ['explore-contents'],
+        queryFn: () => exploreContentApi.getAll(),
     });
+    const items = filterType === 'all' ? allItems : allItems.filter((item) => item.type === filterType);
 
     const createMutation = useMutation({
         mutationFn: (data: ExploreContentInput) => exploreContentApi.create(data),
@@ -171,7 +172,7 @@ export default function ExploreContentPage() {
                         filterType === 'all' ? 'bg-foreground text-background border-foreground' : 'bg-background-secondary text-foreground-secondary border-border hover:border-border'
                     }`}
                 >
-                    Tất cả ({items.length})
+                    Tất cả ({allItems.length})
                 </button>
                 {ALL_TYPES.map(type => (
                     <button
@@ -182,7 +183,7 @@ export default function ExploreContentPage() {
                         }`}
                     >
                         <span>{TYPE_ICONS[type]}</span>
-                        {TYPE_LABELS[type]}
+                        {TYPE_LABELS[type]} ({allItems.filter((item) => item.type === type).length})
                     </button>
                 ))}
             </div>
@@ -209,8 +210,17 @@ export default function ExploreContentPage() {
                                 item.isActive ? 'border-border' : 'border-border opacity-60'
                             }`}
                         >
-                            {/* Top color band */}
-                            <div className="h-2 bg-gradient-to-r from-green-500 to-green-400" />
+                            <div className="relative flex h-36 items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-950 via-emerald-800 to-teal-600 text-5xl">
+                                <span>{TYPE_ICONS[item.type as ExploreContentType]}</span>
+                                {item.imageUrl && (
+                                    <img
+                                        src={item.imageUrl}
+                                        alt=""
+                                        onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                                        className="absolute inset-0 h-full w-full object-cover"
+                                    />
+                                )}
+                            </div>
 
                             <div className="p-4 flex flex-col flex-1 gap-3">
                                 {/* Type + badge */}
@@ -496,4 +506,3 @@ export default function ExploreContentPage() {
         </div>
     );
 }
-

@@ -1,51 +1,55 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { randomInt } from 'node:crypto';
 import { AppError } from '../middleware/error.js';
 import { mailService } from './mail.service.js';
+import { config } from '../config/index.js';
 
 const prisma = new PrismaClient();
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+const JWT_SECRET = config.jwt.secret;
 
 export const portalAuthService = {
     async requestOtp(data: any) {
-        if (!data.email) {
+        const email = String(data.email || '').trim().toLowerCase();
+        const phone = String(data.phone || '').trim();
+        if (!email) {
             throw new AppError(400, 'Vui lòng cung cấp Email để nhận OTP');
         }
 
         // Check if phone or email already exists in customers
         const existingPhone = await prisma.customer.findUnique({
-            where: { phone: data.phone }
+            where: { phone }
         });
         if (existingPhone && existingPhone.passwordHash) {
             throw new AppError(409, 'Số điện thoại này đã được đăng ký');
         }
 
         const existingEmail = await prisma.customer.findFirst({
-            where: { email: data.email }
+            where: { email }
         });
         if (existingEmail && existingEmail.passwordHash) {
             throw new AppError(409, 'Email này đã được đăng ký');
         }
 
         // Generate 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = randomInt(100000, 1000000).toString();
         
         // Save to OtpRecord
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-        await prisma.otpRecord.create({
+        const otpRecord = await prisma.otpRecord.create({
             data: {
-                email: data.email,
+                email,
                 otp,
                 expiresAt
             }
         });
 
-        // Send Email
-        const sent = await mailService.sendOTP(data.email, otp);
-
-        if (!sent) {
-            return { message: `Gửi mail thất bại do chưa cấu hình SMTP. (MÃ OTP TEST LÀ: ${otp})` };
+        try {
+            await mailService.sendOTP(email, otp);
+        } catch (error) {
+            await prisma.otpRecord.delete({ where: { id: otpRecord.id } });
+            throw error;
         }
 
         return { message: 'Đã gửi mã OTP về email của bạn' };
@@ -55,7 +59,7 @@ export const portalAuthService = {
         // Validate OTP
         const otpRecord = await prisma.otpRecord.findFirst({
             where: {
-                email: data.email,
+                email: String(data.email || '').trim().toLowerCase(),
                 otp: data.otp,
             },
             orderBy: {
@@ -74,19 +78,18 @@ export const portalAuthService = {
         // OTP is valid, register customer
         const passwordHash = await bcrypt.hash(data.password, 12);
         
+        const phone = String(data.phone || '').trim();
+        const email = String(data.email || '').trim().toLowerCase();
+        const existingEmail = await prisma.customer.findFirst({
+            where: { email, NOT: { phone } },
+            select: { id: true },
+        });
+        if (existingEmail) throw new AppError(409, 'Email này đã được sử dụng bởi tài khoản khác');
+
         const customer = await prisma.customer.upsert({
-            where: { phone: data.phone },
-            update: {
-                name: data.name,
-                email: data.email,
-                passwordHash
-            },
-            create: {
-                name: data.name,
-                phone: data.phone,
-                email: data.email,
-                passwordHash
-            }
+            where: { phone },
+            update: { name: data.name, email, passwordHash },
+            create: { name: data.name, phone, email, passwordHash }
         });
 
         // Delete all OTP records for this email after successful registration
@@ -107,53 +110,13 @@ export const portalAuthService = {
         };
     },
 
-    async register(data: any) {
-        // Legacy direct register
-        const existing = await prisma.customer.findUnique({
-            where: { phone: data.phone }
-        });
-        
-        if (existing && existing.passwordHash) {
-            throw new AppError(409, 'Số điện thoại này đã được đăng ký');
-        }
-
-        const passwordHash = await bcrypt.hash(data.password, 12);
-        
-        const customer = await prisma.customer.upsert({
-            where: { phone: data.phone },
-            update: {
-                name: data.name,
-                email: data.email || null,
-                passwordHash
-            },
-            create: {
-                name: data.name,
-                phone: data.phone,
-                email: data.email || null,
-                passwordHash
-            }
-        });
-
-        const token = jwt.sign({ id: customer.id, role: 'CUSTOMER' }, JWT_SECRET, { expiresIn: '7d' });
-        
-        return {
-            token,
-            customer: {
-                id: customer.id,
-                name: customer.name,
-                phone: customer.phone,
-                email: customer.email
-            }
-        };
-    },
-
     async login(data: any) {
         // Login by phone or email
         let customer;
         if (data.identifier.includes('@')) {
-            customer = await prisma.customer.findFirst({ where: { email: data.identifier } });
+            customer = await prisma.customer.findFirst({ where: { email: data.identifier.trim().toLowerCase() } });
         } else {
-            customer = await prisma.customer.findUnique({ where: { phone: data.identifier } });
+            customer = await prisma.customer.findUnique({ where: { phone: data.identifier.trim() } });
         }
 
         if (!customer || !customer.passwordHash) {
@@ -178,36 +141,58 @@ export const portalAuthService = {
         };
     },
 
+    async getCustomerLoyalty(customerId: string) {
+        const customer = await prisma.customer.findUnique({
+            where: { id: customerId },
+            select: {
+                id: true,
+                name: true,
+                phone: true,
+                email: true,
+                points: true,
+                reservedPoints: true,
+                pointsTransactions: {
+                    where: { points: { not: 0 } },
+                    orderBy: { createdAt: 'desc' },
+                    take: 50,
+                },
+            },
+        });
+        if (!customer) throw new AppError(404, 'Không tìm thấy tài khoản khách hàng');
+        return customer;
+    },
+
     async requestResetPasswordOtp(data: { email: string }) {
-        if (!data.email) {
+        const email = data.email.trim().toLowerCase();
+        if (!email) {
             throw new AppError(400, 'Vui lòng cung cấp Email');
         }
 
         const customer = await prisma.customer.findFirst({
-            where: { email: data.email }
+            where: { email }
         });
         if (!customer) {
             throw new AppError(404, 'Không tìm thấy tài khoản với email này');
         }
 
         // Generate 6-digit OTP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = randomInt(100000, 1000000).toString();
         
         // Save to OtpRecord
         const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
-        await prisma.otpRecord.create({
+        const otpRecord = await prisma.otpRecord.create({
             data: {
-                email: data.email,
+                email,
                 otp,
                 expiresAt
             }
         });
 
-        // Send Email
-        const sent = await mailService.sendOTP(data.email, otp);
-
-        if (!sent) {
-            return { message: `Gửi mail thất bại (Chưa cấu hình SMTP). MÃ OTP TEST LÀ: ${otp}` };
+        try {
+            await mailService.sendOTP(email, otp);
+        } catch (error) {
+            await prisma.otpRecord.delete({ where: { id: otpRecord.id } });
+            throw error;
         }
 
         return { message: 'Đã gửi mã OTP khôi phục mật khẩu về email của bạn' };
@@ -217,7 +202,7 @@ export const portalAuthService = {
         // Validate OTP
         const otpRecord = await prisma.otpRecord.findFirst({
             where: {
-                email: data.email,
+                email: data.email.trim().toLowerCase(),
                 otp: data.otp,
             },
             orderBy: {
@@ -237,13 +222,13 @@ export const portalAuthService = {
         const passwordHash = await bcrypt.hash(data.newPassword, 12);
         
         await prisma.customer.updateMany({
-            where: { email: data.email },
+            where: { email: data.email.trim().toLowerCase() },
             data: { passwordHash }
         });
 
         // Delete all OTP records for this email
         await prisma.otpRecord.deleteMany({
-            where: { email: data.email }
+            where: { email: data.email.trim().toLowerCase() }
         });
 
         return { message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' };

@@ -32,6 +32,9 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
         if (!booking) {
             return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu đặt sân' });
         }
+        if (booking.paymentMethod !== 'VNPAY' || booking.paymentStatus === 'PAID' || booking.status !== 'PENDING') {
+            return res.status(409).json({ success: false, message: 'Yêu cầu không còn ở trạng thái chờ thanh toán VNPay' });
+        }
 
         const realAmount = Number(booking.paymentAmount);
         const safeAmount = realAmount > 0 ? realAmount : (Number(amount) || 0);
@@ -130,13 +133,24 @@ router.get(['/callback', '/callback/:source'], async (req: Request, res: Respons
     try {
         const source = req.params.source || req.query.source;
         const verify = vnpay.verifyReturnUrl(req.query as any);
+        const transactionReference = typeof req.query.vnp_TxnRef === 'string' ? req.query.vnp_TxnRef : '';
         const orderId = verify.vnp_TxnRef ? verify.vnp_TxnRef.split('-')[0] : '';
+        const booking = orderId ? await prisma.bookingRequest.findUnique({ where: { id: orderId } }) : null;
+        const expectedAmount = booking ? Math.round(booking.paymentAmount * 100) : -1;
+        const reportedAmount = Number(req.query.vnp_Amount);
+        const validPayment = verify.isVerified &&
+            verify.isSuccess &&
+            !!booking &&
+            booking.paymentMethod === 'VNPAY' &&
+            booking.status === 'PENDING' &&
+            booking.paymentStatus !== 'PAID' &&
+            transactionReference.startsWith(`${booking.id}-`) &&
+            Number.isFinite(reportedAmount) &&
+            reportedAmount === expectedAmount;
 
-        if (verify.isSuccess) {
-            if (orderId) {
-                await bookingRequestService.updatePaymentStatus(orderId, 'PAID');
-                await bookingRequestService.updateStatus(orderId, 'APPROVED');
-            }
+        if (validPayment && booking) {
+            await bookingRequestService.updatePaymentStatus(booking.id, 'PAID', booking.paymentAmount);
+            await bookingRequestService.updateStatus(booking.id, 'APPROVED');
             if (source === 'zalo') {
                 res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
                 return res.send(successHtml);
@@ -144,8 +158,13 @@ router.get(['/callback', '/callback/:source'], async (req: Request, res: Respons
                 return res.redirect(`${frontendUrl}/trang-chu?payment=success&tab=history`);
             }
         } else {
-            if (orderId) {
-                await bookingRequestService.updatePaymentStatus(orderId, 'FAILED');
+            if (
+                verify.isVerified &&
+                booking?.paymentMethod === 'VNPAY' &&
+                booking.status === 'PENDING' &&
+                booking.paymentStatus !== 'PAID'
+            ) {
+                await bookingRequestService.updatePaymentStatus(booking.id, 'FAILED');
             }
             if (source === 'zalo') {
                 res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");

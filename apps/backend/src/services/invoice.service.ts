@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/error.js';
 import { calculateBookingSnapshot, parseBookingOrder } from '../utils/booking-order.js';
+import { awardInvoicePoints, reverseInvoicePoints } from './loyalty.service.js';
 
 export interface CreateInvoiceInput {
     customerId?: string;
@@ -330,6 +331,7 @@ export class InvoiceService {
                     where: { id: resolvedCustomerId },
                     data: { totalSpent: { increment: total } },
                 });
+                await awardInvoicePoints(tx, invoice);
             }
             return invoice;
         });
@@ -389,6 +391,7 @@ export class InvoiceService {
                     where: { id: invoice.customerId },
                     data: { totalSpent: { increment: invoice.total } },
                 });
+                await awardInvoicePoints(tx, invoice);
             }
             return invoice;
         });
@@ -428,6 +431,7 @@ export class InvoiceService {
             if (existing.paymentStatus === 'PAID') {
                 throw new AppError(400, 'Không thể hủy hóa đơn đã thanh toán');
             }
+
             if (existing.paymentStatus === 'REFUNDED') return existing;
 
             const invoice = await tx.invoice.update({
@@ -438,6 +442,52 @@ export class InvoiceService {
                 },
                 include: { items: true },
             });
+            for (const item of existing.items) {
+                if (item.productId) {
+                    await tx.product.update({
+                        where: { id: item.productId },
+                        data: { stock: { increment: item.quantity } },
+                    });
+                }
+            }
+            return invoice;
+        });
+    }
+
+    async refund(id: string, reason: string) {
+        return prisma.$transaction(async (tx) => {
+            const existing = await tx.invoice.findUnique({
+                where: { id },
+                include: { items: true },
+            });
+            if (!existing) throw new AppError(404, 'Không tìm thấy hóa đơn');
+            if (existing.paymentStatus === 'REFUNDED') return existing;
+            if (existing.paymentStatus !== 'PAID') {
+                throw new AppError(400, 'Chỉ có thể ghi nhận hoàn tiền toàn bộ cho hóa đơn đã thanh toán đủ');
+            }
+            if (!reason.trim()) throw new AppError(400, 'Vui lòng nhập lý do hoàn tiền');
+
+            const invoice = await tx.invoice.update({
+                where: { id },
+                data: {
+                    paymentStatus: 'REFUNDED',
+                    notes: `${existing.notes || ''}\n[Hoàn tiền đã thực hiện bên ngoài hệ thống]: ${reason.trim()}`.trim(),
+                },
+                include: { items: true },
+            });
+            await reverseInvoicePoints(tx, existing);
+            if (existing.customerId) {
+                const customer = await tx.customer.findUnique({
+                    where: { id: existing.customerId },
+                    select: { totalSpent: true },
+                });
+                if (customer) {
+                    await tx.customer.update({
+                        where: { id: existing.customerId },
+                        data: { totalSpent: Math.max(0, customer.totalSpent - existing.total) },
+                    });
+                }
+            }
             for (const item of existing.items) {
                 if (item.productId) {
                     await tx.product.update({

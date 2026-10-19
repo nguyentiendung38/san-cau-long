@@ -11,7 +11,18 @@ export interface Customer {
     totalBookings: number;
     totalSpent: number;
     points: number;
+    pointsTransactions?: PointsTransaction[];
     notes?: string;
+    createdAt: string;
+}
+
+export interface PointsTransaction {
+    id: string;
+    type: 'EARN' | 'REDEEM' | 'ADJUSTMENT' | 'REVERSAL' | 'RELEASE';
+    points: number;
+    reason: string;
+    referenceType?: string | null;
+    referenceId?: string | null;
     createdAt: string;
 }
 
@@ -80,8 +91,8 @@ export const customerApi = {
         return response.data.data || null;
     },
 
-    async addPoints(id: string, points: number): Promise<Customer> {
-        const response = await api.post<ApiResponse<Customer>>(`/customers/${id}/points`, { points });
+    async addPoints(id: string, points: number, reason: string): Promise<Customer> {
+        const response = await api.post<ApiResponse<Customer>>(`/customers/${id}/points`, { points, reason });
         return response.data.data!;
     },
 };

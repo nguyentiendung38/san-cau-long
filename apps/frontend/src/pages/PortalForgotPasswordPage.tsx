@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, XCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ChevronLeft, XCircle, Eye, EyeOff, Loader2, MailCheck } from 'lucide-react';
 import { portalAuthApi } from '@/services/portal-auth.service';
 
 export default function PortalForgotPasswordPage() {
@@ -41,11 +41,8 @@ export default function PortalForgotPasswordPage() {
         try {
             const res = await portalAuthApi.forgotPasswordOtp({ email });
             
-            if (res.message) {
-                alert(res.message);
-            } else {
-                alert('Đã gửi mã OTP, vui lòng kiểm tra email của bạn');
-            }
+            alert(res.data?.message || 'Đã gửi mã OTP, vui lòng kiểm tra email của bạn');
+            setOtp(['', '', '', '', '', '']);
 
             setStep(2);
             setCountdown(60);
@@ -147,21 +144,22 @@ export default function PortalForgotPasswordPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#2e9c56] font-sans selection:bg-green-200 flex flex-col">
+        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-100 font-sans antialiased selection:bg-emerald-200 flex flex-col">
             {/* Header */}
-            <div className="flex items-center px-4 py-4 text-white relative">
+            <div className="flex items-center px-4 py-5 text-slate-700 relative w-full max-w-xl mx-auto">
                 <button 
                     onClick={() => step === 2 ? setStep(1) : navigate('/dang-nhap')}
-                    className="absolute left-4 p-2 hover:bg-white/10 rounded-full transition-colors"
+                    aria-label="Quay lại"
+                    className="absolute left-4 p-2 hover:bg-white/70 rounded-full transition-colors"
                 >
                     <ChevronLeft className="w-6 h-6" />
                 </button>
-                <h1 className="flex-1 text-center font-bold text-lg">Quên mật khẩu</h1>
+                <h1 className="flex-1 text-center font-bold text-base sm:text-lg">Quên mật khẩu</h1>
             </div>
 
             {/* Form Container */}
-            <div className="flex-1 px-4 md:px-0 flex flex-col items-center">
-                <div className="bg-white rounded-[24px] w-full max-w-lg mt-2 p-6 shadow-2xl">
+            <div className="flex-1 px-4 pb-10 flex flex-col items-center">
+                <div className="bg-white/95 rounded-[28px] border border-white w-full max-w-lg mt-2 p-6 sm:p-8 shadow-[0_24px_70px_-28px_rgba(15,23,42,0.3)]">
                     
                     {step === 1 ? (
                         <form onSubmit={handleRequestOtp} className="space-y-6" autoComplete="off">
@@ -202,27 +200,28 @@ export default function PortalForgotPasswordPage() {
                             </div>
                         </form>
                     ) : (
-                        <form onSubmit={handleResetPassword} className="space-y-6 flex flex-col items-center pt-4" autoComplete="off">
+                        <form onSubmit={handleResetPassword} className="space-y-5 flex flex-col items-center pt-2" autoComplete="off">
                             {/* Dummy inputs to trap Chrome Autofill */}
                             <input type="text" style={{ opacity: 0, position: 'absolute', top: '-1000px', height: 0, width: 0 }} autoComplete="username" tabIndex={-1} aria-hidden="true" />
                             <input type="password" style={{ opacity: 0, position: 'absolute', top: '-1000px', height: 0, width: 0 }} autoComplete="current-password" tabIndex={-1} aria-hidden="true" />
                             
-                            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                            <div className="w-16 h-16 bg-gradient-to-br from-emerald-100 to-teal-50 text-emerald-700 rounded-2xl ring-1 ring-emerald-100 flex items-center justify-center">
+                                <MailCheck className="w-8 h-8" strokeWidth={1.8} />
                             </div>
                             
-                            <h2 className="text-xl font-bold text-gray-800">Tạo mật khẩu mới</h2>
-                            <p className="text-center text-gray-500 text-sm px-4">
-                                Nhập mã OTP đã được gửi đến email <br/>
-                                <span className="font-bold text-gray-700">{email}</span>
+                            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">Tạo mật khẩu mới</h2>
+                            <p className="text-center text-slate-500 text-sm leading-6 px-2">
+                                Nhập mã xác nhận đã gửi đến
+                                <span className="mt-1 block font-semibold text-slate-800 break-all">{email}</span>
                             </p>
 
-                            <div className="relative flex gap-2 justify-center py-4 w-[340px] mx-auto">
+                            <div className="relative flex gap-1.5 sm:gap-2 justify-center py-3 w-full max-w-[340px] mx-auto">
                                 <input
                                     type="text"
                                     inputMode="numeric"
                                     maxLength={6}
                                     autoComplete="one-time-code"
+                                    aria-label="Mã xác nhận gồm 6 chữ số"
                                     value={otp.join('')}
                                     onChange={(e) => {
                                         const val = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -239,7 +238,7 @@ export default function PortalForgotPasswordPage() {
                                     return (
                                         <div
                                             key={index}
-                                            className={`w-12 h-14 border-2 rounded-xl flex items-center justify-center text-2xl font-bold transition-all bg-white ${isActive ? 'border-green-500 ring-1 ring-green-500' : 'border-gray-300'} text-gray-800`}
+                                            className={`w-10 h-14 sm:w-12 border-2 rounded-xl flex items-center justify-center text-2xl font-bold transition-all bg-white ${isActive ? 'border-emerald-500 ring-4 ring-emerald-500/10' : 'border-slate-200'} text-slate-800`}
                                         >
                                             {digit}
                                         </div>
@@ -268,7 +267,7 @@ export default function PortalForgotPasswordPage() {
                             <button 
                                 type="submit"
                                 disabled={isLoading || otp.join('').length < 6 || newPassword.length < 8}
-                                className="w-full flex items-center justify-center bg-[#116a32] hover:bg-[#0e5c2b] text-white font-bold py-3.5 rounded-lg transition-colors shadow-md disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full flex items-center justify-center bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-emerald-900/10 disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
                                 ĐỔI MẬT KHẨU
@@ -277,10 +276,10 @@ export default function PortalForgotPasswordPage() {
                             <button 
                                 type="button" 
                                 onClick={handleRequestOtp} 
-                                disabled={isLoading}
-                                className="text-sm font-semibold text-green-700 hover:text-green-800"
+                                disabled={isLoading || !canResend}
+                                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
                             >
-                                Gửi lại mã OTP
+                                {canResend ? 'Gửi lại mã OTP' : `Gửi lại mã sau ${countdown}s`}
                             </button>
                         </form>
                     )}

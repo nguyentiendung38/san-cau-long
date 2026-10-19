@@ -1,63 +1,96 @@
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
+import nodemailer, { type Transporter } from 'nodemailer';
+import { AppError } from '../middleware/error.js';
 
-dotenv.config();
+let transporterInstance: Transporter | null = null;
 
-let transporterInstance: nodemailer.Transporter | null = null;
+function getTransporter(): Transporter {
+    if (transporterInstance) return transporterInstance;
+
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = Number(process.env.SMTP_PORT || 465);
+    const user = process.env.SMTP_USER || process.env.GMAIL_USER;
+    const pass = process.env.SMTP_PASS || process.env.GMAIL_PASS;
+
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new AppError(503, 'Cấu hình cổng SMTP không hợp lệ');
+    }
+    if (!user || !pass || pass === 'your-app-password') {
+        throw new AppError(503, 'Chưa cấu hình SMTP. Vui lòng cấu hình SMTP_USER và SMTP_PASS để gửi OTP.');
+    }
+
+    transporterInstance = nodemailer.createTransport({
+        host,
+        port,
+        secure: process.env.SMTP_SECURE
+            ? process.env.SMTP_SECURE.toLowerCase() === 'true'
+            : port === 465,
+        auth: { user, pass },
+    });
+
+    return transporterInstance;
+}
 
 export const mailService = {
-    getTransporter() {
-        if (!transporterInstance) {
-            transporterInstance = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: process.env.GMAIL_USER || 'hethongdatsan@gmail.com',
-                    pass: process.env.GMAIL_PASS || 'your-app-password'
-                }
-            });
-        }
-        return transporterInstance;
+    async sendNotification(to: string, subject: string, text: string, html: string): Promise<void> {
+        const from = process.env.SMTP_FROM || process.env.GMAIL_USER || process.env.SMTP_USER;
+        if (!from) throw new AppError(503, 'Chưa cấu hình địa chỉ email gửi SMTP (SMTP_FROM)');
+        const transporter = getTransporter();
+        await transporter.sendMail({ from, to, subject, text, html });
     },
 
-    async sendOTP(to: string, otp: string) {
-        const mailOptions = {
-            from: process.env.GMAIL_USER || 'hethongdatsan@gmail.com',
-            to,
-            subject: 'M? x�c nh?n ��ng k? t�i kho?n Courtify',
-            html: `
-                <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f9fafb; padding: 40px 20px; border-radius: 12px;">
-                    <div style="background-color: #ffffff; padding: 40px; border-radius: 16px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05); text-align: center;">
-                        <h1 style="color: #16a34a; margin-top: 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">Courtify</h1>
-                        <h2 style="color: #1f2937; font-size: 20px; margin-bottom: 24px; font-weight: 600;">X�c nh?n ��ng k? t�i kho?n</h2>
-                        <p style="color: #4b5563; font-size: 16px; line-height: 1.6; margin-bottom: 32px; text-align: left;">
-                            Ch�o b?n,<br><br>
-                            C?m �n b?n �? ��ng k? t�i kho?n t?i h? th?ng �?t s�n c?u l�ng Courtify. �? ho�n t?t qu� tr?nh ��ng k?, vui l?ng s? d?ng m? x�c nh?n d�?i ��y:
-                        </p>
-                        <div style="background-color: #f0fdf4; border: 2px dashed #86efac; border-radius: 12px; padding: 24px; margin-bottom: 32px;">
-                            <strong style="font-size: 42px; color: #16a34a; letter-spacing: 12px; font-weight: 900; display: block; text-align: center;">${otp}</strong>
-                        </div>
-                        <p style="color: #6b7280; font-size: 14px; line-height: 1.5; margin-bottom: 0; text-align: left;">
-                            M? x�c nh?n n�y c� hi?u l?c trong <strong>5 ph�t</strong>.<br>
-                            V? l? do b?o m?t, vui l?ng kh�ng chia s? m? n�y cho b?t k? ai.
-                        </p>
-                        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;">
-                        <p style="color: #9ca3af; font-size: 13px; margin: 0;">
-                            Tr�n tr?ng,<br>
-                            <strong>�?i ng? Courtify</strong>
-                        </p>
-                    </div>
-                </div>
-            `
-        };
+    async sendOTP(to: string, otp: string): Promise<void> {
+        const from = process.env.SMTP_FROM || process.env.GMAIL_USER || process.env.SMTP_USER;
+        if (!from) {
+            throw new AppError(503, 'Chưa cấu hình địa chỉ email gửi SMTP (SMTP_FROM)');
+        }
+        const transporter = getTransporter();
 
         try {
-            await this.getTransporter().sendMail(mailOptions);
-            return true;
+            await transporter.sendMail({
+                from,
+                to,
+                subject: 'Mã xác nhận tài khoản Courtify',
+                textEncoding: 'base64',
+                text: `Mã xác nhận Courtify của bạn là ${otp}. Mã có hiệu lực trong 5 phút. Không chia sẻ mã này với bất kỳ ai.`,
+                html: `
+                    <!doctype html>
+                    <html lang="vi">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Mã xác nhận Courtify</title>
+                    </head>
+                    <body style="margin:0;padding:32px 16px;background-color:#f1f5f9;font-family:Arial,'Helvetica Neue',Helvetica,Tahoma,sans-serif;color:#172033;-webkit-text-size-adjust:100%">
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:20px">
+                            <tr>
+                                <td style="padding:36px 32px">
+                                    <div style="font-size:13px;font-weight:700;letter-spacing:2px;color:#15803d">COURTIFY</div>
+                                    <h1 style="margin:24px 0 8px;font-size:26px;line-height:1.3;color:#0f172a">Mã xác nhận của bạn</h1>
+                                    <p style="margin:0;color:#475569;font-size:15px;line-height:1.7">Nhập mã bên dưới để tiếp tục. Mã có hiệu lực trong <strong>5 phút</strong>.</p>
+                                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:28px 0">
+                                        <tr>
+                                            <td align="center" style="padding:22px 12px;background-color:#f0fdf4;border:1px solid #bbf7d0;border-radius:14px">
+                                                <strong style="font-family:Arial,'Helvetica Neue',Helvetica,Tahoma,sans-serif;font-size:36px;line-height:1.2;letter-spacing:10px;color:#15803d">${otp}</strong>
+                                            </td>
+                                        </tr>
+                                    </table>
+                                    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.7">Nếu bạn không yêu cầu mã này, hãy bỏ qua email. Vì lý do bảo mật, không chia sẻ mã với bất kỳ ai.</p>
+                                    <div style="height:1px;margin:28px 0;background-color:#e2e8f0"></div>
+                                    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.7">Trân trọng,<br><strong style="color:#334155">Đội ngũ Courtify</strong></p>
+                                </td>
+                            </tr>
+                        </table>
+                    </body>
+                    </html>
+                `,
+            });
         } catch (error) {
-            console.error('L?i g?i mail:', error);
-            console.log('--- TEST MODE: EMAIL CREDENTIALS MIGHT BE MISSING ---');
-            console.log(`[TEST OTP] M? OTP C?A EMAIL ${to} L�: ${otp}`);
-            return false;
+            console.error(
+                'Không gửi được email OTP:',
+                error instanceof Error ? error.message : 'Lỗi SMTP không xác định',
+            );
+            throw new AppError(502, 'Gửi email OTP thất bại. Vui lòng kiểm tra cấu hình SMTP hoặc thử lại sau.');
         }
-    }
+    },
 };

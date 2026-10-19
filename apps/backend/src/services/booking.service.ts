@@ -3,6 +3,14 @@ import { AppError } from '../middleware/error.js';
 import { isWithinOperatingHours, timeToMinutes } from '../utils/booking-rules.js';
 import { parseBookingOrder, serializeBookingOrder } from '../utils/booking-order.js';
 import { voucherService } from './voucher.service.js';
+import { maintenanceClosureService, bookingInterval } from './maintenance-closure.service.js';
+import { notificationService, safelyQueueNotification } from './notification.service.js';
+import { randomBytes } from 'node:crypto';
+
+function withoutCheckInToken<T extends { checkInToken?: string | null }>(booking: T) {
+    const { checkInToken: _checkInToken, ...safeBooking } = booking;
+    return safeBooking;
+}
 
 export interface PricingRuleForCalculation {
     name: string;
@@ -116,14 +124,16 @@ export class BookingService {
                 courtId,
                 date: { gte: startOfDay, lte: endOfDay },
                 status: 'PENDING',
+                OR: [
+                    { paymentMethod: 'DEPOSIT_TRANSFER', expiresAt: { gt: new Date() } },
+                    { paymentMethod: 'VNPAY', createdAt: { gte: new Date(Date.now() - 15 * 60_000) } },
+                    { paymentMethod: { notIn: ['DEPOSIT_TRANSFER', 'VNPAY'] } },
+                ],
                 ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
             },
-            select: { startTime: true, endTime: true, paymentMethod: true, paymentStatus: true, createdAt: true },
+            select: { startTime: true, endTime: true, paymentStatus: true },
         });
-        const activeRequests = requests.filter((request) =>
-            request.paymentStatus !== 'FAILED' &&
-            (request.paymentMethod !== 'VNPAY' || request.createdAt >= new Date(Date.now() - 15 * 60_000)),
-        );
+        const activeRequests = requests.filter((request) => request.paymentStatus !== 'FAILED');
         if (activeRequests.some((request) => startTime < request.endTime && request.startTime < endTime)) {
             throw new AppError(409, 'Khung giờ này đang có yêu cầu đặt sân chờ xử lý');
         }
@@ -189,6 +199,22 @@ export class BookingService {
             // Overlap if: start < existingEnd AND end > existingStart
             return start < bEnd && end > bStart;
         });
+        const interval = bookingInterval(date, startTime, endTime);
+        const closures = await prisma.maintenanceClosure.findMany({
+            where: {
+                courtId,
+                startAt: { lt: interval.endAt },
+                endAt: { gt: interval.startAt },
+            },
+            select: { id: true, startAt: true, endAt: true, reason: true },
+        });
+        conflicts.push(...closures.map((closure) => ({
+            id: closure.id,
+            startTime: closure.startAt.toISOString(),
+            endTime: closure.endAt.toISOString(),
+            status: 'MAINTENANCE',
+            customer: null,
+        })));
 
         return {
             available: conflicts.length === 0,
@@ -275,7 +301,7 @@ export class BookingService {
         ]);
 
         return {
-            data: bookings,
+            data: bookings.map(({ checkInToken: _checkInToken, ...booking }) => booking),
             pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
         };
     }
@@ -301,7 +327,38 @@ export class BookingService {
             throw new AppError(404, 'Không tìm thấy lịch đặt sân');
         }
 
-        return booking;
+        const { checkInToken: _checkInToken, ...safeBooking } = booking;
+        return safeBooking;
+    }
+
+    async getCheckInToken(id: string, userId?: string, role?: string) {
+        const booking = await prisma.booking.findUnique({
+            where: { id },
+            include: { court: { select: { venueId: true } } },
+        });
+        if (!booking) throw new AppError(404, 'Không tìm thấy lịch đặt sân');
+        if (role !== 'SUPER_ADMIN' && role !== 'ADMIN' && role !== 'MANAGER') {
+            const assignment = userId ? await prisma.venueStaff.findUnique({
+                where: { userId_venueId: { userId, venueId: booking.court.venueId } },
+                select: { id: true },
+            }) : null;
+            if (!assignment) throw new AppError(403, 'Bạn không có quyền xem mã QR tại cơ sở này');
+        }
+        if (booking.status !== 'CONFIRMED' || booking.checkedInAt) {
+            throw new AppError(409, 'Mã QR chỉ hiển thị cho lịch đã xác nhận chưa check-in');
+        }
+        let token = booking.checkInToken;
+        if (!token) {
+            token = randomBytes(32).toString('base64url');
+            await prisma.booking.updateMany({
+                where: { id, checkInToken: null, status: 'CONFIRMED', checkedInAt: null },
+                data: { checkInToken: token },
+            });
+            const updated = await prisma.booking.findUnique({ where: { id }, select: { checkInToken: true } });
+            token = updated?.checkInToken || null;
+        }
+        if (!token) throw new AppError(409, 'Không thể cấp mã QR cho lịch này');
+        return { bookingId: id, token };
     }
 
     async create(
@@ -336,6 +393,7 @@ export class BookingService {
         ) {
             throw new AppError(400, 'Khung giờ đặt phải hợp lệ và theo khoảng 30 phút');
         }
+        await maintenanceClosureService.ensureAvailable(input.courtId, input.date, input.startTime, input.endTime);
 
         // Check availability
         const { available, conflicts } = await this.checkAvailability(
@@ -420,9 +478,10 @@ export class BookingService {
                     paymentAmount: input.paymentAmount,
                     paymentProof: input.paymentProof,
                     status: 'CONFIRMED',
+                    checkInToken: randomBytes(32).toString('base64url'),
                 },
                 include: {
-                    court: { select: { name: true } },
+                    court: { select: { name: true, venueId: true } },
                     customer: { select: { name: true, phone: true } },
                 },
             });
@@ -433,6 +492,7 @@ export class BookingService {
             }
             throw error;
         }
+        if (booking) await safelyQueueNotification(notificationService.upcomingBooking(booking), 'nhắc lịch');
 
         // Update customer stats if linked
         if (input.customerId) {
@@ -442,7 +502,7 @@ export class BookingService {
             });
         }
 
-        return { booking, pricing };
+        return { booking: withoutCheckInToken(booking), pricing };
     }
 
     async update(id: string, input: UpdateBookingInput) {
@@ -518,7 +578,7 @@ export class BookingService {
             },
         });
 
-        return booking;
+        return withoutCheckInToken(booking);
     }
 
     async cancel(id: string, reason?: string) {
@@ -570,28 +630,98 @@ export class BookingService {
             }
         }
 
-        return booking;
+        return withoutCheckInToken(booking);
     }
 
-    async checkIn(id: string) {
-        const existing = await prisma.booking.findUnique({ where: { id } });
+    async checkIn(id: string, userId?: string, role?: string) {
+        const existing = await prisma.booking.findUnique({
+            where: { id },
+            include: { court: { select: { venueId: true } } },
+        });
         if (!existing) {
             throw new AppError(404, 'Không tìm thấy lịch đặt sân');
         }
 
+        if (role !== 'SUPER_ADMIN' && role !== 'ADMIN' && role !== 'MANAGER') {
+            const assignment = userId ? await prisma.venueStaff.findUnique({
+                where: { userId_venueId: { userId, venueId: existing.court.venueId } },
+                select: { id: true },
+            }) : null;
+            if (!assignment) throw new AppError(403, 'Bạn không có quyền check-in tại cơ sở này');
+        }
         if (existing.status !== 'CONFIRMED') {
             throw new AppError(400, 'Chỉ có thể check-in lịch đã xác nhận');
         }
 
-        const booking = await prisma.booking.update({
-            where: { id },
+        const result = await prisma.booking.updateMany({
+            where: { id, status: 'CONFIRMED', checkedInAt: null },
             data: {
                 status: 'IN_PROGRESS',
                 checkedInAt: new Date(),
+                checkedInById: userId || null,
             },
         });
+        if (result.count !== 1) throw new AppError(409, 'Lịch này đã được check-in hoặc không còn hợp lệ');
+        const booking = await prisma.booking.findUnique({ where: { id } });
+        if (!booking) throw new AppError(404, 'Không tìm thấy lịch đặt sân');
+        return withoutCheckInToken(booking);
+    }
 
-        return booking;
+    async checkInByToken(token: string, userId?: string, role?: string) {
+        if (!token || token.length < 32 || token.length > 100) {
+            throw new AppError(400, 'Mã QR không hợp lệ');
+        }
+        const booking = await prisma.booking.findUnique({ where: { checkInToken: token }, select: { id: true } });
+        if (!booking) throw new AppError(404, 'Không tìm thấy lịch đặt cho mã QR này');
+        return this.checkIn(booking.id, userId, role);
+    }
+
+    async markNoShow(id: string, userId?: string, role?: string) {
+        const existing = await prisma.booking.findUnique({
+            where: { id },
+            include: { court: { select: { venueId: true } } },
+        });
+        if (!existing) {
+            throw new AppError(404, 'Không tìm thấy lịch đặt sân');
+        }
+
+        if (role !== 'SUPER_ADMIN' && role !== 'ADMIN' && role !== 'MANAGER') {
+            const assignment = userId ? await prisma.venueStaff.findUnique({
+                where: { userId_venueId: { userId, venueId: existing.court.venueId } },
+                select: { id: true },
+            }) : null;
+            if (!assignment) throw new AppError(403, 'Bạn không có quyền cập nhật lịch tại cơ sở này');
+        }
+        if (existing.status !== 'CONFIRMED' || existing.checkedInAt) {
+            throw new AppError(409, 'Chỉ lịch đã xác nhận và chưa check-in mới có thể ghi nhận vắng');
+        }
+
+        const endMinutes = timeToMinutes(existing.endTime);
+        if (endMinutes === null) {
+            throw new AppError(400, 'Giờ kết thúc lịch đặt không hợp lệ');
+        }
+        const bookingEnd = new Date(Date.UTC(
+            existing.date.getUTCFullYear(),
+            existing.date.getUTCMonth(),
+            existing.date.getUTCDate(),
+            Math.floor(endMinutes / 60),
+            endMinutes % 60,
+        ));
+        if (bookingEnd > new Date()) {
+            throw new AppError(400, 'Chỉ có thể ghi nhận khách vắng sau khi hết giờ đặt sân');
+        }
+
+        const result = await prisma.booking.updateMany({
+            where: { id, status: 'CONFIRMED', checkedInAt: null },
+            data: { status: 'NO_SHOW' },
+        });
+        if (result.count !== 1) {
+            throw new AppError(409, 'Lịch này đã được cập nhật hoặc không còn hợp lệ');
+        }
+
+        const booking = await prisma.booking.findUnique({ where: { id } });
+        if (!booking) throw new AppError(404, 'Không tìm thấy lịch đặt sân');
+        return withoutCheckInToken(booking);
     }
 
     async checkOut(id: string) {
@@ -601,7 +731,7 @@ export class BookingService {
         }
 
         if (existing.status === 'COMPLETED') {
-            return existing; // Already checked out, return gracefully
+            return withoutCheckInToken(existing); // Already checked out, return gracefully
         }
 
         if (existing.status !== 'IN_PROGRESS' && existing.status !== 'CONFIRMED') {
@@ -616,7 +746,7 @@ export class BookingService {
             },
         });
 
-        return booking;
+        return withoutCheckInToken(booking);
     }
 
     // Get bookings for calendar view (by venue and date range)
@@ -651,7 +781,20 @@ export class BookingService {
             orderBy: [{ date: 'asc' }, { startTime: 'asc' }],
         });
 
-        return { courts, bookings };
+        const maintenanceClosures = await prisma.maintenanceClosure.findMany({
+            where: {
+                court: { venueId },
+                startAt: { lt: new Date(endDate.getTime() + 24 * 60 * 60_000) },
+                endAt: { gt: startDate },
+            },
+            include: { court: { select: { id: true, name: true } } },
+            orderBy: { startAt: 'asc' },
+        });
+        return {
+            courts,
+            bookings: bookings.map(({ checkInToken: _checkInToken, ...booking }) => booking),
+            maintenanceClosures,
+        };
     }
 }
 

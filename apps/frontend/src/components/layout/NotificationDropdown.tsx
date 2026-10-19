@@ -29,7 +29,14 @@ export function NotificationDropdown() {
     const navigate = useNavigate();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
-    const [readIds, setReadIds] = useState<Set<string>>(new Set());
+    const [readIds, setReadIds] = useState<Set<string>>(() => {
+        try {
+            const storedIds: unknown = JSON.parse(localStorage.getItem('admin_read_booking_notifications') || '[]');
+            return new Set(Array.isArray(storedIds) ? storedIds.filter((id): id is string => typeof id === 'string') : []);
+        } catch {
+            return new Set();
+        }
+    });
 
     const [isNotifyEnabled, setIsNotifyEnabled] = useState(localStorage.getItem('setting_notify_new_booking') !== 'false');
 
@@ -48,21 +55,31 @@ export function NotificationDropdown() {
     const { data: bookingRequests } = useQuery({
         queryKey: ['booking-requests'],
         queryFn: () => bookingRequestApi.getAll(),
-        refetchInterval: isNotifyEnabled ? 60000 : false,
+        refetchInterval: isNotifyEnabled ? 15000 : false,
         enabled: isNotifyEnabled
     });
 
     const notifications: Notification[] = !isNotifyEnabled ? [] : (bookingRequests || [])
-        .filter((req: any) => req.status === 'PENDING')
-        .map((req: any) => ({
-            id: req.id,
-            type: 'info',
-            title: 'Yêu cầu đặt sân mới',
-            message: `${req.name} (${req.phone}) muốn đặt ngày ${formatDate(req.date)} từ ${req.startTime}-${req.endTime}`,
-            time: new Date(req.createdAt).toLocaleString('vi-VN'),
-            read: readIds.has(req.id),
-            link: '/booking-requests',
-        }));
+        .filter((req: any) => req.status === 'PENDING' || req.cancellationRequestStatus === 'PENDING')
+        .map((req: any) => {
+            const hasCancellation = req.cancellationRequestStatus === 'PENDING';
+            const hasProof = req.paymentMethod === 'DEPOSIT_TRANSFER' && req.paymentProof && req.paymentStatus === 'PENDING';
+            return {
+                id: hasCancellation
+                    ? `${req.id}:cancel:${req.cancellationRequestedAt || req.updatedAt}`
+                    : req.id,
+                type: hasCancellation ? ('warning' as const) : hasProof ? ('warning' as const) : ('info' as const),
+                title: hasCancellation ? 'Khách yêu cầu hủy lịch' : hasProof ? 'Cần duyệt bill chuyển khoản cọc' : 'Yêu cầu đặt sân mới',
+                message: hasCancellation
+                    ? `${req.name} yêu cầu hủy lịch ${formatDate(req.date)} ${req.startTime}-${req.endTime}`
+                    : `${req.name} (${req.phone}) muốn đặt sân ngày ${formatDate(req.date)} từ ${req.startTime}-${req.endTime}${hasProof ? ' · Đã đính kèm ảnh bill' : ''}`,
+                time: new Date(req.createdAt).toLocaleString('vi-VN'),
+                read: readIds.has(req.id),
+                link: hasCancellation
+                    ? '/booking-requests?status=CANCEL_REQUESTED'
+                    : hasProof ? '/booking-requests?paymentMethod=DEPOSIT_TRANSFER&paymentStatus=PENDING' : '/booking-requests?status=PENDING',
+            };
+        });
 
     const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -82,6 +99,7 @@ export function NotificationDropdown() {
         setReadIds(prev => {
             const next = new Set(prev);
             next.add(notification.id);
+            localStorage.setItem('admin_read_booking_notifications', JSON.stringify([...next]));
             return next;
         });
 
@@ -95,7 +113,9 @@ export function NotificationDropdown() {
     };
 
     const markAllAsRead = () => {
-        setReadIds(new Set(notifications.map(n => n.id)));
+        const next = new Set(notifications.map(n => n.id));
+        setReadIds(next);
+        localStorage.setItem('admin_read_booking_notifications', JSON.stringify([...next]));
     };
 
     const getTypeIcon = (type: Notification['type']) => {

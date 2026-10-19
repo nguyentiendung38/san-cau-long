@@ -13,7 +13,11 @@ import {
     ChevronRight,
     BarChart3,
     PieChart as PieChartIcon,
-    Activity
+    Activity,
+    AlertTriangle,
+    Package,
+    ArrowUpRight,
+    CreditCard
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { reportApi } from '@/services/report.service';
@@ -176,62 +180,80 @@ function DonutChart({
     let currentAngle = 0;
 
     const segments = data.map((item) => {
-        const angle = (item.value / total) * 360;
+        const angle = total > 0 ? (item.value / total) * 360 : 0;
         const startAngle = currentAngle;
         currentAngle += angle;
         return { ...item, startAngle, angle };
     });
 
     const radius = size / 2;
-    const strokeWidth = 30;
+    const strokeWidth = 26;
     const normalizedRadius = radius - strokeWidth / 2;
     const circumference = normalizedRadius * 2 * Math.PI;
 
     return (
-        <div className="flex items-center gap-6">
-            <div className="relative" style={{ width: size, height: size }}>
+        <div className="flex flex-col sm:flex-row items-center gap-6">
+            <div className="relative shrink-0" style={{ width: size, height: size }}>
                 <svg width={size} height={size} className="-rotate-90">
-                    {segments.map((segment, i) => {
-                        const offset = (segment.startAngle / 360) * circumference;
-                        const length = (segment.angle / 360) * circumference;
+                    {total === 0 ? (
+                        <circle
+                            cx={radius}
+                            cy={radius}
+                            r={normalizedRadius}
+                            fill="transparent"
+                            stroke="currentColor"
+                            strokeWidth={strokeWidth}
+                            className="text-border opacity-40"
+                        />
+                    ) : (
+                        segments.map((segment, i) => {
+                            if (segment.angle === 0) return null;
+                            const offset = (segment.startAngle / 360) * circumference;
+                            const length = (segment.angle / 360) * circumference;
 
-                        return (
-                            <circle
-                                key={i}
-                                cx={radius}
-                                cy={radius}
-                                r={normalizedRadius}
-                                fill="transparent"
-                                stroke={segment.color}
-                                strokeWidth={strokeWidth}
-                                strokeDasharray={`${length} ${circumference - length}`}
-                                strokeDashoffset={-offset}
-                                className="transition-all duration-300 hover:opacity-80"
-                            />
-                        );
-                    })}
+                            return (
+                                <circle
+                                    key={i}
+                                    cx={radius}
+                                    cy={radius}
+                                    r={normalizedRadius}
+                                    fill="transparent"
+                                    stroke={segment.color}
+                                    strokeWidth={strokeWidth}
+                                    strokeDasharray={`${length} ${circumference - length}`}
+                                    strokeDashoffset={-offset}
+                                    className="transition-all duration-300 hover:opacity-80"
+                                />
+                            );
+                        })
+                    )}
                 </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-2xl font-bold text-foreground">{total}</span>
                     <span className="text-xs text-foreground-muted">{title}</span>
                 </div>
             </div>
 
-            <div className="flex-1 space-y-2">
+            <div className="flex-1 space-y-2 w-full">
                 {data.map((item, i) => (
                     <div key={i} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <span
-                                className="w-3 h-3 rounded-full"
+                                className="w-3 h-3 rounded-full shrink-0"
                                 style={{ backgroundColor: item.color }}
                             />
                             <span className="text-sm text-foreground">{item.label}</span>
                         </div>
                         <span className="text-sm font-medium text-foreground">
-                            {item.value} ({((item.value / total) * 100).toFixed(0)}%)
+                            {item.value} {total > 0 ? `(${((item.value / total) * 100).toFixed(0)}%)` : '(0%)'}
                         </span>
                     </div>
                 ))}
+                {total === 0 && (
+                    <p className="text-xs text-foreground-muted italic pt-1">
+                        Chưa có lượt đặt nào trong khoảng thời gian đã chọn.
+                    </p>
+                )}
             </div>
         </div>
     );
@@ -365,11 +387,11 @@ export default function DashboardPage() {
         date: item.date,
     })) || [];
 
-    // Booking distribution mock data
-    const bookingDistribution = [
-        { label: 'Sáng (6-12h)', value: 25, color: '#10b981' },
-        { label: 'Trưa (12-17h)', value: 15, color: '#f59e0b' },
-        { label: 'Tối (17-22h)', value: 45, color: '#6366f1' },
+    // Real booking distribution from API based on periodFilter
+    const bookingDistribution = stats?.bookingDistribution || [
+        { label: 'Sáng (6-12h)', value: 0, color: '#10b981' },
+        { label: 'Trưa (12-17h)', value: 0, color: '#f59e0b' },
+        { label: 'Tối (17-23h)', value: 0, color: '#6366f1' },
     ];
 
     const statsCards = [
@@ -410,6 +432,8 @@ export default function DashboardPage() {
             ? 'Doanh thu 7 ngày qua'
             : 'Doanh thu 30 ngày qua';
 
+    const alerts = stats?.alerts;
+
     return (
         <div className="p-6 space-y-6">
             {/* Header */}
@@ -417,7 +441,7 @@ export default function DashboardPage() {
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Tổng quan</h1>
                     <p className="text-foreground-secondary">
-                        Xin chào! Đây là tổng quan hoạt động của bạn.
+                        Xin chào! Đây là tổng quan hoạt động và dữ liệu vận hành thời gian thực.
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -431,6 +455,129 @@ export default function DashboardPage() {
                             {stats.pendingInvoices} chờ thanh toán
                         </button>
                     )}
+                </div>
+            </div>
+
+            {/* Operational Alerts / Quick Action Center */}
+            <div className="bg-background-secondary border border-border rounded-xl p-4 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                        <h2 className="text-sm font-bold uppercase tracking-wider text-foreground">
+                            Cảnh báo vận hành & Thao tác nhanh
+                        </h2>
+                    </div>
+                    <span className="text-xs text-foreground-muted">Cập nhật theo dữ liệu thực</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <button
+                        onClick={() => navigate('/booking-requests?status=PENDING')}
+                        className={cn(
+                            "p-3 rounded-lg border text-left transition-all hover:scale-[1.02] flex flex-col justify-between",
+                            (alerts?.pendingRequests || 0) > 0
+                                ? "bg-amber-500/10 border-amber-500/30 text-amber-500"
+                                : "bg-background-tertiary border-border text-foreground-secondary hover:text-foreground"
+                        )}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">Yêu cầu chờ duyệt</span>
+                            <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-xl font-bold">{alerts?.pendingRequests || 0}</span>
+                            <span className="text-[11px] opacity-75">yêu cầu</span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/booking-requests?paymentMethod=DEPOSIT_TRANSFER&paymentStatus=PENDING')}
+                        className={cn(
+                            "p-3 rounded-lg border text-left transition-all hover:scale-[1.02] flex flex-col justify-between",
+                            (alerts?.pendingTransfers || 0) > 0
+                                ? "bg-blue-500/10 border-blue-500/30 text-blue-500"
+                                : "bg-background-tertiary border-border text-foreground-secondary hover:text-foreground"
+                        )}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">Xác nhận chuyển khoản</span>
+                            <CreditCard className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-xl font-bold">{alerts?.pendingTransfers || 0}</span>
+                            <span className="text-[11px] opacity-75">chờ duyệt bill</span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/booking-requests?status=CANCEL_REQUESTED')}
+                        className={cn(
+                            "p-3 rounded-lg border text-left transition-all hover:scale-[1.02] flex flex-col justify-between",
+                            (alerts?.pendingCancellations || 0) > 0
+                                ? "bg-rose-500/10 border-rose-500/30 text-rose-400"
+                                : "bg-background-tertiary border-border text-foreground-secondary hover:text-foreground"
+                        )}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">Yêu cầu hủy lịch</span>
+                            <ArrowUpRight className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-xl font-bold">{alerts?.pendingCancellations || 0}</span>
+                            <span className="text-[11px] opacity-75">chờ xử lý</span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/calendar')}
+                        className={cn(
+                            "p-3 rounded-lg border text-left transition-all hover:scale-[1.02] flex flex-col justify-between",
+                            (alerts?.upcomingBookingsCount || 0) > 0
+                                ? "bg-purple-500/10 border-purple-500/30 text-purple-400"
+                                : "bg-background-tertiary border-border text-foreground-secondary hover:text-foreground"
+                        )}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">Lịch vào ca (60p)</span>
+                            <Clock className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-xl font-bold">{alerts?.upcomingBookingsCount || 0}</span>
+                            <span className="text-[11px] opacity-75">sắp bắt đầu</span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/courts')}
+                        className="p-3 rounded-lg border bg-background-tertiary border-border text-foreground-secondary hover:text-foreground transition-all hover:scale-[1.02] flex flex-col justify-between"
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">Sân đang trống</span>
+                            <Grid3X3 className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-xl font-bold text-success">{stats?.courtsAvailable || 0}</span>
+                            <span className="text-[11px] opacity-75">sân sẵn sàng</span>
+                        </div>
+                    </button>
+
+                    <button
+                        onClick={() => navigate('/inventory')}
+                        className={cn(
+                            "p-3 rounded-lg border text-left transition-all hover:scale-[1.02] flex flex-col justify-between col-span-2 sm:col-span-1",
+                            (alerts?.lowStockCount || 0) > 0
+                                ? "bg-red-500/10 border-red-500/30 text-red-400"
+                                : "bg-background-tertiary border-border text-foreground-secondary hover:text-foreground"
+                        )}
+                    >
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold">Tồn kho thấp (≤5)</span>
+                            <Package className="w-3.5 h-3.5 opacity-60" />
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-1.5">
+                            <span className="text-xl font-bold">{alerts?.lowStockCount || 0}</span>
+                            <span className="text-[11px] opacity-75">mặt hàng</span>
+                        </div>
+                    </button>
                 </div>
             </div>
 

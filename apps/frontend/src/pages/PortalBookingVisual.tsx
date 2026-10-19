@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
     ChevronLeft, Clock, MapPin, 
-    Phone, User, ShoppingBag, ChevronRight, Info, X
+    Phone, User, ShoppingBag, ChevronRight, Info, X, Heart
 } from 'lucide-react';
 import { venueApi } from '@/services/venue.service';
 import { productApi, serviceApi } from '@/services/inventory.service';
@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatCurrency, cn } from '@/lib/utils';
 import { format, isSameDay } from 'date-fns';
 import { voucherApi } from '@/services/voucher.service';
+import { portalAuthApi } from '@/services/portal-auth.service';
 
 interface Court { id: string; name: string; status: string; }
 interface Product { id: string; name: string; price: number; stock: number; image?: string; }
@@ -41,6 +42,7 @@ const getDurationLabel = (startTime: string, endTime: string) => {
 export default function PortalBookingVisual() {
     const { venueId, courtId } = useParams();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const { toast } = useToast();
 
     const [venue, setVenue] = useState<any>(null);
@@ -53,7 +55,11 @@ export default function PortalBookingVisual() {
     const [bookings, setBookings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+    const [selectedDate, setSelectedDate] = useState<Date>(() => {
+        const date = searchParams.get('date');
+        const parsed = date ? new Date(`${date}T00:00:00`) : new Date();
+        return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    });
     const [viewMonth, setViewMonth] = useState<Date>(new Date());
     const [selectedCourt, setSelectedCourt] = useState<Court | null>(null);
     const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
@@ -122,6 +128,51 @@ export default function PortalBookingVisual() {
     const [voucherCodeInput, setVoucherCodeInput] = useState('');
     const [appliedVoucher, setAppliedVoucher] = useState<{code: string, discountAmount: number} | null>(null);
     const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
+    const [availableLoyaltyPoints, setAvailableLoyaltyPoints] = useState(0);
+    const [redeemPoints, setRedeemPoints] = useState(0);
+    const [isLoadingLoyaltyPoints, setIsLoadingLoyaltyPoints] = useState(false);
+    const [favoriteCourtIds, setFavoriteCourtIds] = useState<string[]>(() => {
+        if (localStorage.getItem('portalUserToken')) return [];
+        try { return JSON.parse(localStorage.getItem('portal_favorite_courts') || '[]'); } catch { return []; }
+    });
+    const [transferDetails, setTransferDetails] = useState<{
+        requestId: string; reference: string; amount: number; expiresAt: string; date: string;
+        startTime: string; endTime: string; courtName: string;
+    } | null>(null);
+
+    useEffect(() => {
+        if (!localStorage.getItem('portalUserToken')) return;
+        let active = true;
+        portalAuthApi.getFavorites()
+            .then((favorites) => {
+                if (!active) return;
+                setFavoriteCourtIds(favorites.courtIds);
+                localStorage.removeItem('portal_favorite_courts');
+            })
+            .catch((error) => {
+                console.error('Không thể đồng bộ sân yêu thích vào tài khoản:', error);
+            });
+        return () => {
+            active = false;
+        };
+    }, []);
+
+    const toggleFavoriteCourt = async (courtId: string) => {
+        const isFavorite = favoriteCourtIds.includes(courtId);
+        if (localStorage.getItem('portalUserToken')) {
+            try {
+                const favorites = await portalAuthApi.setFavoriteCourt(courtId, !isFavorite);
+                setFavoriteCourtIds(favorites.courtIds);
+            } catch (error: any) {
+                toast({ title: 'Không thể cập nhật sân yêu thích', description: error?.response?.data?.message, variant: 'error' });
+            }
+            return;
+        }
+        const next = isFavorite ? favoriteCourtIds.filter((id) => id !== courtId) : [...favoriteCourtIds, courtId];
+        setFavoriteCourtIds(next);
+        localStorage.setItem('portal_favorite_courts', JSON.stringify(next));
+        toast({ title: 'Yêu thích trên thiết bị này', description: 'Đăng nhập để đồng bộ sân yêu thích với tài khoản.' });
+    };
 
     // Pre-fill user
     useEffect(() => {
@@ -250,12 +301,13 @@ export default function PortalBookingVisual() {
         
         if (dateStr === nowStr && time < nowTime) return 'past';
         
-        const isBooked = bookings.some(b => 
+        const blockingSlot = bookings.find(b => 
             b.courtId === selectedCourt.id && 
             b.startTime <= time && 
             b.endTime > time
         );
-        if (isBooked) return 'booked';
+        if (blockingSlot?.status === 'MAINTENANCE') return 'maintenance';
+        if (blockingSlot) return 'booked';
 
         const slotEnd = getNextHalfHour(time);
         const dayOfWeek = format(selectedDate, 'EEEE').toUpperCase();
@@ -270,6 +322,25 @@ export default function PortalBookingVisual() {
         
         return 'available';
     };
+
+    const repeatApplied = useRef(false);
+    useEffect(() => {
+        const start = searchParams.get('startTime');
+        const end = searchParams.get('endTime');
+        if (repeatApplied.current || !selectedCourt || !start || !end || timeSlots.length === 0) return;
+        repeatApplied.current = true;
+        const slots: string[] = [];
+        for (let time = start; time < end; time = getNextHalfHour(time)) slots.push(time);
+        if (
+            !slots.length ||
+            getNextHalfHour(slots[slots.length - 1]) !== end ||
+            slots.some((time) => !timeSlots.includes(time) || getSlotStatus(time) !== 'available')
+        ) {
+            toast({ title: 'Khung giờ cũ hiện không còn trống', description: 'Vui lòng chọn giờ khả dụng khác.', variant: 'error' });
+            return;
+        }
+        setSelectedSlots(slots);
+    }, [selectedCourt, timeSlots, bookings, selectedDate, searchParams, toast]);
 
     const handleSlotClick = (time: string) => {
         const status = getSlotStatus(time);
@@ -332,11 +403,49 @@ export default function PortalBookingVisual() {
         return total;
     }, [selectedSlots, selectedCourt, venue, selectedDate, orderedItems]);
 
-    const finalAmount = Math.max(0, totalAmount - (appliedVoucher?.discountAmount || 0));
+    const itemsAmount = orderedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const courtAmount = Math.max(0, totalAmount - itemsAmount);
+    const maxRedeemPoints = Math.max(0, Math.min(
+        availableLoyaltyPoints,
+        Math.floor((courtAmount * 0.2) / 100),
+    ));
+    const safeRedeemPoints = Math.min(redeemPoints, maxRedeemPoints);
+    const loyaltyDiscount = safeRedeemPoints * 100;
+    const finalAmount = Math.max(0, totalAmount - (appliedVoucher?.discountAmount || 0) - loyaltyDiscount);
+    useEffect(() => {
+        if (redeemPoints > maxRedeemPoints) setRedeemPoints(maxRedeemPoints);
+    }, [redeemPoints, maxRedeemPoints]);
     useEffect(() => {
         setAppliedVoucher(null);
         setVoucherCodeInput('');
+        setRedeemPoints(0);
     }, [totalAmount]);
+
+    useEffect(() => {
+        if (!localStorage.getItem('portalUserToken')) {
+            setAvailableLoyaltyPoints(0);
+            return;
+        }
+        let active = true;
+        setIsLoadingLoyaltyPoints(true);
+        portalAuthApi.getMe()
+            .then((customer) => {
+                if (active) setAvailableLoyaltyPoints(Math.max(0, customer.points - customer.reservedPoints));
+            })
+            .catch((error: any) => {
+                if (active) {
+                    toast({
+                        title: 'Không thể tải điểm tích lũy',
+                        description: error?.response?.data?.message || 'Vui lòng đăng nhập lại rồi thử lại.',
+                        variant: 'error',
+                    });
+                }
+            })
+            .finally(() => {
+                if (active) setIsLoadingLoyaltyPoints(false);
+            });
+        return () => { active = false; };
+    }, [toast]);
 
     const bankTransferConfigured = Boolean(
         venue?.bankCode && venue?.bankAccountNumber && venue?.bankAccountName,
@@ -374,11 +483,6 @@ export default function PortalBookingVisual() {
             toast({ title: 'Cơ sở chưa cấu hình tài khoản nhận chuyển khoản', variant: 'error' });
             return;
         }
-        if (paymentMethod === 'DEPOSIT_TRANSFER' && !paymentProof) {
-            toast({ title: 'Vui lòng tải lên ảnh chụp màn hình chuyển khoản', variant: 'error' });
-            return;
-        }
-
         const sortedSlots = [...selectedSlots].sort();
         const startTime = sortedSlots[0];
         const lastSlot = sortedSlots[sortedSlots.length - 1];
@@ -404,6 +508,7 @@ export default function PortalBookingVisual() {
                 orderedItems: orderedItems.length > 0 ? JSON.stringify(orderedItems) : undefined,
                 voucherCode: appliedVoucher?.code,
                 discountAmount: appliedVoucher?.discountAmount || 0,
+                redeemPoints: safeRedeemPoints,
             });
 
             if (bookingForm.phone) {
@@ -421,6 +526,25 @@ export default function PortalBookingVisual() {
                     throw new Error('VNPAY không trả về liên kết thanh toán. Vui lòng thử lại.');
                 }
                 window.location.assign(payUrl);
+                return;
+            }
+
+            if (paymentMethod === 'DEPOSIT_TRANSFER') {
+                if (!bookingRequest.transferReference || !bookingRequest.expiresAt) {
+                    throw new Error('Không nhận được mã thanh toán từ hệ thống. Vui lòng liên hệ cơ sở trước khi chuyển khoản.');
+                }
+                setTransferDetails({
+                    requestId: bookingRequest.id,
+                    reference: bookingRequest.transferReference,
+                    amount: bookingRequest.paymentAmount ?? finalAmount,
+                    expiresAt: bookingRequest.expiresAt,
+                    date: dateStr,
+                    startTime,
+                    endTime,
+                    courtName: selectedCourt.name,
+                });
+                setShowForm(false);
+                toast({ title: 'Đã gửi yêu cầu đặt sân', description: 'Chuyển khoản trong 30 phút để giữ khung giờ.', variant: 'success' });
                 return;
             }
 
@@ -575,23 +699,40 @@ export default function PortalBookingVisual() {
                                 </div>
                                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
                                     {courts.map(court => (
-                                        <button
-                                            key={court.id}
-                                            onClick={() => {
-                                                setSelectedCourt(court);
-                                                setSelectedSlots([]);
-                                            }}
-                                            className={cn(
-                                                "min-h-11 rounded-xl border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-all",
-                                                selectedCourt?.id === court.id
-                                                    ? "border-emerald-700 bg-emerald-700 text-white shadow-md shadow-emerald-900/10"
-                                                    : "border-gray-200 bg-gray-50 text-gray-700 hover:border-emerald-300 hover:bg-emerald-50"
-                                            )}
-                                        >
-                                            {court.name}
-                                        </button>
+                                        <div key={court.id} className="flex shrink-0 items-center overflow-hidden rounded-xl">
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedCourt(court);
+                                                    setSelectedSlots([]);
+                                                }}
+                                                className={cn(
+                                                    "min-h-11 border px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-all",
+                                                    selectedCourt?.id === court.id
+                                                        ? "border-emerald-700 bg-emerald-700 text-white shadow-md shadow-emerald-900/10"
+                                                        : "border-gray-200 bg-gray-50 text-gray-700 hover:border-emerald-300 hover:bg-emerald-50"
+                                                )}
+                                            >
+                                                {court.name}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                aria-label={favoriteCourtIds.includes(court.id) ? `Bỏ yêu thích ${court.name}` : `Yêu thích ${court.name}`}
+                                                onClick={() => void toggleFavoriteCourt(court.id)}
+                                                className={cn(
+                                                    "min-h-11 border-y border-r px-3 transition-colors",
+                                                    favoriteCourtIds.includes(court.id)
+                                                        ? "border-emerald-700 bg-emerald-700 text-rose-200"
+                                                        : "border-gray-200 bg-gray-50 text-gray-400 hover:bg-rose-50 hover:text-rose-500",
+                                                )}
+                                            >
+                                                <Heart className={cn("h-4 w-4", favoriteCourtIds.includes(court.id) && "fill-current")} />
+                                            </button>
+                                        </div>
                                     ))}
                                 </div>
+                                {!localStorage.getItem('portalUserToken') && (
+                                    <p className="mt-2 text-xs text-gray-500">Khách chưa đăng nhập lưu yêu thích trên thiết bị này; đăng nhập để đồng bộ với tài khoản.</p>
+                                )}
                             </div>
 
                             {/* Time Slots Grid */}
@@ -679,11 +820,13 @@ export default function PortalBookingVisual() {
                                                     {filteredTimeSlots.map(time => {
                                                         const status = getSlotStatus(time);
                                                         const isSelected = selectedSlots.includes(time);
-                                                        const isUnavailable = status === 'booked' || status === 'past' || status === 'unavailable' || status === 'unpriced';
+                                                        const isUnavailable = status === 'booked' || status === 'maintenance' || status === 'past' || status === 'unavailable' || status === 'unpriced';
                                                         const statusLabel = isSelected
                                                             ? 'Đã chọn'
                                                             : status === 'booked'
                                                                 ? 'Đã có lịch'
+                                                                : status === 'maintenance'
+                                                                    ? 'Bảo trì'
                                                                 : status === 'past'
                                                                     ? 'Đã qua'
                                                                     : status === 'unpriced'
@@ -808,7 +951,7 @@ export default function PortalBookingVisual() {
                                         <div className="text-left w-full sm:w-auto">
                                             <p className="text-[11px] text-gray-500 font-bold uppercase tracking-wide mb-1">Tổng cộng</p>
                                             <p className="text-2xl font-black text-green-600 leading-none">
-                                                {appliedVoucher ? (
+                                                {appliedVoucher || loyaltyDiscount > 0 ? (
                                                     <span className="flex items-center gap-2">
                                                         <span className="text-lg line-through text-gray-400 font-medium">{formatCurrency(totalAmount)}</span>
                                                         {formatCurrency(finalAmount)}
@@ -963,6 +1106,52 @@ export default function PortalBookingVisual() {
                                     )}
                                 </div>
 
+                                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div>
+                                            <label htmlFor="redeem-points" className="block text-sm font-bold text-amber-950">
+                                                Dùng điểm tích lũy
+                                            </label>
+                                            <p className="mt-1 text-xs leading-5 text-amber-800">
+                                                100 điểm = 10.000đ; tối đa giảm 20% tiền sân. Điểm chỉ trừ sau khi cơ sở duyệt và thanh toán đủ.
+                                            </p>
+                                        </div>
+                                        <span className="whitespace-nowrap rounded-full bg-white px-3 py-1 text-xs font-bold text-amber-800">
+                                            {isLoadingLoyaltyPoints ? 'Đang tải…' : `${availableLoyaltyPoints.toLocaleString('vi-VN')} điểm`}
+                                        </span>
+                                    </div>
+                                    <div className="mt-3 flex items-center gap-3">
+                                        <input
+                                            id="redeem-points"
+                                            type="number"
+                                            min={0}
+                                            max={maxRedeemPoints}
+                                            step={1}
+                                            value={safeRedeemPoints || ''}
+                                            onChange={(event) => {
+                                                const value = Number(event.target.value);
+                                                setRedeemPoints(Number.isFinite(value) ? Math.max(0, Math.min(Math.floor(value), maxRedeemPoints)) : 0);
+                                            }}
+                                            disabled={isLoadingLoyaltyPoints || maxRedeemPoints === 0}
+                                            placeholder={maxRedeemPoints > 0 ? `Tối đa ${maxRedeemPoints}` : 'Chưa đủ điều kiện'}
+                                            className="min-w-0 flex-1 rounded-xl border border-amber-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-900 outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-amber-100"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => setRedeemPoints(maxRedeemPoints)}
+                                            disabled={maxRedeemPoints === 0}
+                                            className="rounded-xl bg-amber-700 px-3 py-2.5 text-xs font-bold text-white transition hover:bg-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            Dùng tối đa
+                                        </button>
+                                    </div>
+                                    {loyaltyDiscount > 0 && (
+                                        <p className="mt-2 text-xs font-semibold text-emerald-800">
+                                            Giảm {formatCurrency(loyaltyDiscount)}; còn {Math.max(0, availableLoyaltyPoints - safeRedeemPoints).toLocaleString('vi-VN')} điểm sau khi thanh toán thành công.
+                                        </p>
+                                    )}
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thanh toán</label>
                                     <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -999,25 +1188,13 @@ export default function PortalBookingVisual() {
                                     {paymentMethod === 'DEPOSIT_TRANSFER' && (
                                         <div className="mt-4 p-5 border border-green-200 bg-green-50 rounded-2xl animate-in fade-in slide-in-from-top-2">
                                             {bankTransferConfigured ? (
-                                                <div className="text-center mb-4">
-                                                    <p className="text-sm font-bold text-green-800 mb-3">Quét mã QR chuyển khoản</p>
-                                                    <div className="bg-white p-2 rounded-2xl inline-block border border-green-100 shadow-sm mx-auto mb-3">
-                                                        <img
-                                                            src={`https://img.vietqr.io/image/${encodeURIComponent(venue.bankCode)}-${encodeURIComponent(venue.bankAccountNumber)}-compact2.png?amount=${Math.round(finalAmount)}&addInfo=${encodeURIComponent(`Dat san ${bookingForm.phone || ''} ${selectedCourt?.name || ''}`)}&accountName=${encodeURIComponent(venue.bankAccountName)}`}
-                                                            alt="Mã QR chuyển khoản"
-                                                            className="w-40 h-40 object-contain"
-                                                        />
-                                                    </div>
-                                                    <div className="text-xs font-medium text-green-700">
-                                                        {venue.bankCode} - {venue.bankAccountNumber}<br />
-                                                        Chủ TK: {venue.bankAccountName}
-                                                    </div>
-                                                    <p className="mt-2 text-sm font-bold text-green-900">
-                                                        Số tiền: {formatCurrency(finalAmount)}
+                                                <div className="text-sm text-green-900">
+                                                    <p className="font-bold">Thông tin thanh toán sẽ được tạo sau khi gửi yêu cầu</p>
+                                                    <p className="mt-1 text-xs leading-5 text-green-800">
+                                                        Mã QR sẽ chứa số tiền và mã tham chiếu riêng cho yêu cầu này. Vui lòng chuyển khoản trong 30 phút; cơ sở xác nhận sau khi đối soát thủ công.
                                                     </p>
-                                                    <p className="mt-1 text-xs text-green-700">
-                                                        Nội dung chuyển khoản được điền sẵn trong mã QR.
-                                                    </p>
+                                                    <p className="mt-2 font-semibold">{venue.bankCode} · {venue.bankAccountNumber} · {venue.bankAccountName}</p>
+                                                    <p className="mt-1 font-bold">Số tiền: {formatCurrency(finalAmount)}</p>
                                                 </div>
                                             ) : (
                                                 <p className="text-sm font-medium text-amber-800">
@@ -1026,7 +1203,7 @@ export default function PortalBookingVisual() {
                                             )}
 
                                             <div className="flex flex-col items-start justify-center">
-                                                <label className="text-sm font-bold text-gray-700 mb-2">Tải ảnh chụp giao dịch *</label>
+                                                <label className="text-sm font-bold text-gray-700 mb-2">Ảnh giao dịch (không bắt buộc)</label>
                                                 <div className="flex items-center gap-3">
                                                     <label className="flex items-center gap-2 px-4 py-2 border-2 border-green-300 border-dashed rounded-xl cursor-pointer bg-white hover:bg-green-50 transition-colors">
                                                         <span className="text-green-600 font-bold text-xl leading-none">+</span>
@@ -1051,6 +1228,7 @@ export default function PortalBookingVisual() {
                                                         </div>
                                                     )}
                                                 </div>
+                                                <p className="mt-2 text-xs text-gray-600">Ảnh giao dịch chỉ hỗ trợ đối soát; không tự động xác nhận đã thanh toán.</p>
                                             </div>
                                         </div>
                                     )}
@@ -1072,6 +1250,42 @@ export default function PortalBookingVisual() {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {transferDetails && (
+                <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/55 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+                    <section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl">
+                        <div className="text-center">
+                            <h2 className="text-xl font-black text-gray-900">Chuyển khoản để giữ sân</h2>
+                            <p className="mt-1 text-sm text-gray-600">{venue.name} · {transferDetails.courtName} · {transferDetails.date} {transferDetails.startTime}-{transferDetails.endTime}</p>
+                        </div>
+                        <div className="mt-5 flex justify-center">
+                            <img
+                                src={`https://img.vietqr.io/image/${encodeURIComponent(venue.bankCode)}-${encodeURIComponent(venue.bankAccountNumber)}-compact2.png?amount=${Math.round(transferDetails.amount)}&addInfo=${encodeURIComponent(transferDetails.reference)}&accountName=${encodeURIComponent(venue.bankAccountName || '')}`}
+                                alt="Mã QR chuyển khoản VietQR"
+                                className="h-56 w-56 rounded-xl border border-gray-100 object-contain"
+                            />
+                        </div>
+                        <div className="mt-4 space-y-2 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-950">
+                            <p><span className="font-semibold">Ngân hàng:</span> {venue.bankCode}</p>
+                            <p><span className="font-semibold">Số tài khoản:</span> {venue.bankAccountNumber}</p>
+                            <p><span className="font-semibold">Chủ tài khoản:</span> {venue.bankAccountName}</p>
+                            <p><span className="font-semibold">Số tiền:</span> {formatCurrency(transferDetails.amount)}</p>
+                            <p><span className="font-semibold">Nội dung bắt buộc:</span> <span className="font-black">{transferDetails.reference}</span></p>
+                            <p><span className="font-semibold">Hạn thanh toán:</span> {new Date(transferDetails.expiresAt).toLocaleString('vi-VN')}</p>
+                        </div>
+                        <p className="mt-3 text-xs leading-5 text-gray-600">
+                            Mã QR đã điền sẵn số tiền và mã yêu cầu riêng. Hệ thống không kết nối tự động với ngân hàng; sân chỉ được xác nhận sau khi cơ sở đối soát và xác nhận khoản tiền thực nhận. Yêu cầu chưa thanh toán sẽ hết hạn sau 30 phút.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => navigate('/trang-chu?tab=history')}
+                            className="mt-5 w-full rounded-xl bg-emerald-700 px-4 py-3 font-bold text-white hover:bg-emerald-800"
+                        >
+                            Xong · xem lịch sử đặt sân
+                        </button>
+                    </section>
                 </div>
             )}
 

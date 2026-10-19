@@ -92,6 +92,11 @@ export default function VenueReviewsPage() {
                                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusClasses[review.status]}`}>
                                             {statusLabels[review.status]}
                                         </span>
+                                        {review.isLegacy && (
+                                            <span className="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-600">
+                                                Đánh giá cũ · chưa xác minh lịch
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="mt-1 text-sm text-foreground-secondary">
                                         {review.customerPhone} <span className="mx-1">·</span> {review.venue?.name || 'Cơ sở đã xóa'}

@@ -26,6 +26,7 @@ import { venueApi, Venue } from '@/services/venue.service';
 import { pricingRuleApi, PricingRule } from '@/services/inventory.service';
 import { operatingHourApi, OperatingHour } from '@/services/operating-hour.service';
 import { voucherApi, Voucher } from '@/services/voucher.service';
+import { PricingMatrixView } from '@/components/settings/PricingMatrixView';
 import { useToast } from '@/hooks/use-toast';
 
 interface TabProps {
@@ -44,7 +45,6 @@ const dayOfWeekLabels: Record<string, string> = {
     SATURDAY: 'Thứ Bảy',
     SUNDAY: 'Chủ Nhật',
 };
-const allDaysLabel = Object.values(dayOfWeekLabels).join(', ');
 const notificationSettings = [
     { key: 'setting_notify_new_booking', label: 'Thông báo khi có đặt sân mới', defaultEnabled: true },
     { key: 'setting_notify_booking_cancelled', label: 'Thông báo khi khách hủy sân', defaultEnabled: true },
@@ -343,16 +343,17 @@ export default function SettingsPage() {
         },
     });
 
-    // Delete venue mutation
+    // Archive venues instead of deleting booking and invoice history.
     const deleteMutation = useMutation({
-        mutationFn: (id: string) => venueApi.delete(id),
+        mutationFn: (id: string) => venueApi.update(id, { isActive: false }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['venues'] });
             toast({
-                title: 'Đã xóa',
-                description: 'Đã xóa cơ sở thành công',
+                title: 'Đã lưu trữ cơ sở',
+                description: 'Lịch đặt và hóa đơn được giữ nguyên',
                 variant: 'success',
             });
+            setDeletingVenue(null);
         },
     });
 
@@ -454,7 +455,7 @@ export default function SettingsPage() {
         }
     };
 
-    const openPricingModal = (rule?: PricingRule) => {
+    const openPricingModal = (rule?: PricingRule, initialValues?: Partial<PricingRule>) => {
         if (rule) {
             setEditingPricingRule(rule);
             setPricingForm({
@@ -469,7 +470,17 @@ export default function SettingsPage() {
             });
         } else {
             setEditingPricingRule(null);
-            resetPricingForm();
+            const firstVenueId = initialValues?.venueId || venues[0]?.id || '';
+            setPricingForm({
+                venueId: firstVenueId,
+                name: initialValues?.name || '',
+                description: initialValues?.description || '',
+                dayOfWeek: initialValues?.dayOfWeek || '',
+                startTime: initialValues?.startTime || '',
+                endTime: initialValues?.endTime || '',
+                pricePerHour: initialValues?.pricePerHour || 150000,
+                priority: initialValues?.priority || 0,
+            });
         }
         setIsPricingModalOpen(true);
     };
@@ -796,55 +807,26 @@ export default function SettingsPage() {
                     {/* Pricing */}
                     {activeTab === 'pricing' && (
                         <div className="bg-background-secondary border border-border rounded-xl p-6">
-                            <div className="flex items-center justify-between mb-6">
-                                <h3 className="text-lg font-semibold text-foreground">Bảng giá</h3>
-                                <Button className="gap-2" onClick={() => openPricingModal()}>
-                                    <Plus className="w-4 h-4" />
-                                    Thêm khung giá
-                                </Button>
+                            <div className="mb-6">
+                                <h3 className="text-lg font-semibold text-foreground">Bảng giá & Ma trận phân bổ</h3>
+                                <p className="mt-1 text-sm text-foreground-secondary">
+                                    Quản lý quy tắc giá, xem ma trận 7 ngày phát hiện khung giờ hổng giá, và mô phỏng công thức tính tiền cho từng khung giờ.
+                                </p>
                             </div>
 
                             {loadingPricingRules ? (
                                 <div className="flex items-center justify-center py-12">
                                     <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
                                 </div>
-                            ) : pricingRules.length === 0 ? (
-                                <div className="text-center py-12">
-                                    <DollarSign className="w-12 h-12 mx-auto mb-4 text-foreground-muted opacity-50" />
-                                    <p className="text-foreground-secondary">Chưa có khung giá nào</p>
-                                </div>
                             ) : (
-                                <div className="space-y-3">
-                                    {pricingRules.map((rule) => {
-                                        const days = rule.dayOfWeek
-                                            ? dayOfWeekLabels[rule.dayOfWeek] || rule.dayOfWeek
-                                            : `Tất cả các ngày (${allDaysLabel})`;
-                                        const timeRange = rule.startTime && rule.endTime
-                                            ? `${rule.startTime} - ${rule.endTime}`
-                                            : 'Tất cả khung giờ';
-
-                                        return (
-                                            <div key={rule.id} className="flex items-center justify-between p-4 border border-border rounded-xl">
-                                                <div>
-                                                    <h4 className="font-medium text-foreground">{rule.name}</h4>
-                                                    <p className="text-sm text-foreground-secondary">{days} · {timeRange}</p>
-                                                </div>
-                                                <div className="flex items-center gap-4">
-                                                    <span className="text-right">
-                                                        <span className="block font-semibold text-primary-500">{formatCurrency(rule.pricePerHour)}/giờ</span>
-                                                        <span className="block text-xs text-foreground-muted">Ưu tiên {rule.priority}</span>
-                                                    </span>
-                                                    <Button variant="ghost" size="sm" onClick={() => openPricingModal(rule)}>
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </Button>
-                                                    <Button variant="ghost" size="sm" className="text-red-400" onClick={() => removePricingRule(rule)}>
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                <PricingMatrixView
+                                    venues={venues}
+                                    pricingRules={pricingRules}
+                                    operatingHours={operatingHours}
+                                    onAddRule={(initialValues) => openPricingModal(undefined, initialValues)}
+                                    onEditRule={(rule) => openPricingModal(rule)}
+                                    onDeleteRule={(rule) => removePricingRule(rule)}
+                                />
                             )}
                         </div>
                     )}
@@ -1263,7 +1245,7 @@ export default function SettingsPage() {
                 </div>
             )}
 
-            <ConfirmModal isOpen={!!deletingVenue} onClose={() => setDeletingVenue(null)} onConfirm={() => deletingVenue && deleteMutation.mutate(deletingVenue.id)} title="Xóa cơ sở" description={`Bạn có chắc chắn muốn xóa "${deletingVenue?.name}"?`} confirmText="Xóa vĩnh viễn" />
+            <ConfirmModal isOpen={!!deletingVenue} onClose={() => setDeletingVenue(null)} onConfirm={() => deletingVenue && deleteMutation.mutate(deletingVenue.id)} title="Ngừng hoạt động cơ sở" description={`Ngừng nhận đặt mới tại "${deletingVenue?.name}". Lịch đặt và hóa đơn hiện có vẫn được giữ lại.`} confirmText="Ngừng hoạt động" />
             <ConfirmModal isOpen={!!deletingPricingRule} onClose={() => setDeletingPricingRule(null)} onConfirm={() => { void confirmDeletePricingRule(); }} title="Xóa bảng giá" description={`Bạn có chắc chắn muốn xóa "${deletingPricingRule?.name}"?`} confirmText="Xóa vĩnh viễn" />
             <ConfirmModal isOpen={!!deletingOperatingHourId} onClose={() => setDeletingOperatingHourId(null)} onConfirm={() => { void confirmDeleteOperatingHour(); }} title="Xóa khung giờ" description="Bạn có chắc chắn muốn xóa khung giờ này?" confirmText="Xóa vĩnh viễn" />
             <ConfirmModal isOpen={!!deletingVoucherId} onClose={() => setDeletingVoucherId(null)} onConfirm={() => { void confirmDeleteVoucher(); }} title="Xóa mã ưu đãi" description="Bạn có chắc chắn muốn xóa mã này?" confirmText="Xóa vĩnh viễn" />

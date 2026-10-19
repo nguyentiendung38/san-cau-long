@@ -1,6 +1,8 @@
 ﻿import { Router, Request, Response, NextFunction } from 'express';
 import { venueService } from '../services/venue.service.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import prisma from '../config/database.js';
+import { bookingRequestService } from '../services/booking-request.service.js';
 
 const router = Router();
 
@@ -43,16 +45,12 @@ router.get('/:id/availability', async (req: Request, res: Response, next: NextFu
     try {
         const { date } = req.query;
         const targetDate = date ? new Date(date as string) : new Date();
-        const startOfDay = new Date(targetDate);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(targetDate);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        const { PrismaClient } = await import('@prisma/client');
-        const prisma = new PrismaClient();
+        const startOfDay = new Date(Date.UTC(targetDate.getUTCFullYear(), targetDate.getUTCMonth(), targetDate.getUTCDate()));
+        const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60_000 - 1);
+        await bookingRequestService.expireUnpaidBankTransferRequests();
 
         const courts = await prisma.court.findMany({
-            where: { venueId: req.params.id, status: 'ACTIVE' },
+            where: { venueId: req.params.id, status: 'ACTIVE', venue: { isActive: true } },
             orderBy: { sortOrder: 'asc' }
         });
 
@@ -65,19 +63,45 @@ router.get('/:id/availability', async (req: Request, res: Response, next: NextFu
         });
 
         const fifteenMinsAgo = new Date(Date.now() - 15 * 60000);
+        const now = new Date();
         const pendingRequests = await prisma.bookingRequest.findMany({
             where: {
                 courtId: { in: courts.map((c: any) => c.id) },
                 date: { gte: startOfDay, lte: endOfDay },
                 status: 'PENDING',
+                paymentStatus: { not: 'FAILED' },
                 OR: [
-                    { paymentMethod: { not: 'VNPAY' } },
-                    { createdAt: { gte: fifteenMinsAgo } }
-                ]
+                    { paymentMethod: 'DEPOSIT_TRANSFER', expiresAt: { gt: now } },
+                    { paymentMethod: 'VNPAY', createdAt: { gte: fifteenMinsAgo } },
+                    { paymentMethod: { notIn: ['DEPOSIT_TRANSFER', 'VNPAY'] } },
+                ],
             }
         });
 
-        const allBlockedSlots = [...bookings, ...pendingRequests];
+        const closures = await prisma.maintenanceClosure.findMany({
+            where: {
+                courtId: { in: courts.map((court: any) => court.id) },
+                startAt: { lt: new Date(startOfDay.getTime() + 24 * 60 * 60_000) },
+                endAt: { gt: startOfDay },
+            },
+        });
+        const closureSlots = closures.map((closure) => {
+            const clippedStart = closure.startAt > startOfDay ? closure.startAt : startOfDay;
+            const clippedEnd = closure.endAt < new Date(startOfDay.getTime() + 24 * 60 * 60_000)
+                ? closure.endAt
+                : new Date(startOfDay.getTime() + 24 * 60 * 60_000);
+            const toTime = (date: Date) => `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}`;
+            return {
+                id: `maintenance-${closure.id}`,
+                courtId: closure.courtId,
+                date: startOfDay,
+                startTime: toTime(clippedStart),
+                endTime: toTime(clippedEnd),
+                status: 'MAINTENANCE',
+                notes: closure.reason || 'Bảo trì',
+            };
+        });
+        const allBlockedSlots = [...bookings, ...pendingRequests, ...closureSlots];
 
         res.json({
             success: true,

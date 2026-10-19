@@ -18,12 +18,16 @@ export interface Booking {
     paymentStatus?: string;
     paymentAmount?: number;
     paymentProof?: string;
+    transferReference?: string | null;
+    expiresAt?: string | null;
     invoiceItem?: any;
     isRecurring?: boolean;
     recurringGroup?: string;
     createdAt: string;
     updatedAt?: string;
     checkedInAt?: string;
+    checkInToken?: string | null;
+    checkedInById?: string | null;
     checkedOutAt?: string;
     court: {
         id: string;
@@ -52,6 +56,14 @@ export interface Court {
 export interface CalendarData {
     courts: Court[];
     bookings: Booking[];
+    maintenanceClosures: Array<{
+        id: string;
+        courtId: string;
+        startAt: string;
+        endAt: string;
+        reason?: string | null;
+        court: { id: string; name: string };
+    }>;
 }
 
 export interface CreateBookingInput {
@@ -145,6 +157,21 @@ export const bookingApi = {
         return response.data.data!;
     },
 
+    async checkInWithToken(token: string): Promise<Booking> {
+        const response = await api.post<ApiResponse<Booking>>('/bookings/check-in-token', { token });
+        return response.data.data!;
+    },
+
+    async markNoShow(id: string): Promise<Booking> {
+        const response = await api.post<ApiResponse<Booking>>(`/bookings/${id}/no-show`);
+        return response.data.data!;
+    },
+
+    async getCheckInToken(id: string): Promise<string> {
+        const response = await api.get<ApiResponse<{ bookingId: string; token: string }>>(`/bookings/${id}/check-in-qr`);
+        return response.data.data!.token;
+    },
+
     // Check-out
     async checkOut(id: string): Promise<Booking> {
         const response = await api.post<ApiResponse<Booking>>(`/bookings/${id}/check-out`);
@@ -177,7 +204,20 @@ export interface BookingRequest {
     paymentStatus?: 'PENDING' | 'PAID' | 'FAILED';
     paymentAmount?: number;
     paymentProof?: string;
+    transferReference?: string | null;
+    expiresAt?: string | null;
     orderedItems?: string;
+    cancellationRequestStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | null;
+    cancellationRequestType?: 'CANCELLATION' | 'RESCHEDULE' | null;
+    cancellationRequestReason?: string | null;
+    cancellationRequestedAt?: string | null;
+    cancellationReviewedAt?: string | null;
+    requestedDate?: string | null;
+    requestedStartTime?: string | null;
+    requestedEndTime?: string | null;
+    checkIn?: { id: string; checkInToken: string | null; checkedInAt: string | null } | null;
+    redeemPoints?: number;
+    loyaltyDiscountAmount?: number;
     venue?: { name: string };
     court?: { name: string };
     createdAt: string;
@@ -199,12 +239,19 @@ export function getBookingRequestTotal(request: Pick<BookingRequest, 'orderedIte
 
 export const bookingRequestApi = {
     async createPublic(input: Partial<BookingRequest>): Promise<BookingRequest> {
-        const response = await api.post<ApiResponse<BookingRequest>>('/booking-requests/public', input);
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.post<ApiResponse<BookingRequest>>(
+            '/booking-requests/public',
+            input,
+            { headers: { Authorization: `Bearer ${token || ''}` } },
+        );
         return response.data.data!;
     },
-    async getMyRequests(phone: string): Promise<any[]> {
+    async getMyRequests(): Promise<BookingRequest[]> {
+        const token = localStorage.getItem('portalUserToken');
         const response = await api.get<ApiResponse<any[]>>(
-            `/booking-requests/public/my-requests?phone=${encodeURIComponent(phone.trim())}`
+            '/booking-requests/public/my-requests',
+            { headers: { Authorization: `Bearer ${token || ''}` } },
         );
         return response.data.data!;
     },
@@ -213,8 +260,33 @@ export const bookingRequestApi = {
         const response = await api.get<ApiResponse<BookingRequest[]>>(url);
         return response.data.data!;
     },
-    async updateStatus(id: string, status: string): Promise<BookingRequest> {
-        const response = await api.put<ApiResponse<BookingRequest>>(`/booking-requests/${id}/status`, { status });
+    async updateStatus(id: string, status: string, reason?: string): Promise<BookingRequest> {
+        const response = await api.put<ApiResponse<BookingRequest>>(`/booking-requests/${id}/status`, { status, reason });
+        return response.data.data!;
+    },
+    async requestCancellation(id: string, reason: string): Promise<BookingRequest> {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.post<ApiResponse<BookingRequest>>(
+            `/booking-requests/public/${id}/cancel-request`,
+            { reason },
+            { headers: { Authorization: `Bearer ${token || ''}` } },
+        );
+        return response.data.data!;
+    },
+    async requestReschedule(id: string, input: { reason: string; date: string; startTime: string; endTime: string }): Promise<BookingRequest> {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.post<ApiResponse<BookingRequest>>(
+            `/booking-requests/public/${id}/reschedule-request`,
+            input,
+            { headers: { Authorization: `****** || ''}` } },
+        );
+        return response.data.data!;
+    },
+    async reviewCancellation(id: string, status: 'APPROVED' | 'REJECTED', reason?: string): Promise<BookingRequest> {
+        const response = await api.put<ApiResponse<BookingRequest>>(
+            `/booking-requests/${id}/cancellation-review`,
+            { status, reason },
+        );
         return response.data.data!;
     },
     async updatePaymentStatus(id: string, paymentStatus: 'PAID' | 'FAILED', paymentAmount?: number): Promise<BookingRequest> {

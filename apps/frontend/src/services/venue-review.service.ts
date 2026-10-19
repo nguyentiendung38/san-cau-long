@@ -12,16 +12,23 @@ export interface VenueReview {
     images: string[];
     status: VenueReviewStatus;
     createdAt: string;
+    isLegacy?: boolean;
     venue?: { id: string; name: string };
 }
 
 export interface CreateVenueReviewInput {
-    venueId: string;
-    customerName: string;
-    customerPhone: string;
+    bookingId: string;
     rating: number;
     content: string;
     images: string[];
+}
+
+export interface EligibleReviewBooking {
+    id: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    court: { id: string; name: string; venue: { id: string; name: string } };
 }
 
 export interface VenueReviewSummary {
@@ -47,8 +54,19 @@ export const venueReviewApi = {
     },
 
     async createPublic(input: CreateVenueReviewInput): Promise<VenueReview> {
-        const response = await api.post<ApiResponse<VenueReview>>('/venue-reviews/public', input);
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.post<ApiResponse<VenueReview>>('/venue-reviews/public', input, {
+            headers: { Authorization: `****** || ''}` },
+        });
         return response.data.data!;
+    },
+
+    async getEligibleBookings(): Promise<EligibleReviewBooking[]> {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.get<ApiResponse<EligibleReviewBooking[]>>('/venue-reviews/public/eligible', {
+            headers: { Authorization: `****** || ''}` },
+        });
+        return response.data.data || [];
     },
 
     async getAll(): Promise<VenueReview[]> {

@@ -1,8 +1,50 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { courtService } from '../services/court.service.js';
 import { authenticate, authorize } from '../middleware/auth.js';
+import { maintenanceClosureService } from '../services/maintenance-closure.service.js';
 
 const router = Router();
+
+router.get('/maintenance-closures', authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const venueId = typeof req.query.venueId === 'string' ? req.query.venueId : '';
+        if (!venueId) return res.status(400).json({ success: false, message: 'Cần cung cấp venueId' });
+        const startAt = typeof req.query.startAt === 'string' ? new Date(req.query.startAt) : undefined;
+        const endAt = typeof req.query.endAt === 'string' ? new Date(req.query.endAt) : undefined;
+        const closures = await maintenanceClosureService.list(venueId, startAt, endAt);
+        res.json({ success: true, data: closures });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.post(
+    '/maintenance-closures',
+    authenticate,
+    authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const closure = await maintenanceClosureService.create(req.body);
+            res.status(201).json({ success: true, data: closure });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
+
+router.delete(
+    '/maintenance-closures/:id',
+    authenticate,
+    authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'),
+    async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            await maintenanceClosureService.delete(req.params.id);
+            res.json({ success: true });
+        } catch (error) {
+            next(error);
+        }
+    },
+);
 
 // Get courts by venue
 router.get('/venue/:venueId', async (req: Request, res: Response, next: NextFunction) => {

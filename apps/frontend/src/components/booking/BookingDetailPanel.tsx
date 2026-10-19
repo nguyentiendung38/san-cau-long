@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { Booking } from '@/services/booking.service';
+import BookingCheckInQrPanel from './BookingCheckInQrPanel';
 
 interface BookingDetailPanelProps {
     booking: Booking | null;
@@ -23,6 +24,7 @@ interface BookingDetailPanelProps {
     onClose: () => void;
     onCheckIn: (id: string) => void;
     onCheckOut: (id: string) => void;
+    onNoShow: (id: string) => void;
     onCancel: (id: string) => void;
     onEdit?: (booking: Booking) => void;
     isLoading?: boolean;
@@ -38,6 +40,8 @@ function getStatusConfig(status: string) {
             return { label: 'Chờ xác nhận', color: 'text-yellow-400 bg-yellow-500/20', icon: AlertCircle };
         case 'COMPLETED':
             return { label: 'Hoàn thành', color: 'text-gray-400 bg-gray-500/20', icon: CheckCircle };
+        case 'NO_SHOW':
+            return { label: 'Khách vắng', color: 'text-red-400 bg-red-500/20', icon: AlertCircle };
         case 'CANCELLED':
             return { label: 'Đã hủy', color: 'text-red-400 bg-red-500/20', icon: XCircle };
         default:
@@ -51,6 +55,7 @@ export function BookingDetailPanel({
     onClose,
     onCheckIn,
     onCheckOut,
+    onNoShow,
     onCancel,
     onEdit,
     isLoading = false,
@@ -62,8 +67,10 @@ export function BookingDetailPanel({
 
     const canCheckIn = booking.status === 'CONFIRMED' || booking.status === 'PENDING';
     const canCheckOut = booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED';
-    const canCancel = booking.status !== 'CANCELLED' && booking.status !== 'COMPLETED';
-    const canEdit = booking.status !== 'CANCELLED' && booking.status !== 'COMPLETED' && booking.status !== 'IN_PROGRESS';
+    const bookingEnd = new Date(`${booking.date.slice(0, 10)}T${booking.endTime}:00Z`);
+    const canMarkNoShow = booking.status === 'CONFIRMED' && bookingEnd <= new Date();
+    const canCancel = !['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(booking.status);
+    const canEdit = !['CANCELLED', 'COMPLETED', 'IN_PROGRESS', 'NO_SHOW'].includes(booking.status);
 
     return (
         <>
@@ -243,9 +250,11 @@ export function BookingDetailPanel({
                                     <div className="w-2 h-2 rounded-full bg-blue-500" />
                                     <span className="text-sm text-foreground-secondary">
                                         Check-in lúc {new Date(booking.checkedInAt).toLocaleString('vi-VN')}
+                                        {booking.checkedInById ? ` · nhân viên ${booking.checkedInById}` : ''}
                                     </span>
                                 </div>
                             )}
+                            {booking.status === 'CONFIRMED' && <BookingCheckInQrPanel booking={booking} isOpen={isOpen} />}
                             {booking.checkedOutAt && (
                                 <div className="flex items-center gap-3">
                                     <div className="w-2 h-2 rounded-full bg-gray-500" />
@@ -278,6 +287,22 @@ export function BookingDetailPanel({
                             >
                                 <CheckCircle className="w-4 h-4 mr-2" />
                                 {booking.invoiceItem?.invoice?.paymentStatus === 'PAID' ? 'Check-out & In hóa đơn' : 'Check-out & Thanh toán'}
+                            </Button>
+                        )}
+
+                        {canMarkNoShow && (
+                            <Button
+                                variant="secondary"
+                                className="w-full"
+                                onClick={() => {
+                                    if (window.confirm('Ghi nhận khách không đến cho lịch này? Thao tác này sẽ cập nhật báo cáo vận hành.')) {
+                                        onNoShow(booking.id);
+                                    }
+                                }}
+                                isLoading={isLoading}
+                            >
+                                <AlertCircle className="w-4 h-4 mr-2" />
+                                Ghi nhận khách vắng
                             </Button>
                         )}
 

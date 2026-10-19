@@ -5,13 +5,15 @@ import {
     ChevronRight,
     Plus,
     Calendar as CalendarIcon,
-    Repeat
+    Repeat,
+    Wrench,
+    Trash2
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { bookingApi, Booking } from '@/services/booking.service';
-import { venueApi, Venue } from '@/services/venue.service';
+import { venueApi, courtApi, Venue } from '@/services/venue.service';
 import { useToast } from '@/hooks/use-toast';
 import { ViewToggle, CalendarViewMode, MiniCalendar, WeekView, ListView } from '@/components/calendar';
 import { RecurringBookingModal, BookingDetailPanel, NewBookingModal, EditBookingModal } from '@/components/booking';
@@ -39,6 +41,24 @@ function getBookingSlot(booking: Booking, timeSlots: string[]): BookingSlot {
         gridRow: startRow,
         gridRowSpan: Math.max(endRow - startRow, 1),
     };
+}
+
+function getMaintenanceGridPosition(startAt: string, endAt: string, date: Date, timeSlots: string[]) {
+    if (!timeSlots.length) return null;
+    const dayStart = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayEnd = dayStart + 24 * 60 * 60_000;
+    const start = Math.max(new Date(startAt).getTime(), dayStart);
+    const end = Math.min(new Date(endAt).getTime(), dayEnd);
+    if (start >= end) return null;
+    const firstHour = Number(timeSlots[0].slice(0, 2));
+    const firstMinutes = firstHour * 60;
+    const startMinutes = new Date(start).getUTCHours() * 60 + new Date(start).getUTCMinutes();
+    const endMinutes = new Date(end).getUTCHours() * 60 + new Date(end).getUTCMinutes();
+    if (endMinutes <= firstMinutes || startMinutes >= firstMinutes + timeSlots.length * 60) return null;
+    const maxRow = timeSlots.length * 2 + 2;
+    const gridRow = Math.max(2, Math.min(maxRow, 2 + Math.floor((startMinutes - firstMinutes) / 30)));
+    const endRow = Math.max(gridRow + 1, Math.min(maxRow, 2 + Math.ceil((endMinutes - firstMinutes) / 30)));
+    return { gridRow, gridRowSpan: endRow - gridRow };
 }
 
 function getStatusColor(status: string): string {
@@ -79,6 +99,11 @@ export default function BookingCalendarPage() {
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
     const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
     const [showInvoicePanel, setShowInvoicePanel] = useState(false);
+    const [closureStartAt, setClosureStartAt] = useState('');
+    const [closureEndAt, setClosureEndAt] = useState('');
+    const [closureCourtId, setClosureCourtId] = useState('');
+    const [closureReason, setClosureReason] = useState('');
+    const [checkInToken, setCheckInToken] = useState('');
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -102,6 +127,59 @@ export default function BookingCalendarPage() {
         queryKey: ['calendar', selectedVenueId, formattedDate],
         queryFn: () => bookingApi.getCalendarData(selectedVenueId, formattedDate, formattedDate),
         enabled: !!selectedVenueId,
+    });
+    useEffect(() => {
+        const courts = calendarData?.courts || [];
+        if (courts.length && !courts.some((court) => court.id === closureCourtId)) {
+            setClosureCourtId(courts[0].id);
+        }
+    }, [calendarData?.courts, closureCourtId]);
+
+    const createClosureMutation = useMutation({
+        mutationFn: () => {
+            const canonicalTime = (value: string) => `${value}:00.000Z`;
+            return courtApi.createMaintenanceClosure({
+                courtId: closureCourtId,
+                startAt: canonicalTime(closureStartAt),
+                endAt: canonicalTime(closureEndAt),
+                reason: closureReason.trim() || undefined,
+            });
+        },
+        onSuccess: () => {
+            toast({ title: 'Đã thêm lịch đóng bảo trì' });
+            setClosureStartAt('');
+            setClosureEndAt('');
+            setClosureReason('');
+            queryClient.invalidateQueries({ queryKey: ['calendar', selectedVenueId] });
+        },
+        onError: (error: any) => toast({
+            title: 'Không thể thêm lịch bảo trì',
+            description: error?.response?.data?.message || 'Vui lòng kiểm tra thời gian và lịch đặt hiện có.',
+            variant: 'error',
+        }),
+    });
+
+    const checkInTokenMutation = useMutation({
+        mutationFn: (token: string) => bookingApi.checkInWithToken(token),
+        onSuccess: () => {
+            toast({ title: 'Đã xác nhận khách đến sân' });
+            setCheckInToken('');
+            queryClient.invalidateQueries({ queryKey: ['calendar', selectedVenueId] });
+        },
+        onError: (error: any) => toast({
+            title: 'Không thể check-in',
+            description: error?.response?.data?.message || 'Mã QR không hợp lệ hoặc lịch không thuộc cơ sở được phân quyền.',
+            variant: 'error',
+        }),
+    });
+
+    const deleteClosureMutation = useMutation({
+        mutationFn: (id: string) => courtApi.deleteMaintenanceClosure(id),
+        onSuccess: () => {
+            toast({ title: 'Đã xóa lịch đóng bảo trì' });
+            queryClient.invalidateQueries({ queryKey: ['calendar', selectedVenueId] });
+        },
+        onError: () => toast({ title: 'Không thể xóa lịch bảo trì', variant: 'error' }),
     });
 
 
@@ -195,6 +273,19 @@ export default function BookingCalendarPage() {
         },
     });
 
+    const noShowMutation = useMutation({
+        mutationFn: (id: string) => bookingApi.markNoShow(id),
+        onSuccess: () => {
+            toast({ title: 'Đã ghi nhận khách vắng' });
+            queryClient.invalidateQueries({ queryKey: ['calendar'] });
+            queryClient.invalidateQueries({ queryKey: ['reports'] });
+            setSelectedBooking(null);
+        },
+        onError: () => {
+            toast({ title: 'Không thể ghi nhận khách vắng', variant: 'error' });
+        },
+    });
+
     // Cancel mutation
     const cancelMutation = useMutation({
         mutationFn: (id: string) => bookingApi.cancel(id),
@@ -252,6 +343,23 @@ export default function BookingCalendarPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <form
+                        className="hidden lg:flex items-center gap-2"
+                        onSubmit={(event) => {
+                            event.preventDefault();
+                            const token = checkInToken.trim().replace(/^COURTIFY-CHECKIN:/, '');
+                            if (token) checkInTokenMutation.mutate(token);
+                        }}
+                    >
+                        <input
+                            value={checkInToken}
+                            onChange={(event) => setCheckInToken(event.target.value)}
+                            aria-label="Mã QR check-in"
+                            placeholder="Quét / nhập mã QR"
+                            className="w-40 rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm text-foreground"
+                        />
+                        <Button type="submit" variant="secondary" disabled={!checkInToken.trim() || checkInTokenMutation.isPending}>Check-in QR</Button>
+                    </form>
                     <Button variant="secondary" className="gap-2" onClick={() => setShowRecurringModal(true)}>
                         <Repeat className="w-4 h-4" />
                         <span className="hidden sm:inline">Lịch cố định</span>
@@ -262,6 +370,24 @@ export default function BookingCalendarPage() {
                     </Button>
                 </div>
             </div>
+
+            <form
+                className="flex lg:hidden items-center gap-2 mb-4"
+                onSubmit={(event) => {
+                    event.preventDefault();
+                    const token = checkInToken.trim().replace(/^COURTIFY-CHECKIN:/, '');
+                    if (token) checkInTokenMutation.mutate(token);
+                }}
+            >
+                <input
+                    value={checkInToken}
+                    onChange={(event) => setCheckInToken(event.target.value)}
+                    aria-label="Mã QR check-in"
+                    placeholder="Quét hoặc nhập mã QR check-in"
+                    className="min-w-0 flex-1 rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm text-foreground"
+                />
+                <Button type="submit" variant="secondary" disabled={!checkInToken.trim() || checkInTokenMutation.isPending}>Check-in QR</Button>
+            </form>
 
             {/* Controls */}
             <div className="flex items-center justify-between mb-4 p-4 bg-background-secondary rounded-lg border border-border">
@@ -331,6 +457,73 @@ export default function BookingCalendarPage() {
                     </span>
                 </div>
             </div>
+
+            <section className="mb-4 rounded-xl border border-border bg-background-secondary p-4">
+                <div className="mb-3 flex items-center gap-2">
+                    <Wrench className="h-4 w-4 text-foreground-secondary" />
+                    <h2 className="font-semibold text-foreground">Đóng sân bảo trì</h2>
+                    <span className="text-xs text-foreground-secondary">Các khung này sẽ bị chặn trên lịch khách hàng.</span>
+                </div>
+                <form
+                    className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5"
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        createClosureMutation.mutate();
+                    }}
+                >
+                    <select
+                        required
+                        value={closureCourtId}
+                        onChange={(event) => setClosureCourtId(event.target.value)}
+                        className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground"
+                    >
+                        {(calendarData?.courts || []).map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}
+                    </select>
+                    <label className="text-xs text-foreground-secondary">
+                        Bắt đầu
+                        <input required type="datetime-local" value={closureStartAt} onChange={(event) => setClosureStartAt(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background-tertiary px-2 py-1.5 text-sm text-foreground" />
+                    </label>
+                    <label className="text-xs text-foreground-secondary">
+                        Kết thúc
+                        <input required type="datetime-local" value={closureEndAt} onChange={(event) => setClosureEndAt(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background-tertiary px-2 py-1.5 text-sm text-foreground" />
+                    </label>
+                    <input
+                        value={closureReason}
+                        maxLength={250}
+                        onChange={(event) => setClosureReason(event.target.value)}
+                        placeholder="Lý do (không bắt buộc)"
+                        className="self-end rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted"
+                    />
+                    <Button type="submit" disabled={!closureCourtId || createClosureMutation.isPending} className="self-end">
+                        {createClosureMutation.isPending ? 'Đang lưu…' : 'Thêm lịch đóng'}
+                    </Button>
+                </form>
+                <div className="mt-3 space-y-2">
+                    {(calendarData?.maintenanceClosures || []).map((closure) => (
+                        <div key={closure.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm">
+                            <span className="font-semibold text-foreground">{closure.court.name}</span>
+                            <span className="text-foreground-secondary">
+                                {new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }).format(new Date(closure.startAt))}
+                                {' – '}
+                                {new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }).format(new Date(closure.endAt))}
+                                {closure.reason ? ` · ${closure.reason}` : ''}
+                            </span>
+                            <button
+                                type="button"
+                                aria-label={`Xóa lịch bảo trì sân ${closure.court.name}`}
+                                disabled={deleteClosureMutation.isPending}
+                                onClick={() => deleteClosureMutation.mutate(closure.id)}
+                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-foreground-secondary hover:bg-background-secondary hover:text-foreground"
+                            >
+                                <Trash2 className="h-3.5 w-3.5" /> Xóa
+                            </button>
+                        </div>
+                    ))}
+                    {!isLoading && (calendarData?.maintenanceClosures || []).length === 0 && (
+                        <p className="text-xs text-foreground-secondary">Chưa có lịch đóng bảo trì trong ngày đang chọn.</p>
+                    )}
+                </div>
+            </section>
 
             {/* Main content with sidebar */}
             <div className="flex flex-1 gap-4 min-h-0">
@@ -481,6 +674,24 @@ export default function BookingCalendarPage() {
                                             </div>
                                         ))
                                     )}
+                                    {calendarData?.maintenanceClosures.map((closure) => {
+                                        const courtIdx = calendarData.courts.findIndex((court) => court.id === closure.courtId);
+                                        const position = getMaintenanceGridPosition(closure.startAt, closure.endAt, selectedDate, timeSlots);
+                                        if (courtIdx < 0 || !position) return null;
+                                        return (
+                                            <div
+                                                key={`maintenance-${closure.id}`}
+                                                title={closure.reason || 'Đóng sân bảo trì'}
+                                                className="z-10 flex items-center justify-center overflow-hidden rounded-lg border border-dashed border-amber-600 bg-amber-400/25 px-2 text-xs font-bold text-amber-950"
+                                                style={{
+                                                    gridColumn: courtIdx + 2,
+                                                    gridRow: `${position.gridRow} / span ${position.gridRowSpan}`,
+                                                }}
+                                            >
+                                                <span className="truncate">BẢO TRÌ{closure.reason ? ` · ${closure.reason}` : ''}</span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
 
@@ -525,7 +736,8 @@ export default function BookingCalendarPage() {
                 onClose={() => setSelectedBooking(null)}
                 onCheckIn={(id) => checkInMutation.mutate(id)}
                 onCheckOut={(id) => checkOutMutation.mutate(id)}
-                isLoading={checkInMutation.isPending || checkOutMutation.isPending || cancelMutation.isPending}
+                onNoShow={(id) => noShowMutation.mutate(id)}
+                isLoading={checkInMutation.isPending || checkOutMutation.isPending || noShowMutation.isPending || cancelMutation.isPending}
                 onCancel={(id) => cancelMutation.mutate(id)}
                 onEdit={(booking) => {
                     setEditingBooking(booking);

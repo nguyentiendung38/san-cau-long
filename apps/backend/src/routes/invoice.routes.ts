@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { invoiceService, CreateInvoiceInput } from '../services/invoice.service.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 import { Request, Response, NextFunction } from 'express';
 
 const router = Router();
@@ -98,6 +98,20 @@ router.post('/:id/cancel', authenticate, async (req: Request, res: Response, nex
         const { reason } = req.body;
         const invoice = await invoiceService.cancel(req.params.id, reason);
         res.json({ success: true, data: invoice, message: 'Da huy hoa don' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Record a full refund after the money has been returned to the customer.
+router.post('/:id/refund', authenticate, authorize('SUPER_ADMIN', 'ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+        if (!reason || reason.length > 500) {
+            return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do hoàn tiền (tối đa 500 ký tự)' });
+        }
+        const invoice = await invoiceService.refund(req.params.id, reason);
+        res.json({ success: true, data: invoice, message: 'Đã ghi nhận hoàn tiền và điều chỉnh điểm tích lũy' });
     } catch (error) {
         next(error);
     }

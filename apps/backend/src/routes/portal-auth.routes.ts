@@ -1,27 +1,78 @@
 import { Router } from 'express';
 import { portalAuthService } from '../services/portal-auth.service.js';
 import { z } from 'zod';
+import { authenticatePortalCustomer } from '../middleware/portal-customer-auth.js';
+import { customerFavoritesService } from '../services/customer-favorites.service.js';
 
 const router = Router();
 
 const requestOtpSchema = z.object({
-    phone: z.string(),
+    phone: z.string().trim().min(9).max(15),
     password: z.string().min(8),
-    name: z.string(),
-    email: z.string().email()
+    name: z.string().trim().min(2).max(100),
+    email: z.string().trim().email().transform((email) => email.toLowerCase())
 });
 
 const verifyOtpSchema = z.object({
-    phone: z.string(),
+    phone: z.string().trim().min(9).max(15),
     password: z.string().min(8),
-    name: z.string(),
-    email: z.string().email(),
+    name: z.string().trim().min(2).max(100),
+    email: z.string().trim().email().transform((email) => email.toLowerCase()),
     otp: z.string().length(6)
 });
 
 const loginSchema = z.object({
     identifier: z.string(),
     password: z.string()
+});
+
+router.get('/me', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        const customer = await portalAuthService.getCustomerLoyalty(req.portalCustomer!.id);
+        res.json({ success: true, data: customer });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.get('/favorites', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        res.json({ success: true, data: await customerFavoritesService.get(req.portalCustomer!.id) });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.put('/favorites/venues/:venueId', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        if (typeof req.body.favorite !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'Trạng thái yêu thích không hợp lệ' });
+        }
+        const data = await customerFavoritesService.setVenue(
+            req.portalCustomer!.id,
+            req.params.venueId,
+            req.body.favorite,
+        );
+        res.json({ success: true, data });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.put('/favorites/courts/:courtId', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        if (typeof req.body.favorite !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'Trạng thái yêu thích không hợp lệ' });
+        }
+        const data = await customerFavoritesService.setCourt(
+            req.portalCustomer!.id,
+            req.params.courtId,
+            req.body.favorite,
+        );
+        res.json({ success: true, data });
+    } catch (err) {
+        next(err);
+    }
 });
 
 router.post('/register-otp', async (req, res, next) => {
@@ -44,17 +95,6 @@ router.post('/verify-register', async (req, res, next) => {
     }
 });
 
-// Legacy direct register endpoint
-router.post('/register', async (req, res, next) => {
-    try {
-        const data = requestOtpSchema.parse(req.body);
-        const result = await portalAuthService.register(data);
-        res.status(201).json({ success: true, data: result });
-    } catch (err) {
-        next(err);
-    }
-});
-
 router.post('/login', async (req, res, next) => {
     try {
         const data = loginSchema.parse(req.body);
@@ -67,7 +107,7 @@ router.post('/login', async (req, res, next) => {
 
 router.post('/forgot-password-otp', async (req, res, next) => {
     try {
-        const schema = z.object({ email: z.string().email() });
+        const schema = z.object({ email: z.string().trim().email().transform((email) => email.toLowerCase()) });
         const data = schema.parse(req.body);
         const result = await portalAuthService.requestResetPasswordOtp(data);
         res.json({ success: true, data: result });

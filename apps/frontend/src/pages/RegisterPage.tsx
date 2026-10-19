@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, XCircle, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ChevronLeft, XCircle, Eye, EyeOff, Loader2, MailCheck } from 'lucide-react';
 
 export default function RegisterPage() {
     const navigate = useNavigate();
@@ -69,11 +69,8 @@ export default function RegisterPage() {
             // Gửi yêu cầu OTP qua API mới
             const res = await portalAuthApi.requestOtp({ phone, password, name, email });
             
-            if (res.message) {
-                alert(res.message);
-            } else {
-                alert('Đã gửi mã OTP, vui lòng kiểm tra email của bạn');
-            }
+            alert(res.data?.message || 'Đã gửi mã OTP, vui lòng kiểm tra email của bạn');
+            setOtp(['', '', '', '', '', '']);
 
             // Chuyển sang bước nhập OTP
             setStep(2);
@@ -107,6 +104,9 @@ export default function RegisterPage() {
                 name: res.data.customer.name,
                 email: res.data.customer.email
             }));
+            localStorage.setItem('portalUserId', res.data.customer.id);
+            localStorage.setItem('portalUserPhone', res.data.customer.phone);
+            window.dispatchEvent(new Event('storage'));
             navigate('/trang-chu');
         } catch (error: any) {
             const msg = error.response?.data?.message || 'Mã OTP không đúng hoặc đã hết hạn';
@@ -117,21 +117,22 @@ export default function RegisterPage() {
     };
 
     return (
-        <div className="min-h-screen bg-[#2e9c56] font-sans selection:bg-green-200 flex flex-col">
+        <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-100 font-sans antialiased selection:bg-emerald-200 flex flex-col">
             {/* Header */}
-            <div className="flex items-center px-4 py-4 text-white relative">
+            <div className="flex items-center px-4 py-5 text-slate-700 relative w-full max-w-xl mx-auto">
                 <button 
                     onClick={() => step === 2 ? setStep(1) : navigate('/trang-chu')}
-                    className="absolute left-4 p-2 hover:bg-white/10 rounded-full transition-colors"
+                    aria-label="Quay lại"
+                    className="absolute left-4 p-2 hover:bg-white/70 rounded-full transition-colors"
                 >
                     <ChevronLeft className="w-6 h-6" />
                 </button>
-                <h1 className="flex-1 text-center font-bold text-lg">Đăng ký tài khoản</h1>
+                <h1 className="flex-1 text-center font-bold text-base sm:text-lg">Đăng ký tài khoản</h1>
             </div>
 
             {/* Form Container */}
-            <div className="flex-1 px-4 md:px-0 flex flex-col items-center">
-                <div className="bg-white rounded-[24px] w-full max-w-lg mt-2 p-6 shadow-2xl">
+            <div className="flex-1 px-4 pb-10 flex flex-col items-center">
+                <div className="bg-white/95 rounded-[28px] border border-white w-full max-w-lg mt-2 p-6 sm:p-8 shadow-[0_24px_70px_-28px_rgba(15,23,42,0.3)]">
                     
                     {step === 1 ? (
                         <form onSubmit={handleRequestOtp} className="space-y-6" autoComplete="off">
@@ -141,7 +142,7 @@ export default function RegisterPage() {
                             
                             {/* Phone */}
                             <div>
-                                <label className="block text-sm font-bold text-gray-800 mb-2">Số điện thoại (*)</label>
+                                <label className="block text-sm font-bold text-gray-800 mb-2">Số điện thoại liên hệ (*)</label>
                                 <div className={`flex items-center border rounded-lg overflow-hidden transition-all ${phoneTouched && phone.length > 0 && !/^(0[35789]\d{8}|[35789]\d{8})$/.test(phone) ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white focus-within:border-green-500 focus-within:ring-1 focus-within:ring-green-500'}`}>
                                     <div className={`flex items-center gap-2 px-3 py-3 border-r ${phoneTouched && phone.length > 0 && !/^(0[35789]\d{8}|[35789]\d{8})$/.test(phone) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
                                         <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center overflow-hidden">
@@ -181,6 +182,7 @@ export default function RegisterPage() {
                                         </button>
                                     )}
                                 </div>
+                                <p className="mt-1.5 ml-1 text-xs text-gray-500">Mã xác nhận được gửi qua email; hệ thống không gửi SMS.</p>
                             </div>
 
                             {/* Name */}
@@ -250,23 +252,24 @@ export default function RegisterPage() {
                             </div>
                         </form>
                     ) : (
-                        <form onSubmit={handleVerifyOtp} className="space-y-6 flex flex-col items-center pt-4">
-                            <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
-                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                        <form onSubmit={handleVerifyOtp} className="space-y-5 flex flex-col items-center pt-2">
+                            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-50 text-emerald-700 ring-1 ring-emerald-100">
+                                <MailCheck className="h-8 w-8" strokeWidth={1.8} />
                             </div>
                             
-                            <h2 className="text-xl font-bold text-gray-800">Nhập mã xác nhận</h2>
-                            <p className="text-center text-gray-500 text-sm px-4">
-                                Chúng tôi vừa gửi một mã gồm 6 chữ số đến email <br/>
-                                <span className="font-bold text-gray-700">{email}</span>
+                            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900">Xác nhận email</h2>
+                            <p className="text-center text-slate-500 text-sm leading-6 px-2">
+                                Nhập mã gồm 6 chữ số đã gửi đến
+                                <span className="mt-1 block font-semibold text-slate-800 break-all">{email}</span>
                             </p>
 
-                            <div className="relative flex gap-2 justify-center py-4 w-[340px] mx-auto">
+                            <div className="relative flex gap-1.5 sm:gap-2 justify-center py-3 w-full max-w-[340px] mx-auto">
                                 <input
                                     type="text"
                                     inputMode="numeric"
                                     maxLength={6}
                                     autoComplete="one-time-code"
+                                    aria-label="Mã xác nhận gồm 6 chữ số"
                                     value={otp.join('')}
                                     onChange={(e) => {
                                         const val = e.target.value.replace(/\D/g, '').slice(0, 6);
@@ -283,7 +286,7 @@ export default function RegisterPage() {
                                     return (
                                         <div
                                             key={index}
-                                            className={`w-12 h-14 border-2 rounded-xl flex items-center justify-center text-2xl font-bold transition-all bg-white ${isActive ? 'border-green-500 ring-1 ring-green-500' : 'border-gray-300'} text-gray-800`}
+                                            className={`w-10 h-14 sm:w-12 border-2 rounded-xl flex items-center justify-center text-2xl font-bold transition-all bg-white ${isActive ? 'border-emerald-500 ring-4 ring-emerald-500/10' : 'border-slate-200'} text-slate-800`}
                                         >
                                             {digit}
                                         </div>
@@ -294,7 +297,7 @@ export default function RegisterPage() {
                             <button 
                                 type="submit"
                                 disabled={isLoading || otp.join('').length < 6}
-                                className="w-full flex items-center justify-center bg-[#116a32] hover:bg-[#0e5c2b] text-white font-bold py-3.5 rounded-lg transition-colors shadow-md disabled:opacity-70 disabled:cursor-not-allowed"
+                                className="w-full flex items-center justify-center bg-emerald-700 hover:bg-emerald-800 text-white font-bold py-3.5 rounded-xl transition-colors shadow-lg shadow-emerald-900/10 disabled:opacity-70 disabled:cursor-not-allowed"
                             >
                                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin mr-2" /> : null}
                                 XÁC NHẬN ĐĂNG KÝ
@@ -303,10 +306,10 @@ export default function RegisterPage() {
                             <button 
                                 type="button" 
                                 onClick={handleRequestOtp} 
-                                disabled={isLoading}
-                                className="text-sm font-semibold text-green-700 hover:text-green-800"
+                                disabled={isLoading || !canResend}
+                                className="text-sm font-semibold text-emerald-700 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
                             >
-                                Gửi lại mã OTP
+                                {canResend ? 'Gửi lại mã OTP' : `Gửi lại mã sau ${countdown}s`}
                             </button>
                         </form>
                     )}

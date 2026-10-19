@@ -18,6 +18,7 @@ const pricingRuleSchema = z.object({
 });
 
 const updatePricingRuleSchema = z.object({
+    venueId: z.string().min(1, 'Vui lòng chọn cơ sở').optional(),
     name: z.string().min(1, 'Vui lòng nhập tên khung giá').optional(),
     description: z.string().optional().nullable(),
     dayOfWeek: z.string().optional().nullable(),

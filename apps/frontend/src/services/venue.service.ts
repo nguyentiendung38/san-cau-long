@@ -152,6 +152,13 @@ export const courtApi = {
     async delete(id: string): Promise<void> {
         await api.delete(`/courts/${id}`);
     },
+    async createMaintenanceClosure(input: { courtId: string; startAt: string; endAt: string; reason?: string }) {
+        const response = await api.post<ApiResponse<any>>('/courts/maintenance-closures', input);
+        return response.data.data!;
+    },
+    async deleteMaintenanceClosure(id: string): Promise<void> {
+        await api.delete(`/courts/maintenance-closures/${id}`);
+    },
 };
 
 export default { venueApi, courtApi };

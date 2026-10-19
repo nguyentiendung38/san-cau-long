@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
     Search, MapPin, Map as MapIcon, CalendarCheck, Heart, User, Home, Flame, Compass,
     Settings2, Calendar, ChevronRight, Info, ShieldCheck, Sparkles, Globe, X, ChevronLeft,
-    Star, Navigation, Clock, CalendarDays, Bell, BookOpen, Gift, LogOut, Phone
+    Star, Navigation, Clock, CalendarDays, Bell, BookOpen, Gift, LogOut, Phone,
+    ArrowUpRight, CalendarRange, RefreshCw
 } from 'lucide-react';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget';
@@ -12,6 +13,8 @@ import { bookingRequestApi, getBookingRequestTotal } from '@/services/booking.se
 import { useToast } from '@/hooks/use-toast';
 import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABELS, TYPE_ICONS } from '@/services/explore-content.service';
 import { venueReviewApi } from '@/services/venue-review.service';
+import { portalAuthApi } from '@/services/portal-auth.service';
+import BookingCheckInQr from '@/components/booking/BookingCheckInQr';
 
 const TIME_SLOTS: string[] = [];
 for (let h = 6; h <= 23; h++) {
@@ -24,6 +27,41 @@ for (let h = 6; h <= 23; h++) {
 
 const formatVnd = (amount: number) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+
+const exploreTypeBackgrounds: Record<ExploreContentType, string> = {
+    EVENT: 'from-violet-900 via-purple-800 to-fuchsia-600',
+    COURSE: 'from-blue-950 via-blue-800 to-cyan-600',
+    NEWS: 'from-slate-900 via-slate-700 to-slate-500',
+    DEAL: 'from-emerald-950 via-emerald-800 to-teal-500',
+    PASS: 'from-amber-950 via-orange-800 to-amber-500',
+};
+
+function getExploreAction(item: ExploreContent) {
+    if (!item.metadata) return null;
+    try {
+        const metadata: unknown = JSON.parse(item.metadata);
+        if (!metadata || typeof metadata !== 'object' || !('actionUrl' in metadata)) return null;
+        const actionUrl = metadata.actionUrl;
+        if (typeof actionUrl !== 'string' || !actionUrl.trim()) return null;
+        const url = new URL(actionUrl, window.location.origin);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+        return {
+            href: url.href,
+            external: url.origin !== window.location.origin,
+            text: 'actionText' in metadata && typeof metadata.actionText === 'string' && metadata.actionText.trim()
+                ? metadata.actionText
+                : 'Tìm hiểu thêm',
+        };
+    } catch {
+        return null;
+    }
+}
+
+function formatExploreDate(value?: string) {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('vi-VN').format(date);
+}
 
 const readReviewImage = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -51,35 +89,91 @@ const readReviewImage = (file: File): Promise<string> => new Promise((resolve, r
 });
 
 
-const getOperatingStatus = (venue: any) => {
-    if (!venue.operatingHours || venue.operatingHours.length === 0) {
-        return { text: "Chưa cập nhật giờ", isOpen: false };
-    }
-    let minH = 24, minM = 59;
-    let maxH = 0, maxM = 0;
+const getOperatingStatus = (venue: any, targetDate = new Date()) => {
+    const dayOfWeek = targetDate.getDay(); // 0 = Chủ nhật, 1-6 = Thứ 2 - Thứ 7
+    const dayNames = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+    const dayName = dayNames[dayOfWeek];
+
+    const parseDays = (d: any): number[] => {
+        if (!d) return [];
+        if (Array.isArray(d)) return d;
+        try { return JSON.parse(d); } catch { return []; }
+    };
+
+    const allHours = venue.operatingHours || [];
     
-    venue.operatingHours.forEach((oh: any) => {
+    // Booking validation requires configured operating-hour rules, so don't imply availability.
+    if (allHours.length === 0) {
+        return {
+            isOpen: false,
+            text: 'Chưa cập nhật giờ hoạt động',
+            statusLabel: 'Chưa cập nhật giờ',
+            dayName,
+        };
+    }
+
+    // Filter operating hours for the specific day of week
+    const todayHours = allHours
+        .filter((oh: any) => {
+            if (oh.isActive === false) return false;
+            const days = parseDays(oh.daysOfWeek);
+            return days.includes(dayOfWeek);
+        })
+        .sort((a: any, b: any) => a.startTime.localeCompare(b.startTime));
+
+    // If venue has rules configured, but none for today -> Closed today
+    if (todayHours.length === 0) {
+        return {
+            isOpen: false,
+            text: 'Nghỉ hôm nay',
+            statusLabel: 'Đóng cửa hôm nay',
+            dayName
+        };
+    }
+
+    // Current time in minutes
+    const currMins = targetDate.getHours() * 60 + targetDate.getMinutes();
+
+    let isOpen = false;
+    let nextOpenTime = '';
+    let isDuringBreak = false;
+
+    for (let i = 0; i < todayHours.length; i++) {
+        const oh = todayHours[i];
         const [sH, sM] = oh.startTime.split(':').map(Number);
         const [eH, eM] = oh.endTime.split(':').map(Number);
-        
-        if (sH < minH || (sH === minH && sM < minM)) { minH = sH; minM = sM; }
-        if (eH > maxH || (eH === maxH && eM > maxM)) { maxH = eH; maxM = eM; }
-    });
-    
-    const now = new Date();
-    const currH = now.getHours();
-    const currM = now.getMinutes();
-    
-    const startMins = minH * 60 + minM;
-    const endMins = maxH * 60 + maxM;
-    const currMins = currH * 60 + currM;
-    
-    const isOpen = currMins >= startMins && currMins <= endMins;
-    
-    const pad = (n: number) => n.toString().padStart(2, '0');
+        const startM = sH * 60 + sM;
+        const endM = eH * 60 + eM;
+
+        if (currMins >= startM && currMins < endM) {
+            isOpen = true;
+            break;
+        }
+
+        if (currMins < startM && !nextOpenTime) {
+            nextOpenTime = oh.startTime;
+            if (i > 0) {
+                isDuringBreak = true;
+            }
+        }
+    }
+
+    const hoursText = todayHours.map((oh: any) => `${oh.startTime} - ${oh.endTime}`).join(', ');
+
+    let statusLabel = 'Đã đóng cửa';
+    if (isOpen) {
+        statusLabel = 'Đang mở cửa';
+    } else if (isDuringBreak && nextOpenTime) {
+        statusLabel = `Nghỉ trưa (mở lại ${nextOpenTime})`;
+    } else if (nextOpenTime) {
+        statusLabel = `Mở cửa lúc ${nextOpenTime}`;
+    }
+
     return {
-        text: `${pad(minH)}:${pad(minM)} - ${pad(maxH)}:${pad(maxM)}`,
-        isOpen
+        isOpen,
+        text: hoursText,
+        statusLabel,
+        dayName
     };
 };
 
@@ -91,7 +185,7 @@ export default function PortalPage() {
     const setActiveTab = (tab: string) => {
         navigate(`/trang-chu?tab=${tab}`);
     };
-    const [exploreFilter, setExploreFilter] = useState<string>('all');
+    const [exploreFilter, setExploreFilter] = useState<'all' | ExploreContentType>('all');
     
     const [venues, setVenues] = useState<Venue[]>([]);
     const [loading, setLoading] = useState(true);
@@ -103,19 +197,17 @@ export default function PortalPage() {
     const [selectedVenueDetail, setSelectedVenueDetail] = useState<Venue | null>(null);
     const [activeModalTab, setActiveModalTab] = useState<'info' | 'services' | 'images' | 'reviews' | 'terms'>('info');
     const [venueDetailLoading, setVenueDetailLoading] = useState(false);
-    const [reviewName, setReviewName] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('portalUser') || '{}').name || ''; } catch { return ''; }
-    });
-    const [reviewPhone, setReviewPhone] = useState(() => localStorage.getItem('portalUserPhone') || '');
     const [reviewRating, setReviewRating] = useState(5);
     const [reviewContent, setReviewContent] = useState('');
     const [reviewImages, setReviewImages] = useState<string[]>([]);
     const [reviewSubmitting, setReviewSubmitting] = useState(false);
+    const [reviewBookingId, setReviewBookingId] = useState('');
 
     
     const [favToast, setFavToast] = useState<{show: boolean, isAdd: boolean, id: number}>({ show: false, isAdd: true, id: 0 });
 
     const [favoriteVenueIds, setFavoriteVenueIds] = useState<string[]>(() => {
+        if (localStorage.getItem('portalUserToken')) return [];
         try { return JSON.parse(localStorage.getItem('portal_favorites') || '[]'); } catch { return []; }
     });
     const [bookedVenueIds, setBookedVenueIds] = useState<string[]>(() => {
@@ -124,15 +216,24 @@ export default function PortalPage() {
 
         const toggleFavorite = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        setFavoriteVenueIds(prev => {
-            const isRemoving = prev.includes(id);
-            const next = isRemoving ? prev.filter(v => v !== id) : [...prev, id];
-            localStorage.setItem('portal_favorites', JSON.stringify(next));
-            
-            setFavToast({ show: true, isAdd: !isRemoving, id: Date.now() });
-            
-            return next;
-        });
+            const isRemoving = favoriteVenueIds.includes(id);
+            if (portalToken) {
+                portalAuthApi.setFavoriteVenue(id, !isRemoving).then((favorites) => {
+                    setFavoriteVenueIds(favorites.venueIds);
+                    setFavToast({ show: true, isAdd: !isRemoving, id: Date.now() });
+                }).catch((error: any) => toast({
+                    title: 'Không thể cập nhật yêu thích',
+                    description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                    variant: 'error',
+                }));
+                return;
+            }
+            setFavoriteVenueIds(prev => {
+                const next = isRemoving ? prev.filter(v => v !== id) : [...prev, id];
+                localStorage.setItem('portal_favorites', JSON.stringify(next));
+                setFavToast({ show: true, isAdd: !isRemoving, id: Date.now() });
+                return next;
+            });
     };
 
     // Auto hide toast
@@ -145,19 +246,26 @@ export default function PortalPage() {
     
     
     const { toast } = useToast();
+    const handledPaymentStatus = useRef<string | null>(null);
     
     useEffect(() => {
         const paymentStatus = searchParams.get('payment');
+        if (paymentStatus !== 'success' && paymentStatus !== 'failed') {
+            handledPaymentStatus.current = null;
+            return;
+        }
+
+        if (handledPaymentStatus.current === paymentStatus) return;
+        handledPaymentStatus.current = paymentStatus;
+
         if (paymentStatus === 'success') {
-            setTimeout(() => toast({
+            toast({
                 title: 'Thanh toán VNPAY thành công!',
                 description: 'Cảm ơn bạn. Đơn đặt sân đã được xác nhận.',
                 variant: 'success',
-            }), 300);
+            });
         } else if (paymentStatus === 'failed') {
-            setTimeout(() => toast({ title: 'Thanh toán VNPay thất bại hoặc bị hủy.', variant: 'error' }), 300);
-        } else {
-            return;
+            toast({ title: 'Thanh toán VNPay thất bại hoặc bị hủy.', variant: 'error' });
         }
 
         const nextSearchParams = new URLSearchParams(searchParams);
@@ -167,19 +275,100 @@ export default function PortalPage() {
     
     const queryClient = useQueryClient();
 
-    const { data: exploreItems = [] } = useQuery<ExploreContent[]>({
-        queryKey: ['explore-contents-public', exploreFilter],
-        queryFn: () => exploreContentPublicApi.getAll(exploreFilter === 'all' ? undefined : exploreFilter.toUpperCase()),
+    const {
+        data: exploreItems = [],
+        isLoading: isLoadingExploreItems,
+        isError: isExploreItemsError,
+        refetch: refetchExploreItems,
+    } = useQuery<ExploreContent[]>({
+        queryKey: ['explore-contents-public'],
+        queryFn: () => exploreContentPublicApi.getAll(),
         enabled: activeTab === 'explore' || activeTab === 'home',
     });
-
+    const filteredExploreItems = exploreFilter === 'all'
+        ? exploreItems
+        : exploreItems.filter((item) => item.type === exploreFilter);
     const [userPhone, setUserPhone] = useState(localStorage.getItem('portalUserPhone') || '');
-    const [tempPhone, setTempPhone] = useState('');
+    const [portalToken, setPortalToken] = useState(localStorage.getItem('portalUserToken') || '');
+    const [portalCustomerId] = useState(localStorage.getItem('portalUserId') || '');
+    const {
+        data: loyaltyAccount,
+        isLoading: isLoadingLoyalty,
+        isError: isLoyaltyError,
+        refetch: refetchLoyalty,
+    } = useQuery<{
+        points: number;
+        reservedPoints: number;
+        pointsTransactions: Array<{ id: string; type: string; points: number; reason: string; createdAt: string }>;
+    }>({
+        queryKey: ['portal-loyalty', portalCustomerId],
+        queryFn: portalAuthApi.getMe,
+        enabled: activeTab === 'account' && !!portalToken,
+    });
     const [historyFilter, setHistoryFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+
+    const { data: accountFavorites } = useQuery({
+        queryKey: ['portal-favorites', portalCustomerId],
+        queryFn: portalAuthApi.getFavorites,
+        enabled: !!portalToken && !!portalCustomerId,
+    });
+    useEffect(() => {
+        if (!accountFavorites) return;
+        setFavoriteVenueIds(accountFavorites.venueIds);
+        localStorage.removeItem('portal_favorites');
+    }, [accountFavorites]);
+
+    // Customer cancellation / rescheduling state
+    const [customerCancelModal, setCustomerCancelModal] = useState<{ isOpen: boolean; request: any | null }>({
+        isOpen: false,
+        request: null,
+    });
+    const [customerCancelReason, setCustomerCancelReason] = useState('');
+    const [customerChangeType, setCustomerChangeType] = useState<'CANCELLATION' | 'RESCHEDULE'>('CANCELLATION');
+    const [customerRequestedDate, setCustomerRequestedDate] = useState('');
+    const [customerRequestedStart, setCustomerRequestedStart] = useState('');
+    const [customerRequestedEnd, setCustomerRequestedEnd] = useState('');
+
+    const cancelMutation = useMutation({
+        mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+            bookingRequestApi.requestCancellation(id, reason),
+        onSuccess: () => {
+            toast({ title: 'Đã gửi yêu cầu hủy', description: 'Cơ sở sẽ xác nhận trước khi lịch được hủy.', variant: 'success' });
+            refetchRequests();
+            setCustomerCancelModal({ isOpen: false, request: null });
+        },
+        onError: (err: any) => {
+            toast({
+                title: 'Không thể hủy',
+                description: err?.response?.data?.message || 'Có lỗi xảy ra khi hủy yêu cầu',
+                variant: 'error'
+            });
+        }
+    });
+    const rescheduleMutation = useMutation({
+        mutationFn: ({ id, reason, date, startTime, endTime }: { id: string; reason: string; date: string; startTime: string; endTime: string }) =>
+            bookingRequestApi.requestReschedule(id, { reason, date, startTime, endTime }),
+        onSuccess: () => {
+            toast({ title: 'Đã gửi yêu cầu đổi lịch', description: 'Lịch cũ vẫn giữ nguyên đến khi cơ sở duyệt.', variant: 'success' });
+            refetchRequests();
+            setCustomerCancelModal({ isOpen: false, request: null });
+        },
+        onError: (err: any) => toast({
+            title: 'Không thể đổi lịch',
+            description: err?.response?.data?.message || 'Có lỗi xảy ra khi gửi yêu cầu',
+            variant: 'error',
+        }),
+    });
+
+    // Map selection and advanced search filters
+    const [selectedMapVenueId, setSelectedMapVenueId] = useState<string>('');
+    const [areaFilter, setAreaFilter] = useState<string>('all');
+    const [minCourtsFilter, setMinCourtsFilter] = useState<number>(0);
+
     const { data: myRequests = [], isLoading: isLoadingRequests, isError: requestsError, refetch: refetchRequests } = useQuery<any[]>({
-        queryKey: ['my-requests', userPhone],
-        queryFn: () => bookingRequestApi.getMyRequests(userPhone).then(data => data.filter((b: any) => !b.notes?.includes("Zalo"))),
-        enabled: activeTab === 'history' && !!userPhone,
+        queryKey: ['my-requests', portalCustomerId],
+        queryFn: () => bookingRequestApi.getMyRequests().then(data => data.filter((b: any) => !b.notes?.includes('Zalo'))),
+        enabled: activeTab === 'history' && !!portalToken,
     });
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -193,6 +382,11 @@ export default function PortalPage() {
         queryKey: ['venue-reviews-public', selectedVenueDetail?.id],
         queryFn: () => venueReviewApi.getPublic(selectedVenueDetail!.id),
         enabled: !!selectedVenueDetail && activeModalTab === 'reviews',
+    });
+    const { data: eligibleReviewBookings = [] } = useQuery({
+        queryKey: ['eligible-review-bookings', portalCustomerId],
+        queryFn: () => venueReviewApi.getEligibleBookings(),
+        enabled: !!portalToken && !!selectedVenueDetail && activeModalTab === 'reviews',
     });
 
     const getByType = (type: ExploreContentType) => exploreItems.filter(item => item.type === type);
@@ -249,16 +443,17 @@ export default function PortalPage() {
     const submitVenueReview = async (event: React.FormEvent) => {
         event.preventDefault();
         if (!selectedVenueDetail) return;
-        if (!reviewName.trim() || !reviewPhone.trim() || !reviewContent.trim()) {
-            toast({ title: 'Vui lòng nhập tên, số điện thoại và nội dung đánh giá', variant: 'error' });
+        const eligibleBooking = eligibleReviewBookings.find((booking) =>
+            booking.id === reviewBookingId && booking.court.venue.id === selectedVenueDetail.id,
+        );
+        if (!eligibleBooking || !reviewContent.trim()) {
+            toast({ title: 'Chỉ có thể đánh giá sau khi chọn một lịch đã hoàn thành', variant: 'error' });
             return;
         }
         setReviewSubmitting(true);
         try {
             await venueReviewApi.createPublic({
-                venueId: selectedVenueDetail.id,
-                customerName: reviewName.trim(),
-                customerPhone: reviewPhone.trim(),
+                bookingId: reviewBookingId,
                 rating: reviewRating,
                 content: reviewContent.trim(),
                 images: reviewImages,
@@ -269,7 +464,9 @@ export default function PortalPage() {
             });
             setReviewContent('');
             setReviewImages([]);
+            setReviewBookingId('');
             queryClient.invalidateQueries({ queryKey: ['venue-reviews-public', selectedVenueDetail.id] });
+            queryClient.invalidateQueries({ queryKey: ['eligible-review-bookings', portalCustomerId] });
             setActiveModalTab('info');
             setSelectedVenueDetail(null);
         } catch (error: any) {
@@ -331,6 +528,9 @@ export default function PortalPage() {
                             reviewCount: summary?.reviewCount ?? 0,
                         };
                     }));
+                    if (venueList.length > 0) {
+                        setSelectedMapVenueId(prev => prev || venueList[0].id);
+                    }
                 } catch (summaryError) {
                     console.warn('Unable to update venue ratings; keeping the venue list visible', summaryError);
                 }
@@ -351,6 +551,20 @@ export default function PortalPage() {
         if (filterMode === 'favorite') return favoriteVenueIds.includes(venue.id);
         if (filterMode === 'open') return getOperatingStatus(venue).isOpen;
         if (filterMode === 'rated') return (venue.reviewCount || 0) > 0;
+
+        // Area filter
+        if (areaFilter !== 'all') {
+            if (!venue.address || !venue.address.toLowerCase().includes(areaFilter.toLowerCase())) {
+                return false;
+            }
+        }
+
+        // Min courts filter
+        const courtCount = venue.courts?.length || venue._count?.courts || 0;
+        if (minCourtsFilter > 0 && courtCount < minCourtsFilter) {
+            return false;
+        }
+
         return true;
     }).sort((first, second) => {
         if (venueSort === 'rating') return (second.ratingAverage || 0) - (first.ratingAverage || 0);
@@ -403,7 +617,11 @@ export default function PortalPage() {
 
     const handleLogout = () => {
         localStorage.removeItem('portalUserToken');
+        localStorage.removeItem('portalUserPhone');
+        localStorage.removeItem('portalUserId');
         localStorage.removeItem('portalUser');
+        setPortalToken('');
+        setUserPhone('');
         window.location.reload();
     };
 
@@ -477,7 +695,7 @@ export default function PortalPage() {
                                     key={item.id}
                                     type="button"
                                     onClick={() => {
-                                        setExploreFilter(item.type.toLowerCase());
+                                        setExploreFilter(item.type);
                                         setActiveTab('explore');
                                     }}
                                     className="group relative flex min-h-28 items-end overflow-hidden rounded-2xl border border-gray-100 bg-gray-900 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
@@ -563,6 +781,46 @@ export default function PortalPage() {
                                 </button>
                             ))}
                         </div>
+
+                        {/* Bộ lọc mở rộng: Khu vực & Số sân */}
+                        <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2.5 text-xs text-gray-600">
+                            <span className="font-medium text-gray-500">Khu vực:</span>
+                            <select
+                                value={areaFilter}
+                                onChange={(e) => setAreaFilter(e.target.value)}
+                                className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700 outline-none focus:border-emerald-500"
+                            >
+                                <option value="all">Tất cả khu vực</option>
+                                {Array.from(new Set(venues.map(v => {
+                                    if (!v.address) return '';
+                                    const parts = v.address.split(',').map(s => s.trim());
+                                    return parts.length >= 2 ? parts[parts.length - 2] : '';
+                                }).filter(Boolean))).map((area) => (
+                                    <option key={area} value={area}>{area}</option>
+                                ))}
+                            </select>
+
+                            <span className="font-medium text-gray-500 ml-2">Số lượng sân:</span>
+                            <select
+                                value={minCourtsFilter}
+                                onChange={(e) => setMinCourtsFilter(Number(e.target.value))}
+                                className="rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs text-gray-700 outline-none focus:border-emerald-500"
+                            >
+                                <option value={0}>Tất cả quy mô</option>
+                                <option value={2}>Từ 2 sân trở lên</option>
+                                <option value={4}>Từ 4 sân trở lên</option>
+                            </select>
+
+                            {(areaFilter !== 'all' || minCourtsFilter > 0) && (
+                                <button
+                                    type="button"
+                                    onClick={() => { setAreaFilter('all'); setMinCourtsFilter(0); }}
+                                    className="ml-auto text-xs font-semibold text-rose-600 hover:underline"
+                                >
+                                    Xóa lọc nâng cao
+                                </button>
+                            )}
+                        </div>
                     </section>
 
                     <section id="venue-list" className="scroll-mt-6">
@@ -627,7 +885,9 @@ export default function PortalPage() {
                                 </p>
                                 <p className="mt-1 text-sm text-gray-500">
                                     {filterMode === 'favorite' && !searchQuery
-                                        ? 'Chạm vào biểu tượng trái tim trên sân để lưu lại nhé.'
+                                        ? portalToken
+                                            ? 'Chạm vào biểu tượng trái tim để lưu sân vào tài khoản của bạn.'
+                                            : 'Khách vãng lai lưu yêu thích trên thiết bị hiện tại; đăng nhập để đồng bộ với tài khoản.'
                                         : 'Thử đổi từ khóa tìm kiếm hoặc chọn bộ lọc khác.'}
                                 </p>
                                 {filterMode !== 'all' && (
@@ -655,10 +915,10 @@ export default function PortalPage() {
                                                 />
                                                 <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
                                                 <span className={`absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold shadow-sm backdrop-blur-md ${
-                                                    status.isOpen ? 'bg-white/95 text-emerald-800' : 'bg-white/90 text-gray-600'
+                                                    status.isOpen ? 'bg-white/95 text-emerald-800' : 'bg-white/95 text-gray-700'
                                                 }`}>
-                                                    <span className={`h-1.5 w-1.5 rounded-full ${status.isOpen ? 'bg-emerald-500' : 'bg-gray-400'}`} />
-                                                    {status.isOpen ? 'Đang mở cửa' : status.text === 'Chưa cập nhật giờ' ? 'Chưa cập nhật giờ' : 'Đang đóng cửa'}
+                                                    <span className={`h-1.5 w-1.5 rounded-full ${status.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                                                    {status.statusLabel}
                                                 </span>
                                                 <button
                                                     type="button"
@@ -753,62 +1013,143 @@ export default function PortalPage() {
                 </div>
             )}
 
-            {/* Map View */}
-            {activeTab === 'map' && (
-                <div className="hidden">
-                    <div className="flex-1 relative">
-                        <iframe src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3826.6404207967107!2d107.60194437592682!3d16.443078629319736!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3141a165ca6ab627%3A0xf296b18480a09d08!2zVHLGsOG7nW5nIMSQ4bqhaSBo4buNYyBLaW5oIHThur8sIMSQ4bqhaSBo4buNYyBIdeG6vw!5e0!3m2!1svi!2s!4v1790410473151!5m2!1svi!2s" width="100%" height="100%" style={{ border: 0, minHeight: '80vh' }} allowFullScreen={true} loading="lazy"></iframe>
-                    </div>
-                </div>
-            )}
+            {/* Map View - Interactive Map & Venue Explorer */}
+            {activeTab === 'map' && (() => {
+                const currentMapVenue = venues.find(v => v.id === selectedMapVenueId) || venues[0] || null;
+                return (
+                    <div className="flex flex-col min-h-[calc(100vh-80px)] bg-gray-50 pb-28">
+                        <div className="bg-white border-b border-gray-200 px-4 py-4">
+                            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <h1 className="text-xl sm:text-2xl font-black text-gray-900 flex items-center gap-2">
+                                        <MapIcon className="w-6 h-6 text-emerald-600" />
+                                        Bản đồ cơ sở & chỉ đường
+                                    </h1>
+                                    <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                                        Chọn cơ sở bên dưới để xem vị trí trực tiếp trên bản đồ và nhận lộ trình di chuyển
+                                    </p>
+                                </div>
+                                {currentMapVenue && (
+                                    <button
+                                        type="button"
+                                        onClick={() => openVenueDirections(currentMapVenue)}
+                                        className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl transition shadow-sm self-start sm:self-auto"
+                                    >
+                                        <Navigation className="w-3.5 h-3.5" />
+                                        Chỉ đường đến {currentMapVenue.name}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
 
-            {activeTab === 'map' && (
-                <div className="min-h-[calc(100vh-80px)] bg-gray-50 px-4 pb-28 pt-6">
-                    <div className="mx-auto max-w-5xl">
-                        <h1 className="text-2xl font-black text-gray-900">Cơ sở & chỉ đường</h1>
-                        <p className="mt-1 text-sm text-gray-600">Mở chỉ đường đến địa chỉ cơ sở do quản trị viên cập nhật.</p>
-                        {loading ? (
-                            <div className="mt-6 rounded-2xl bg-white p-8 text-center text-gray-500">Đang tải danh sách cơ sở...</div>
-                        ) : venuesError ? (
-                            <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
-                                <p className="font-semibold text-amber-900">Không thể tải danh sách cơ sở.</p>
-                                <button onClick={() => setVenueReloadKey(key => key + 1)} className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-bold text-white">Thử lại</button>
+                        <div className="max-w-7xl mx-auto w-full px-4 pt-4 flex-1 flex flex-col lg:flex-row gap-6">
+                            {/* Map iframe column */}
+                            <div className="lg:w-3/5 rounded-2xl overflow-hidden border border-gray-200 bg-white shadow-sm flex flex-col min-h-[380px] lg:min-h-[560px]">
+                                <div className="p-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between text-xs text-gray-600">
+                                    <span className="font-semibold text-gray-800 flex items-center gap-1.5 truncate">
+                                        <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                                        {currentMapVenue ? `${currentMapVenue.name} - ${currentMapVenue.address}` : 'Thành phố Huế'}
+                                    </span>
+                                    <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full shrink-0">
+                                        Trực tuyến
+                                    </span>
+                                </div>
+                                <div className="flex-1 w-full h-full min-h-[340px] relative">
+                                    <iframe
+                                        title="Bản đồ cơ sở sân cầu lông"
+                                        src={`https://maps.google.com/maps?q=${encodeURIComponent(currentMapVenue ? `${currentMapVenue.name}, ${currentMapVenue.address}` : 'Sân cầu lông Huế, Thừa Thiên Huế')}&t=&z=16&ie=UTF8&iwloc=&output=embed`}
+                                        width="100%"
+                                        height="100%"
+                                        style={{ border: 0, minHeight: '340px', width: '100%', height: '100%' }}
+                                        allowFullScreen={true}
+                                        loading="lazy"
+                                    />
+                                </div>
                             </div>
-                        ) : venues.length === 0 ? (
-                            <div className="mt-6 rounded-2xl bg-white p-8 text-center text-gray-500">Chưa có cơ sở nào để hiển thị.</div>
-                        ) : (
-                            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                                {venues.map(venue => (
-                                    <article key={venue.id} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                                        <h2 className="font-bold text-gray-900">{venue.name}</h2>
-                                        <p className="mt-2 flex items-start gap-2 text-sm text-gray-600">
-                                            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
-                                            <span>{venue.address || 'Chưa cập nhật địa chỉ'}</span>
-                                        </p>
-                                        {venue.phone && <p className="mt-2 text-sm text-gray-600">Điện thoại: {venue.phone}</p>}
-                                        <div className="mt-4 flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={() => openVenueDirections(venue)}
-                                                className="flex-1 rounded-xl border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-50"
+
+                            {/* Venue list column */}
+                            <div className="lg:w-2/5 flex flex-col gap-3 overflow-y-auto max-h-[620px] pr-1">
+                                <div className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                                    Danh sách {venues.length} cơ sở
+                                </div>
+                                {loading ? (
+                                    <div className="rounded-2xl bg-white p-8 text-center text-gray-500">Đang tải danh sách cơ sở...</div>
+                                ) : venues.length === 0 ? (
+                                    <div className="rounded-2xl bg-white p-8 text-center text-gray-500">Chưa có cơ sở nào.</div>
+                                ) : (
+                                    venues.map(venue => {
+                                        const status = getOperatingStatus(venue);
+                                        const isSelected = (currentMapVenue?.id === venue.id);
+                                        const courtCount = venue.courts?.length || venue._count?.courts || 0;
+
+                                        return (
+                                            <article
+                                                key={venue.id}
+                                                onClick={() => setSelectedMapVenueId(venue.id)}
+                                                className={`rounded-2xl border p-4 bg-white transition-all cursor-pointer ${
+                                                    isSelected 
+                                                        ? 'border-emerald-600 ring-2 ring-emerald-500/20 shadow-md bg-emerald-50/20' 
+                                                        : 'border-gray-200 hover:border-emerald-300 hover:shadow-sm'
+                                                }`}
                                             >
-                                                Chỉ đường
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSelectVenue(venue)}
-                                                className="flex-1 rounded-xl bg-emerald-700 px-3 py-2 text-sm font-bold text-white hover:bg-emerald-800"
-                                            >
-                                                Đặt sân
-                                            </button>
-                                        </div>
-                                    </article>
-                                ))}
+                                                <div className="flex items-start justify-between gap-2">
+                                                    <div>
+                                                        <h3 className="font-bold text-gray-900 text-base flex items-center gap-1.5">
+                                                            {venue.name}
+                                                            {isSelected && (
+                                                                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                                                                    Đang ghim
+                                                                </span>
+                                                            )}
+                                                        </h3>
+                                                        <p className="mt-1 flex items-start gap-1.5 text-xs text-gray-600 leading-relaxed">
+                                                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                                                            <span>{venue.address || 'Chưa cập nhật địa chỉ'}</span>
+                                                        </p>
+                                                    </div>
+                                                    <span className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                                                        status.isOpen ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                                                    }`}>
+                                                        <span className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                                                        {status.statusLabel}
+                                                    </span>
+                                                </div>
+
+                                                <div className="mt-2.5 flex items-center gap-3 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                                                    <span className="flex items-center gap-1">
+                                                        <Clock className="w-3.5 h-3.5 text-gray-400" />
+                                                        {status.dayName}: <strong className="text-gray-700">{status.text}</strong>
+                                                    </span>
+                                                    {courtCount > 0 && (
+                                                        <span>• Quy mô: <strong className="text-gray-700">{courtCount} sân</strong></span>
+                                                    )}
+                                                </div>
+
+                                                <div className="mt-3 flex gap-2" onClick={e => e.stopPropagation()}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => openVenueDirections(venue)}
+                                                        className="flex-1 rounded-xl border border-emerald-700 px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 transition"
+                                                    >
+                                                        Chỉ đường
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleSelectVenue(venue)}
+                                                        className="flex-1 rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-800 transition"
+                                                    >
+                                                        Đặt sân
+                                                    </button>
+                                                </div>
+                                            </article>
+                                        );
+                                    })
+                                )}
                             </div>
-                        )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* Account View */}
             {activeTab === 'account' && (
@@ -825,6 +1166,62 @@ export default function PortalPage() {
                             <p className="text-sm text-gray-500">{portalCustomerName !== 'Khách' ? 'Khách hàng thành viên' : 'Khách vãng lai'}</p>
                         </div>
                     </div>
+
+                    {portalToken ? (
+                        <section className="mb-6 overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 shadow-sm">
+                            <div className="flex items-start justify-between gap-4 p-5 sm:p-6">
+                                <div>
+                                    <p className="text-xs font-bold uppercase tracking-[0.15em] text-amber-800">Quà tặng thành viên</p>
+                                    <h3 className="mt-2 text-2xl font-black text-slate-900">
+                                        {isLoadingLoyalty ? '...' : (loyaltyAccount?.points ?? 0).toLocaleString('vi-VN')}
+                                        <span className="ml-2 text-base font-bold text-amber-700">điểm</span>
+                                    </h3>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                        Khả dụng: {Math.max(0, (loyaltyAccount?.points ?? 0) - (loyaltyAccount?.reservedPoints ?? 0)).toLocaleString('vi-VN')} điểm
+                                    </p>
+                                </div>
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
+                                    <Gift className="h-6 w-6" />
+                                </div>
+                            </div>
+                            <div className="border-t border-amber-100 bg-white/70 px-5 py-3 text-xs leading-5 text-slate-600 sm:px-6">
+                                Mỗi hóa đơn thanh toán đủ từ 100.000đ nhận 1 điểm (làm tròn xuống theo hóa đơn). 100 điểm đổi 10.000đ, dùng điểm giảm tối đa 20% tiền sân khi đặt trực tuyến.
+                            </div>
+                            <div className="px-5 py-4 sm:px-6">
+                                <h4 className="mb-3 text-sm font-bold text-slate-800">Lịch sử điểm gần đây</h4>
+                                {isLoyaltyError ? (
+                                    <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
+                                        Không tải được lịch sử điểm.
+                                        <button onClick={() => void refetchLoyalty()} className="ml-2 font-bold underline">Thử lại</button>
+                                    </div>
+                                ) : !loyaltyAccount?.pointsTransactions.length ? (
+                                    <p className="text-sm text-slate-500">Chưa có giao dịch điểm. Điểm được cộng sau khi hóa đơn thanh toán đủ.</p>
+                                ) : (
+                                    <ul className="divide-y divide-amber-100">
+                                        {loyaltyAccount.pointsTransactions.slice(0, 8).map((entry) => (
+                                            <li key={entry.id} className="flex items-center justify-between gap-4 py-2.5">
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-sm font-medium text-slate-700">{entry.reason}</p>
+                                                    <p className="mt-0.5 text-xs text-slate-400">{new Date(entry.createdAt).toLocaleDateString('vi-VN')}</p>
+                                                </div>
+                                                <span className={`shrink-0 text-sm font-bold ${entry.points > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                                                    {entry.points > 0 ? '+' : ''}{entry.points.toLocaleString('vi-VN')} điểm
+                                                </span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </section>
+                    ) : (
+                        <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <h3 className="font-bold text-amber-950">Tích điểm cho mỗi lần chơi</h3>
+                                <p className="mt-1 text-sm text-amber-800">Đăng nhập để theo dõi điểm và đổi ưu đãi đặt sân.</p>
+                            </div>
+                            <button onClick={() => navigate('/dang-nhap')} className="shrink-0 rounded-xl bg-emerald-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-emerald-800">Đăng nhập</button>
+                        </div>
+                    )}
 
                     {/* Menu Items */}
                     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
@@ -853,86 +1250,207 @@ export default function PortalPage() {
 
             {/* Explore View */}
             {activeTab === 'explore' && (
-                <div className="flex flex-col min-h-[calc(100vh-80px)] pb-24 bg-gray-50 px-4 pt-6 max-w-[1400px] mx-auto w-full">
-                    <div className="flex items-center gap-3 mb-4">
-                        <button onClick={() => setActiveTab('account')} className="p-2 bg-white rounded-full shadow-sm shrink-0">
-                            <ChevronLeft className="w-5 h-5 text-gray-800" />
-                        </button>
-                        <h1 className="font-black text-2xl italic tracking-widest uppercase text-gray-800">Khám phá nội dung</h1>
-                    </div>
-                    
-                    {/* Filter chips */}
-                    <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-hide -mx-4 px-4 mb-2">
-                        <button
-                            onClick={() => setExploreFilter('all')}
-                            className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold border transition-all ${
-                                exploreFilter === 'all'
-                                    ? 'bg-[#19b251] text-white border-[#19b251] shadow-md'
-                                    : 'bg-white text-gray-600 border-gray-200 hover:border-[#19b251]'
-                            }`}
-                        >
-                            Tất cả
-                        </button>
-                        {(['EVENT', 'COURSE', 'NEWS', 'DEAL', 'PASS'] as ExploreContentType[]).map(type => (
-                            <button
-                                key={type}
-                                onClick={() => setExploreFilter(type.toLowerCase())}
-                                className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-bold border transition-all ${
-                                    exploreFilter === type.toLowerCase()
-                                        ? 'bg-[#19b251] text-white border-[#19b251] shadow-md'
-                                        : 'bg-white text-gray-600 border-gray-200 hover:border-[#19b251]'
-                                }`}
-                            >
-                                <span>{TYPE_ICONS[type]}</span>
-                                {TYPE_LABELS[type]}
-                            </button>
-                        ))}
-                    </div>
+                <div className="min-h-[calc(100vh-80px)] bg-[#f5f7f6] px-4 pb-28 pt-5 sm:px-6 sm:pt-8">
+                    <div className="mx-auto max-w-6xl">
+                        <section className="relative isolate overflow-hidden rounded-[28px] bg-gradient-to-br from-[#073c2b] via-[#08784b] to-[#16a36a] px-5 py-6 text-white shadow-[0_24px_60px_-32px_rgba(6,61,44,0.75)] sm:px-8 sm:py-9">
+                            <div className="absolute -right-12 -top-20 -z-10 h-64 w-64 rounded-full border-[32px] border-white/5" />
+                            <div className="absolute -bottom-28 right-32 -z-10 h-56 w-56 rounded-full bg-emerald-300/10 blur-2xl" />
+                            <div className="flex items-center justify-between gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('home')}
+                                    className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-2 text-xs font-semibold text-white/90 transition hover:bg-white/20"
+                                >
+                                    <ChevronLeft className="h-4 w-4" /> Trang chủ
+                                </button>
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-emerald-50">
+                                    <Sparkles className="h-3.5 w-3.5" /> Tin mới từ Courtify
+                                </span>
+                            </div>
+                            <div className="mt-7 max-w-2xl sm:mt-9">
+                                <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-200">Dành cho người yêu cầu lông</p>
+                                <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Khám phá điều mới mẻ</h1>
+                                <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50/85 sm:text-base">
+                                    Theo dõi sự kiện, khóa học, ưu đãi và những thông tin mới nhất từ các sân.
+                                </p>
+                            </div>
+                            <div className="mt-6 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-black/10 px-3 py-2 text-xs font-medium text-white/90">
+                                <Compass className="h-4 w-4" />
+                                {exploreItems.length} nội dung đang được hiển thị
+                            </div>
+                        </section>
 
-                    <div className="flex-1">
-                        {exploreItems.length === 0 ? (
-                            <div className="text-center py-20 bg-white rounded-2xl border border-gray-100">
-                                <p className="text-gray-500 font-medium">Chưa có nội dung cho chuyên mục này</p>
+                        <section className="mt-6">
+                            <div className="mb-3 flex items-end justify-between gap-3">
+                                <div>
+                                    <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">Chọn chủ đề</p>
+                                    <h2 className="mt-1 text-lg font-extrabold tracking-tight text-gray-900">Nội dung dành cho bạn</h2>
+                                </div>
+                                <span className="text-xs font-medium text-gray-500">{filteredExploreItems.length} kết quả</span>
                             </div>
-                        ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {exploreItems.map(item => (
-                                    <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col hover:shadow-md transition-shadow">
-                                        <div className="flex items-start justify-between mb-2">
-                                            <span className="flex items-center gap-1 text-xs font-bold bg-green-50 text-green-700 px-2.5 py-1 rounded-full">
-                                                {TYPE_ICONS[item.type as ExploreContentType]} {TYPE_LABELS[item.type as ExploreContentType]}
-                                            </span>
-                                            {item.badge && (
-                                                <span className="text-xs font-bold bg-[#19b251] text-white px-2 py-1 rounded-full">{item.badge}</span>
-                                            )}
+                            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-2 scrollbar-hide sm:mx-0 sm:flex-wrap sm:px-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setExploreFilter('all')}
+                                    className={`shrink-0 rounded-full border px-4 py-2 text-sm font-bold transition ${
+                                        exploreFilter === 'all'
+                                            ? 'border-emerald-800 bg-emerald-800 text-white shadow-sm'
+                                            : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-800'
+                                    }`}
+                                >
+                                    Tất cả <span className="ml-1 opacity-70">{exploreItems.length}</span>
+                                </button>
+                                {(['EVENT', 'COURSE', 'NEWS', 'DEAL', 'PASS'] as ExploreContentType[]).map((type) => {
+                                    const count = getByType(type).length;
+                                    return (
+                                        <button
+                                            key={type}
+                                            type="button"
+                                            onClick={() => setExploreFilter(type)}
+                                            className={`shrink-0 rounded-full border px-4 py-2 text-sm font-bold transition ${
+                                                exploreFilter === type
+                                                    ? 'border-emerald-800 bg-emerald-800 text-white shadow-sm'
+                                                    : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-300 hover:text-emerald-800'
+                                            }`}
+                                        >
+                                            <span className="mr-1.5">{TYPE_ICONS[type]}</span>{TYPE_LABELS[type]}
+                                            <span className="ml-1 opacity-70">{count}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </section>
+
+                        <section className="mt-5">
+                            {isLoadingExploreItems ? (
+                                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                    {[1, 2, 3].map((item) => (
+                                        <div key={item} className="overflow-hidden rounded-3xl border border-gray-100 bg-white">
+                                            <div className="h-48 animate-pulse bg-gray-200" />
+                                            <div className="space-y-3 p-5">
+                                                <div className="h-4 w-24 animate-pulse rounded-full bg-gray-200" />
+                                                <div className="h-6 w-4/5 animate-pulse rounded bg-gray-200" />
+                                                <div className="h-4 w-full animate-pulse rounded bg-gray-100" />
+                                                <div className="h-4 w-2/3 animate-pulse rounded bg-gray-100" />
+                                            </div>
                                         </div>
-                                        <h3 className="font-bold text-gray-800 text-lg leading-tight mb-2">{item.title}</h3>
-                                        {item.description && (
-                                            <p className="text-sm text-gray-500 mb-3 flex-1">{item.description}</p>
-                                        )}
-                                        <div className="mt-auto pt-3 flex items-center justify-between">
-                                            {item.price ? (
-                                                <p className="font-black text-[#19b251] text-lg">{item.price}</p>
-                                            ) : <div />}
-                                            {(() => {
-                                                if (!item.metadata) return null;
-                                                try {
-                                                    const meta = JSON.parse(item.metadata);
-                                                    if (meta.actionUrl) {
-                                                        return (
-                                                            <a href={meta.actionUrl} target="_blank" rel="noopener noreferrer" className="px-4 py-1.5 bg-[#19b251] text-white text-sm font-bold rounded-full hover:bg-[#159a45] transition-colors">
-                                                                {meta.actionText || 'Xem chi tiết'}
-                                                            </a>
-                                                        );
-                                                    }
-                                                } catch(e) {}
-                                                return null;
-                                            })()}
-                                        </div>
+                                    ))}
+                                </div>
+                            ) : isExploreItemsError ? (
+                                <div className="rounded-3xl border border-gray-200 bg-white px-5 py-14 text-center shadow-sm">
+                                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-100 text-gray-600">
+                                        <RefreshCw className="h-6 w-6" />
                                     </div>
-                                ))}
-                            </div>
-                        )}
+                                    <h3 className="mt-4 font-bold text-gray-900">Chưa tải được nội dung</h3>
+                                    <p className="mt-1 text-sm text-gray-500">Kiểm tra kết nối rồi thử tải lại.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => void refetchExploreItems()}
+                                        className="mt-5 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-900"
+                                    >
+                                        Thử tải lại
+                                    </button>
+                                </div>
+                            ) : filteredExploreItems.length === 0 ? (
+                                <div className="rounded-3xl border border-dashed border-gray-300 bg-white px-5 py-14 text-center">
+                                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-3xl">
+                                        {exploreFilter === 'all' ? '🏸' : TYPE_ICONS[exploreFilter]}
+                                    </div>
+                                    <h3 className="mt-4 font-bold text-gray-900">
+                                        {exploreFilter === 'all' ? 'Nội dung mới đang được chuẩn bị' : `Chưa có ${TYPE_LABELS[exploreFilter].toLowerCase()} nào`}
+                                    </h3>
+                                    <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-gray-500">
+                                        Các thông tin được cập nhật bởi đội ngũ sân sẽ xuất hiện tại đây. Trong lúc chờ, bạn có thể tìm và đặt sân phù hợp.
+                                    </p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setActiveTab('home')}
+                                        className="mt-5 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-900"
+                                    >
+                                        Khám phá sân
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                                    {filteredExploreItems.map((item) => {
+                                        const action = getExploreAction(item);
+                                        const startDate = formatExploreDate(item.startDate);
+                                        const endDate = formatExploreDate(item.endDate);
+                                        return (
+                                            <article
+                                                key={item.id}
+                                                className="group flex min-w-0 flex-col overflow-hidden rounded-3xl border border-gray-100 bg-white shadow-[0_8px_30px_-24px_rgba(15,23,42,0.3)] transition duration-200 hover:-translate-y-1 hover:border-emerald-100 hover:shadow-[0_24px_45px_-28px_rgba(15,23,42,0.35)]"
+                                            >
+                                                <div className={`relative isolate flex aspect-[16/10] items-center justify-center overflow-hidden bg-gradient-to-br ${exploreTypeBackgrounds[item.type]}`}>
+                                                    <span className="text-7xl opacity-70 transition duration-300 group-hover:scale-110">{TYPE_ICONS[item.type]}</span>
+                                                    {item.imageUrl && (
+                                                        <img
+                                                            src={item.imageUrl}
+                                                            alt=""
+                                                            loading="lazy"
+                                                            onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                                                            className="absolute inset-0 -z-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                                                        />
+                                                    )}
+                                                    <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-black/15" />
+                                                    <span className="absolute left-4 top-4 rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs font-bold text-white backdrop-blur-md">
+                                                        {TYPE_ICONS[item.type]} <span className="ml-1">{TYPE_LABELS[item.type]}</span>
+                                                    </span>
+                                                    {item.badge && (
+                                                        <span className="absolute right-4 top-4 rounded-full bg-white px-3 py-1.5 text-[11px] font-extrabold text-gray-900 shadow-sm">
+                                                            {item.badge}
+                                                        </span>
+                                                    )}
+                                                    <h3 className="absolute bottom-4 left-5 right-5 line-clamp-2 text-xl font-black leading-tight text-white drop-shadow sm:text-2xl">
+                                                        {item.title}
+                                                    </h3>
+                                                </div>
+                                                <div className="flex flex-1 flex-col p-5">
+                                                    {item.description && (
+                                                        <p className="line-clamp-3 whitespace-pre-line text-sm leading-6 text-gray-600">{item.description}</p>
+                                                    )}
+                                                    {(startDate || endDate) && (
+                                                        <div className="mt-4 flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2.5 text-xs font-medium text-gray-600">
+                                                            <CalendarRange className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
+                                                            <span>
+                                                                {startDate && endDate
+                                                                    ? `${startDate} – ${endDate}`
+                                                                    : startDate
+                                                                        ? `Bắt đầu ${startDate}`
+                                                                        : `Đến hết ${endDate}`}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    <div className="mt-auto flex items-end justify-between gap-3 border-t border-gray-100 pt-4">
+                                                        <div className="min-w-0">
+                                                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                                                                {item.price ? 'Thông tin giá' : 'Cập nhật mới'}
+                                                            </p>
+                                                            {item.price ? (
+                                                                <p className="mt-1 break-words text-lg font-black leading-tight text-emerald-800">{item.price}</p>
+                                                            ) : (
+                                                                <p className="mt-1 text-sm font-semibold text-gray-700">{TYPE_LABELS[item.type]}</p>
+                                                            )}
+                                                        </div>
+                                                        {action && (
+                                                            <a
+                                                                href={action.href}
+                                                                target={action.external ? '_blank' : undefined}
+                                                                rel={action.external ? 'noopener noreferrer' : undefined}
+                                                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-800 px-3.5 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-900"
+                                                            >
+                                                                {action.text}
+                                                                <ArrowUpRight className="h-3.5 w-3.5" />
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </section>
                     </div>
                 </div>
             )}
@@ -1018,30 +1536,16 @@ export default function PortalPage() {
                         <h1 className="font-black text-2xl tracking-tight text-gray-800">Lịch đã đặt</h1>
                     </div>
                     <div className="flex-1">
-                        {!userPhone ? (
+                        {!portalToken ? (
                             <div className="text-center py-20 bg-white rounded-2xl border border-gray-100 flex flex-col items-center">
                                 <User className="w-16 h-16 text-gray-300 mb-4" />
-                                <p className="text-gray-500 font-medium mb-4">Vui lòng nhập số điện thoại để tra cứu lịch đặt</p>
-                                <div className="flex items-center gap-2 max-w-sm w-full mx-auto">
-                                    <input
-                                        type="tel"
-                                        placeholder="Nhập số điện thoại..."
-                                        value={tempPhone}
-                                        onChange={(e) => setTempPhone(e.target.value)}
-                                        className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-[#19b251]"
-                                    />
-                                    <button
-                                        onClick={() => {
-                                            if (tempPhone) {
-                                                localStorage.setItem('portalUserPhone', tempPhone);
-                                                setUserPhone(tempPhone);
-                                            }
-                                        }}
-                                        className="px-6 py-2 bg-[#19b251] text-white font-bold rounded-full"
-                                    >
-                                        Tra cứu
-                                    </button>
-                                </div>
+                                <p className="text-gray-500 font-medium mb-4">Đăng nhập để xem và quản lý lịch đặt của bạn</p>
+                                <button
+                                    onClick={() => navigate('/dang-nhap')}
+                                    className="px-6 py-2 bg-[#19b251] text-white font-bold rounded-full"
+                                >
+                                    Đăng nhập
+                                </button>
                             </div>
                         ) : isLoadingRequests ? (
                             <div className="flex justify-center py-20">
@@ -1090,13 +1594,18 @@ export default function PortalPage() {
                                                 </p>
                                             </div>
                                             <div className={`px-2 py-1 rounded text-xs font-bold ${
+                                                req.cancellationRequestStatus === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                                                req.status === 'CANCELLED' || req.status === 'REJECTED' ? 'bg-red-100 text-red-600' :
+                                                req.status === 'EXPIRED' ? 'bg-gray-200 text-gray-700' :
                                                 req.status === 'PENDING' ? 'bg-orange-100 text-orange-600' :
-                                                req.status === 'APPROVED' ? 'bg-green-100 text-green-600' :
-                                                req.status === 'REJECTED' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'
+                                                req.status === 'APPROVED' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
                                             }`}>
-                                                {req.status === 'PENDING' ? 'Chờ xác nhận' :
+                                                {req.cancellationRequestStatus === 'PENDING' ? `Chờ duyệt ${req.cancellationRequestType === 'RESCHEDULE' ? 'đổi lịch' : 'hủy'}` :
+                                                 req.status === 'CANCELLED' ? 'Đã hủy' :
+                                                 req.status === 'EXPIRED' ? 'Hết hạn thanh toán' :
+                                                 req.status === 'PENDING' ? 'Chờ xác nhận' :
                                                  req.status === 'APPROVED' ? 'Đã xác nhận' :
-                                                 req.status === 'REJECTED' ? 'Đã hủy' : req.status}
+                                                 req.status === 'REJECTED' ? 'Đã từ chối' : req.status}
                                             </div>
                                         </div>
                                         <div className="p-4 bg-gray-50/50 space-y-2 text-sm">
@@ -1115,11 +1624,106 @@ export default function PortalPage() {
                                             <div className="flex justify-between">
                                                 <span className="text-gray-500">Thanh toán:</span>
                                                 <span className={`text-right font-semibold ${req.paymentStatus === 'PAID' ? 'text-green-600' : 'text-orange-500'}`}>
-                                                    {req.paymentMethod === 'VNPAY' ? 'VNPay' : 'Chuyển khoản'} · {req.paymentStatus === 'PAID' ? 'Đã xác nhận tiền nhận' : 'Chờ xác nhận'}
+                                                    {req.paymentMethod === 'VNPAY' ? 'VNPay' : 'Chuyển khoản'} · {req.paymentStatus === 'PAID' ? 'Đã xác nhận tiền nhận' : req.status === 'EXPIRED' ? 'Đã hết hạn' : 'Chờ xác nhận'}
                                                     {getBookingRequestTotal(req) > 0 && <span className="block text-xs">Tổng: {formatVnd(getBookingRequestTotal(req))}</span>}
                                                     {req.paymentStatus === 'PAID' && <span className="block text-xs">Đã nhận: {formatVnd(req.paymentAmount || 0)}</span>}
                                                 </span>
                                             </div>
+                                            {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.transferReference && (
+                                                <div className="rounded-lg border border-emerald-100 bg-white p-2 text-xs">
+                                                    <p><span className="text-gray-500">Nội dung chuyển khoản:</span> <strong className="text-emerald-800">{req.transferReference}</strong></p>
+                                                    {req.status === 'PENDING' && req.expiresAt && (
+                                                        <p className="mt-1 text-amber-700">Hạn giữ sân: {new Date(req.expiresAt).toLocaleString('vi-VN')}</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {req.status === 'APPROVED' && req.checkIn?.checkInToken && !req.checkIn.checkedInAt && (
+                                                <div className="mt-2 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                                    <BookingCheckInQr token={req.checkIn.checkInToken} />
+                                                    <div className="text-xs text-emerald-900">
+                                                        <p className="font-bold">Mã QR check-in</p>
+                                                        <p className="mt-1">Hiển thị mã này cho nhân viên khi đến sân. Mã chỉ dùng để xác nhận lịch đặt này.</p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Hiển thị lý do đổi lịch/hủy */}
+                                            {req.cancellationRequestReason && (
+                                                <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/80 p-2.5 text-xs text-amber-800">
+                                                    <span className="font-bold">Lý do yêu cầu {req.cancellationRequestType === 'RESCHEDULE' ? 'đổi lịch' : 'hủy'}: </span>
+                                                    {req.cancellationRequestReason}
+                                                    {req.cancellationRequestType === 'RESCHEDULE' && req.requestedDate && (
+                                                        <p className="mt-1 font-semibold">Khung giờ đề xuất: {new Date(req.requestedDate).toLocaleDateString('vi-VN')} · {req.requestedStartTime}–{req.requestedEndTime}</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {req.cancellationRequestStatus === 'REJECTED' && (
+                                                <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50/80 p-2.5 text-xs text-sky-800">
+                                                    Cơ sở đã từ chối yêu cầu hủy; lịch đặt vẫn còn hiệu lực.
+                                                </div>
+                                            )}
+                                            {req.notes && (req.status === 'REJECTED' || req.status === 'CANCELLED') && (
+                                                <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50/80 p-2.5 text-xs text-rose-800">
+                                                    <span className="font-bold">Lý do: </span>
+                                                    {req.notes}
+                                                </div>
+                                            )}
+
+                                            {/* Thao tác quản lý lịch đặt */}
+                                            {(req.status === 'PENDING' || req.status === 'APPROVED') && (
+                                                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                                                    <span className="text-[11px] text-gray-500">
+                                                        {req.cancellationRequestStatus === 'PENDING'
+                                                            ? `Yêu cầu ${req.cancellationRequestType === 'RESCHEDULE' ? 'đổi lịch' : 'hủy'} đang chờ cơ sở duyệt`
+                                                            : req.status === 'PENDING'
+                                                                ? 'Chờ cơ sở xác nhận'
+                                                                : 'Đã giữ chỗ thành công'}
+                                                    </span>
+                                                    {req.cancellationRequestStatus !== 'PENDING' && (
+                                                        <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setCustomerChangeType('CANCELLATION');
+                                                                setCustomerCancelModal({ isOpen: true, request: req });
+                                                                setCustomerCancelReason('');
+                                                            }}
+                                                            className="text-xs text-rose-600 hover:text-rose-700 font-semibold inline-flex items-center gap-1 py-1 px-3 rounded-lg border border-rose-200 hover:bg-rose-50 transition"
+                                                        >
+                                                            <X className="w-3.5 h-3.5" />
+                                                            Yêu cầu hủy
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setCustomerChangeType('RESCHEDULE');
+                                                                setCustomerCancelModal({ isOpen: true, request: req });
+                                                                setCustomerCancelReason('');
+                                                                setCustomerRequestedDate('');
+                                                                setCustomerRequestedStart('');
+                                                                setCustomerRequestedEnd('');
+                                                            }}
+                                                            className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold inline-flex items-center gap-1 py-1 px-3 rounded-lg border border-emerald-200 hover:bg-emerald-50 transition"
+                                                        >
+                                                            Đổi lịch
+                                                        </button>
+                                                        </>
+                                                    )}
+                                                    {req.courtId && req.venueId && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const date = new Date(req.date);
+                                                                const dateValue = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                                                                navigate(`/dat-lich/${req.venueId}/${req.courtId}?date=${dateValue}&startTime=${encodeURIComponent(req.startTime)}&endTime=${encodeURIComponent(req.endTime)}`);
+                                                            }}
+                                                            className="mt-3 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100"
+                                                        >
+                                                            Đặt lại khung giờ này
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -1249,23 +1853,23 @@ export default function PortalPage() {
                             {activeModalTab === 'info' && (
                                 <div className="space-y-4">
                                     {/* Giờ hoạt động & Trạng thái */}
-                                    <div className="flex items-center justify-between text-sm bg-gray-50/90 p-3.5 rounded-xl border border-gray-100">
-                                        <div className="flex items-center gap-2.5 text-gray-700 font-medium">
-                                            <Clock className="w-4 h-4 text-[#19b251] shrink-0" />
-                                            <span>
-                                                Giờ hoạt động: {selectedVenueDetail.openTime || '06:00'} - {selectedVenueDetail.closeTime || '23:30'}
-                                            </span>
-                                        </div>
-                                        {(() => {
-                                            const status = getOperatingStatus(selectedVenueDetail);
-                                            return (
-                                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${status.isOpen ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                                    <span className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                                                    <span>{status.isOpen ? 'Đang mở' : 'Đóng cửa'}</span>
+                                    {(() => {
+                                        const status = getOperatingStatus(selectedVenueDetail);
+                                        return (
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm bg-gray-50/90 p-3.5 rounded-xl border border-gray-100">
+                                                <div className="flex items-center gap-2.5 text-gray-700 font-medium">
+                                                    <Clock className="w-4 h-4 text-[#19b251] shrink-0" />
+                                                    <span>
+                                                        {status.dayName}: <strong className="text-gray-900">{status.text}</strong>
+                                                    </span>
                                                 </div>
-                                            );
-                                        })()}
-                                    </div>
+                                                <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold self-start sm:self-auto ${status.isOpen ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>
+                                                    <span className={`w-1.5 h-1.5 rounded-full ${status.isOpen ? 'bg-green-500 animate-pulse' : 'bg-amber-500'}`} />
+                                                    <span>{status.statusLabel}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* Địa chỉ */}
                                     <div className="flex items-start gap-2.5 text-sm text-gray-600 px-1">
@@ -1396,6 +2000,23 @@ export default function PortalPage() {
                                 <div className="space-y-3 max-h-[44vh] overflow-y-auto pr-1">
                                     <form onSubmit={submitVenueReview} className="rounded-xl border border-green-100 bg-green-50/60 p-2.5 space-y-2">
                                         <h4 className="text-sm font-bold text-gray-800">Gửi đánh giá của bạn</h4>
+                                        {!portalToken ? (
+                                            <p className="rounded-lg bg-white p-2 text-xs text-amber-800">Đăng nhập tài khoản khách hàng để đánh giá lịch đã hoàn thành.</p>
+                                        ) : (
+                                            <>
+                                                <select value={reviewBookingId} onChange={(event) => setReviewBookingId(event.target.value)} required className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-900">
+                                                    <option value="">Chọn lịch đã hoàn thành tại cơ sở này</option>
+                                                    {eligibleReviewBookings.filter((booking) => booking.court.venue.id === selectedVenueDetail.id).map((booking) => (
+                                                        <option key={booking.id} value={booking.id}>
+                                                            {booking.court.name} · {new Date(booking.date).toLocaleDateString('vi-VN')} · {booking.startTime}–{booking.endTime}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {!eligibleReviewBookings.some((booking) => booking.court.venue.id === selectedVenueDetail.id) && (
+                                                    <p className="text-[11px] text-gray-500">Chưa có lịch đã hoàn thành nào đủ điều kiện đánh giá tại cơ sở này.</p>
+                                                )}
+                                            </>
+                                        )}
                                         <div className="flex items-center gap-0.5" role="group" aria-label="Chọn số sao">
                                             {[1, 2, 3, 4, 5].map((rating) => (
                                                 <button key={rating} type="button" onClick={() => setReviewRating(rating)} aria-label={`${rating} sao`}>
@@ -1403,10 +2024,6 @@ export default function PortalPage() {
                                                 </button>
                                             ))}
                                             <span className="ml-1.5 text-xs text-gray-600">{reviewRating}/5</span>
-                                        </div>
-                                        <div className="grid sm:grid-cols-2 gap-2">
-                                            <input value={reviewName} onChange={(event) => setReviewName(event.target.value)} maxLength={100} placeholder="Tên của bạn" className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:border-[#19b251]" />
-                                            <input value={reviewPhone} onChange={(event) => setReviewPhone(event.target.value)} maxLength={30} placeholder="Số điện thoại" className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:border-[#19b251]" />
                                         </div>
                                         <textarea value={reviewContent} onChange={(event) => setReviewContent(event.target.value)} maxLength={2000} rows={2} placeholder="Chia sẻ trải nghiệm của bạn..." className="w-full resize-y rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs text-gray-900 placeholder:text-gray-500 outline-none focus:border-[#19b251]" />
                                         <div>
@@ -1430,7 +2047,7 @@ export default function PortalPage() {
                                                 </div>
                                             )}
                                         </div>
-                                        <button type="submit" disabled={reviewSubmitting} className="rounded-lg bg-[#19b251] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#159a45] disabled:opacity-60">
+                                        <button type="submit" disabled={reviewSubmitting || !portalToken || !reviewBookingId} className="rounded-lg bg-[#19b251] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#159a45] disabled:opacity-60">
                                             {reviewSubmitting ? 'Đang gửi...' : 'Gửi đánh giá'}
                                         </button>
                                         <p className="text-[11px] text-gray-500">Đánh giá và hình ảnh sẽ được admin duyệt trước khi hiển thị công khai.</p>
@@ -1477,6 +2094,123 @@ export default function PortalPage() {
                                 <CalendarCheck className="w-5 h-5" />
                                 ĐẶT LỊCH
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Customer cancellation / reschedule request */}
+            {customerCancelModal.isOpen && customerCancelModal.request && (
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200 border border-gray-100">
+                        <div className="flex items-start justify-between mb-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">
+                                    {customerChangeType === 'RESCHEDULE' ? 'Yêu cầu đổi lịch đặt' : 'Yêu cầu hủy lịch đặt'}
+                                </h3>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    {customerCancelModal.request.venue?.name || 'Sân cầu lông'} • {customerCancelModal.request.startTime} - {customerCancelModal.request.endTime} ({new Date(customerCancelModal.request.date).toLocaleDateString('vi-VN')})
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setCustomerCancelModal({ isOpen: false, request: null })}
+                                className="p-1 hover:bg-gray-100 rounded-full transition text-gray-400 hover:text-gray-600"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800 leading-relaxed">
+                                <p className="font-bold flex items-center gap-1.5 mb-1">
+                                    <Info className="w-3.5 h-3.5 text-amber-600" />
+                                    Chính sách đổi / hủy lịch
+                                </p>
+                                <p>
+                                    Gửi yêu cầu ít nhất 24 giờ trước giờ bắt đầu. Yêu cầu chỉ có hiệu lực sau khi cơ sở duyệt; lịch hiện tại vẫn giữ nguyên trong lúc chờ. Với lịch đã thanh toán, hệ thống không tự hoàn tiền hoặc đổi hóa đơn — khoản tiền được giữ nguyên cho đến khi admin xử lý qua luồng hoàn hóa đơn hiện có.
+                                </p>
+                            </div>
+
+                            {customerChangeType === 'RESCHEDULE' && (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <label className="text-xs font-semibold text-gray-700">Ngày mới
+                                        <input type="date" value={customerRequestedDate} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setCustomerRequestedDate(event.target.value)} className="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs" />
+                                    </label>
+                                    <label className="text-xs font-semibold text-gray-700">Từ
+                                        <input type="time" value={customerRequestedStart} onChange={(event) => setCustomerRequestedStart(event.target.value)} className="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs" />
+                                    </label>
+                                    <label className="text-xs font-semibold text-gray-700">Đến
+                                        <input type="time" value={customerRequestedEnd} onChange={(event) => setCustomerRequestedEnd(event.target.value)} className="mt-1 block w-full rounded-lg border border-gray-200 bg-gray-50 px-2 py-2 text-xs" />
+                                    </label>
+                                    <p className="sm:col-span-3 text-[11px] text-gray-500">Duyệt đổi lịch sẽ giữ nguyên tổng tiền và trạng thái thanh toán hiện tại; mọi điều chỉnh tiền cần admin xử lý riêng.</p>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                                    Lý do
+                                </label>
+                                <textarea
+                                    rows={3}
+                                    value={customerCancelReason}
+                                    onChange={(e) => setCustomerCancelReason(e.target.value)}
+                                    placeholder={customerChangeType === 'RESCHEDULE' ? 'Vui lòng cho biết lý do đổi lịch...' : 'Vui lòng cho biết lý do hủy...'}
+                                    maxLength={500}
+                                    className="w-full text-xs p-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500/30 focus:border-rose-500"
+                                />
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {[
+                                        'Bận đột xuất',
+                                        'Thời tiết / lý do sức khỏe',
+                                        'Đặt nhầm sân / cơ sở'
+                                    ].map((chip) => (
+                                        <button
+                                            key={chip}
+                                            type="button"
+                                            onClick={() => setCustomerCancelReason(chip)}
+                                            className="text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 py-1 rounded-full transition"
+                                        >
+                                            {chip}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+                                <button
+                                    type="button"
+                                    onClick={() => setCustomerCancelModal({ isOpen: false, request: null })}
+                                    className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition"
+                                >
+                                    Đóng
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={
+                                        cancelMutation.isPending || rescheduleMutation.isPending || !customerCancelReason.trim() ||
+                                        (customerChangeType === 'RESCHEDULE' && (!customerRequestedDate || !customerRequestedStart || !customerRequestedEnd))
+                                    }
+                                    onClick={() => {
+                                        if (customerChangeType === 'RESCHEDULE') {
+                                            rescheduleMutation.mutate({
+                                                id: customerCancelModal.request.id,
+                                                reason: customerCancelReason.trim(),
+                                                date: customerRequestedDate,
+                                                startTime: customerRequestedStart,
+                                                endTime: customerRequestedEnd,
+                                            });
+                                        } else {
+                                            cancelMutation.mutate({
+                                                id: customerCancelModal.request.id,
+                                                reason: customerCancelReason.trim()
+                                            });
+                                        }
+                                    }}
+                                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition shadow-sm disabled:opacity-50"
+                                >
+                                    {cancelMutation.isPending || rescheduleMutation.isPending ? 'Đang gửi yêu cầu...' : customerChangeType === 'RESCHEDULE' ? 'Gửi yêu cầu đổi lịch' : 'Gửi yêu cầu hủy'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

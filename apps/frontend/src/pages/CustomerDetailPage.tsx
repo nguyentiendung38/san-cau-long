@@ -49,6 +49,7 @@ export default function CustomerDetailPage() {
         setIsDeleting(false);
     };
     const [pointsInput, setPointsInput] = useState('');
+    const [pointsReason, setPointsReason] = useState('');
 
     const { data: customer, isLoading, error } = useQuery({
         queryKey: ['customer', id],
@@ -69,14 +70,20 @@ export default function CustomerDetailPage() {
     });
 
     const pointsMutation = useMutation({
-        mutationFn: (points: number) => customerApi.addPoints(customer!.id, points),
+        mutationFn: ({ points, reason }: { points: number; reason: string }) =>
+            customerApi.addPoints(customer!.id, points, reason),
         onSuccess: () => {
             toast({ title: 'Đã cập nhật điểm thành công' });
             queryClient.invalidateQueries({ queryKey: ['customer', id] });
             setPointsInput('');
+            setPointsReason('');
         },
-        onError: () => {
-            toast({ title: 'Lỗi khi cập nhật điểm', variant: 'error' });
+        onError: (error: any) => {
+            toast({
+                title: 'Lỗi khi cập nhật điểm',
+                description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                variant: 'error',
+            });
         },
     });
 
@@ -271,20 +278,53 @@ export default function CustomerDetailPage() {
                                     <input 
                                         type="number"
                                         placeholder="VD: 100 hoặc -50"
+                                        step={1}
                                         className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
                                         value={pointsInput}
                                         onChange={(e) => setPointsInput(e.target.value)}
                                     />
-                                    <p className="text-xs text-foreground-muted mt-1">Dùng số âm (vd: -10) để trừ điểm</p>
+                                    <p className="text-xs text-foreground-muted mt-1">Số âm dùng để trừ; số dư không thể thấp hơn 0.</p>
+                                </div>
+                                <div>
+                                    <label className="mb-1 block text-sm font-medium text-foreground-secondary">Lý do điều chỉnh *</label>
+                                    <input
+                                        type="text"
+                                        maxLength={500}
+                                        placeholder="Ví dụ: hỗ trợ khách do sự cố sân"
+                                        className="w-full rounded-lg border border-border bg-background-tertiary px-3 py-2 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                        value={pointsReason}
+                                        onChange={(event) => setPointsReason(event.target.value)}
+                                    />
                                 </div>
                                 <Button 
                                     className="w-full"
-                                    disabled={!pointsInput || isNaN(Number(pointsInput))}
+                                    disabled={!pointsInput || !Number.isInteger(Number(pointsInput)) || Number(pointsInput) === 0 || !pointsReason.trim()}
                                     isLoading={pointsMutation.isPending}
-                                    onClick={() => pointsMutation.mutate(Number(pointsInput))}
+                                    onClick={() => pointsMutation.mutate({ points: Number(pointsInput), reason: pointsReason.trim() })}
                                 >
                                     Cập nhật điểm
                                 </Button>
+                            </div>
+
+                            <div className="mt-8 border-t border-border pt-5">
+                                <h4 className="mb-3 font-medium text-foreground">Lịch sử giao dịch điểm</h4>
+                                {!customer.pointsTransactions?.length ? (
+                                    <p className="text-sm text-foreground-muted">Chưa có giao dịch điểm nào.</p>
+                                ) : (
+                                    <div className="max-h-80 divide-y divide-border overflow-y-auto">
+                                        {customer.pointsTransactions.map((entry) => (
+                                            <div key={entry.id} className="flex items-start justify-between gap-3 py-3 text-sm">
+                                                <div className="min-w-0">
+                                                    <p className="font-medium text-foreground">{entry.reason}</p>
+                                                    <p className="mt-1 text-xs text-foreground-muted">{new Date(entry.createdAt).toLocaleString('vi-VN')}</p>
+                                                </div>
+                                                <span className={`shrink-0 font-bold ${entry.points > 0 ? 'text-green-500' : entry.points < 0 ? 'text-red-400' : 'text-foreground-muted'}`}>
+                                                    {entry.points > 0 ? '+' : ''}{entry.points.toLocaleString('vi-VN')}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}

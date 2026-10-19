@@ -50,32 +50,33 @@ model RefreshToken {
 
 /// Venue - Sports facility/location
 model Venue {
-  id          String   @id @default(cuid())
-  name        String
-  address     String
-  phone       String?
-  email       String?
-  description String?
-  termsAndServices String?
-  bankCode    String?
+  id                String   @id @default(cuid())
+  name              String
+  address           String
+  phone             String?
+  email             String?
+  description       String?
+  termsAndServices  String?
+  bankCode          String?
   bankAccountNumber String?
-  bankAccountName String?
-  logo        String?
-  images      String?
-  openTime    String   @default("06:00")
-  closeTime   String   @default("23:00")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  bankAccountName   String?
+  logo              String?
+  images            String?
+  openTime          String   @default("06:00")
+  closeTime         String   @default("23:00")
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  courts         Court[]
-  staff          VenueStaff[]
-  pricingRules   PricingRule[]
-  operatingHours OperatingHour[]
-  services       Service[]
-  products       Product[]
-  reviews        VenueReview[]
-  BookingRequest BookingRequest[]
+  courts            Court[]
+  staff             VenueStaff[]
+  pricingRules      PricingRule[]
+  operatingHours    OperatingHour[]
+  services          Service[]
+  products          Product[]
+  reviews           VenueReview[]
+  BookingRequest    BookingRequest[]
+  favoriteCustomers CustomerFavoriteVenue[]
 
   @@map("venues")
 }
@@ -108,9 +109,11 @@ model Court {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  venue          Venue            @relation(fields: [venueId], references: [id], onDelete: Cascade)
-  bookings       Booking[]
-  BookingRequest BookingRequest[]
+  venue               Venue                   @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  bookings            Booking[]
+  BookingRequest      BookingRequest[]
+  favoriteCustomers   CustomerFavoriteCourt[]
+  maintenanceClosures MaintenanceClosure[]
 
   @@map("courts")
 }
@@ -130,13 +133,18 @@ model Customer {
   totalBookings   Int       @default(0)
   totalSpent      Float     @default(0)
   points          Int       @default(0)
+  reservedPoints  Int       @default(0)
   passwordHash    String?
   isActive        Boolean   @default(true)
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  bookings Booking[]
-  invoices Invoice[]
+  bookings           Booking[]
+  invoices           Invoice[]
+  bookingRequests    BookingRequest[]
+  pointsTransactions PointsTransaction[]
+  favoriteVenues     CustomerFavoriteVenue[]
+  favoriteCourts     CustomerFavoriteCourt[]
 
   @@map("customers")
 }
@@ -170,12 +178,14 @@ model Booking {
   paymentProof   String?
   paymentOrderId String?
 
-  totalAmount Float   @default(0)
-  notes       String?
+  totalAmount  Float   @default(0)
+  notes        String?
   orderedItems String?
 
-  checkedInAt  DateTime?
-  checkedOutAt DateTime?
+  checkedInAt   DateTime?
+  checkInToken  String?   @unique
+  checkedInById String?
+  checkedOutAt  DateTime?
 
   isRecurring    Boolean @default(false)
   recurringGroup String?
@@ -187,6 +197,7 @@ model Booking {
   customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
   createdBy   User?        @relation("CreatedByUser", fields: [createdById], references: [id], onDelete: SetNull)
   invoiceItem InvoiceItem?
+  review      VenueReview?
 
   @@map("bookings")
 }
@@ -265,10 +276,30 @@ model Invoice {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  customer Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
-  items    InvoiceItem[]
+  customer           Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  items              InvoiceItem[]
+  pointsTransactions PointsTransaction[]
 
   @@map("invoices")
+}
+
+model PointsTransaction {
+  id             String   @id @default(cuid())
+  customerId     String
+  invoiceId      String?
+  type           String
+  points         Int
+  reason         String
+  referenceType  String?
+  referenceId    String?
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoice  Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([customerId, createdAt])
+  @@map("points_transactions")
 }
 
 /// InvoiceItem - Line items in invoice
@@ -444,31 +475,105 @@ model TikWarehouse {
 
 /// BookingRequest - Online booking requests from Portal
 model BookingRequest {
-  id             String   @id @default(cuid())
-  venueId        String
-  courtId        String?
-  name           String
-  phone          String
-  date           DateTime
-  startTime      String
-  endTime        String
-  notes          String?
-  status         String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  paymentMethod  String   @default("DEPOSIT_TRANSFER") // MOMO, DEPOSIT_TRANSFER
-  paymentStatus  String   @default("PENDING") // PENDING, PAID, FAILED
-  paymentAmount  Float    @default(0)
-  paymentProof   String?
-  paymentOrderId String?
-  orderedItems   String?  // JSON string storing requested products/services
-  voucherCode    String?
-  discountAmount Float    @default(0)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                        String    @id @default(cuid())
+  customerId                String?
+  venueId                   String
+  courtId                   String?
+  name                      String
+  phone                     String
+  date                      DateTime
+  startTime                 String
+  endTime                   String
+  notes                     String?
+  status                    String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  paymentMethod             String    @default("DEPOSIT_TRANSFER") // MOMO, DEPOSIT_TRANSFER
+  paymentStatus             String    @default("PENDING") // PENDING, PAID, FAILED
+  paymentAmount             Float     @default(0)
+  paymentProof              String?
+  paymentOrderId            String?
+  orderedItems              String? // JSON string storing requested products/services
+  voucherCode               String?
+  discountAmount            Float     @default(0)
+  redeemPoints              Int       @default(0)
+  loyaltyDiscountAmount     Float     @default(0)
+  expiresAt                 DateTime?
+  transferReference         String?   @unique
+  cancellationRequestStatus String?
+  cancellationRequestType   String?
+  cancellationRequestReason String?
+  requestedDate             DateTime?
+  requestedStartTime        String?
+  requestedEndTime          String?
+  cancellationRequestedAt   DateTime?
+  cancellationReviewedAt    DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  venue Venue  @relation(fields: [venueId], references: [id])
-  court Court? @relation(fields: [courtId], references: [id])
+  venue    Venue     @relation(fields: [venueId], references: [id])
+  court    Court?    @relation(fields: [courtId], references: [id])
+  customer Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
 
+  @@index([status, paymentMethod, expiresAt])
   @@map("booking_requests")
+}
+
+model CustomerFavoriteVenue {
+  customerId String
+  venueId    String
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  venue    Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, venueId])
+  @@map("customer_favorite_venues")
+}
+
+model CustomerFavoriteCourt {
+  customerId String
+  courtId    String
+  createdAt  DateTime @default(now())
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  court    Court    @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, courtId])
+  @@map("customer_favorite_courts")
+}
+
+model MaintenanceClosure {
+  id        String   @id @default(cuid())
+  courtId   String
+  startAt   DateTime
+  endAt     DateTime
+  reason    String?
+  createdAt DateTime @default(now())
+
+  court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@index([courtId, startAt, endAt])
+  @@map("maintenance_closures")
+}
+
+model EmailNotification {
+  id            String    @id @default(cuid())
+  dedupeKey     String    @unique
+  toEmail       String
+  subject       String
+  text          String
+  html          String
+  status        String    @default("PENDING")
+  attempts      Int       @default(0)
+  scheduledAt   DateTime  @default(now())
+  nextAttemptAt DateTime  @default(now())
+  lockedAt      DateTime?
+  sentAt        DateTime?
+  lastError     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@map("email_notifications")
 }
 
 /// ExploreContent - Quản lý nội dung trang Khám phá (Portal)
@@ -508,33 +613,37 @@ model Voucher {
 }
 
 model OperatingHour {
-  id        String   @id @default(cuid())
-  venueId   String
-  startTime String
-  endTime   String
-  daysOfWeek String   // JSON array of integers [0,1,2,3,4,5,6]
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  venueId    String
+  startTime  String
+  endTime    String
+  daysOfWeek String // JSON array of integers [0,1,2,3,4,5,6]
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
   @@map("operating_hours")
 }
 
 /// VenueReview - Customer reviews submitted from the public portal
 model VenueReview {
-  id           String   @id @default(cuid())
-  venueId      String
-  customerName String
+  id            String   @id @default(cuid())
+  venueId       String
+  customerId    String?
+  bookingId     String?  @unique
+  customerName  String
   customerPhone String
-  rating       Int
-  content      String
-  images       String?
-  status       String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rating        Int
+  content       String
+  images        String?
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  venue   Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
+  booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
 
   @@index([venueId, status, createdAt])
   @@map("venue_reviews")

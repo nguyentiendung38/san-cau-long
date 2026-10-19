@@ -4,15 +4,14 @@ import { AppError } from '../middleware/error.js';
 export type VenueReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface CreateVenueReviewInput {
-    venueId: string;
-    customerName: string;
-    customerPhone: string;
+    bookingId: string;
+    customerId: string;
     rating: number;
     content: string;
     images?: string[];
 }
 
-function formatReview<T extends { images: string | null }>(review: T) {
+function formatReview<T extends { images: string | null; bookingId?: string | null }>(review: T) {
     let images: string[] = [];
     if (review.images) {
         try {
@@ -24,10 +23,25 @@ function formatReview<T extends { images: string | null }>(review: T) {
             images = [];
         }
     }
-    return { ...review, images };
+    const legacy = 'bookingId' in review ? !review.bookingId : undefined;
+    return { ...review, images, ...(legacy === undefined ? {} : { isLegacy: legacy }) };
 }
 
 export class VenueReviewService {
+    async findEligibleBookings(customerId: string) {
+        return prisma.booking.findMany({
+            where: { customerId, status: 'COMPLETED', review: null },
+            select: {
+                id: true,
+                date: true,
+                startTime: true,
+                endTime: true,
+                court: { select: { id: true, name: true, venue: { select: { id: true, name: true } } } },
+            },
+            orderBy: { date: 'desc' },
+        });
+    }
+
     async findPublicSummaries(venueIds: string[]) {
         if (venueIds.length === 0) {
             return [];
@@ -78,24 +92,37 @@ export class VenueReviewService {
     }
 
     async create(input: CreateVenueReviewInput) {
-        const venue = await prisma.venue.findUnique({
-            where: { id: input.venueId },
-            select: { id: true },
+        const booking = await prisma.booking.findFirst({
+            where: { id: input.bookingId, customerId: input.customerId, status: 'COMPLETED' },
+            include: { customer: { select: { name: true, phone: true } }, court: { select: { venueId: true } } },
         });
-        if (!venue) {
-            throw new AppError(404, 'Không tìm thấy cơ sở');
+        if (!booking || !booking.customer) {
+            throw new AppError(403, 'Chỉ khách hàng của lịch đã hoàn thành mới có thể gửi đánh giá');
         }
-
-        const review = await prisma.venueReview.create({
-            data: {
-                venueId: input.venueId,
-                customerName: input.customerName.trim(),
-                customerPhone: input.customerPhone.trim(),
-                rating: input.rating,
-                content: input.content.trim(),
-                images: input.images?.length ? JSON.stringify(input.images) : null,
-            },
-        });
+        if (await prisma.venueReview.findUnique({ where: { bookingId: booking.id }, select: { id: true } })) {
+            throw new AppError(409, 'Lịch này đã được đánh giá');
+        }
+        let review;
+        try {
+            review = await prisma.venueReview.create({
+                data: {
+                    bookingId: booking.id,
+                    customerId: input.customerId,
+                    venueId: booking.court.venueId,
+                    customerName: booking.customer.name,
+                    customerPhone: booking.customer.phone,
+                    rating: input.rating,
+                    content: input.content.trim(),
+                    images: input.images?.length ? JSON.stringify(input.images) : null,
+                    status: 'PENDING',
+                },
+            });
+        } catch (error) {
+            if ((error as { code?: string })?.code === 'P2002') {
+                throw new AppError(409, 'Lịch này đã được đánh giá');
+            }
+            throw error;
+        }
         return formatReview(review);
     }
 

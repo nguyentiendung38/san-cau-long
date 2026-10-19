@@ -141,6 +141,11 @@ export const invoiceApi = {
         return response.data.data!;
     },
 
+    async refund(id: string, reason: string): Promise<Invoice> {
+        const response = await api.post<ApiResponse<Invoice>>(`/invoices/${id}/refund`, { reason });
+        return response.data.data!;
+    },
+
     async getDailySummary(date?: string): Promise<DailySummary> {
         const queryParams = new URLSearchParams();
         if (date) queryParams.append('date', date);

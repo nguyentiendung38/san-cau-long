@@ -7,7 +7,7 @@ import {
     MapPin,
     Phone,
     Pencil,
-    Trash2,
+    Power,
     X,
     Check,
     AlertCircle
@@ -160,16 +160,17 @@ export default function VenuesPage() {
         },
     });
 
-    // Delete mutation
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => venueApi.delete(id),
-        onSuccess: () => {
-            toast({ title: 'Đã xóa cơ sở!' });
+    // Archive or restore a venue without deleting its operational history.
+    const activeMutation = useMutation({
+        mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+            venueApi.update(id, { isActive }),
+        onSuccess: (_, variables) => {
+            toast({ title: variables.isActive ? 'Đã kích hoạt lại cơ sở' : 'Đã lưu trữ cơ sở' });
             queryClient.invalidateQueries({ queryKey: ['venues'] });
             setDeleteConfirm(null);
         },
         onError: () => {
-            toast({ title: 'Lỗi khi xóa cơ sở', variant: 'error' });
+            toast({ title: 'Không thể cập nhật trạng thái cơ sở', variant: 'error' });
         },
     });
 
@@ -281,7 +282,7 @@ export default function VenuesPage() {
                     {venuesData?.data.map((venue: Venue) => (
                         <div
                             key={venue.id}
-                            className="bg-background-secondary rounded-xl border border-border p-4 hover:border-primary-500/50 transition-colors"
+                            className={`bg-background-secondary rounded-xl border border-border p-4 hover:border-primary-500/50 transition-colors ${venue.isActive ? '' : 'opacity-75'}`}
                         >
                             {/* Venue Header */}
                             <div className="flex items-start justify-between mb-4">
@@ -292,6 +293,7 @@ export default function VenuesPage() {
                                     <div>
                                         <h3 className="font-semibold text-foreground">{venue.name}</h3>
                                         <div className="text-xs text-foreground-muted mt-0.5">{venue._count?.courts || 0} Sân</div>
+                                        {!venue.isActive && <div className="text-xs text-amber-500 mt-1">Đã lưu trữ</div>}
                                         
                                     </div>
                                 </div>
@@ -304,11 +306,13 @@ export default function VenuesPage() {
                                         <Pencil className="w-4 h-4" />
                                     </button>
                                     <button
-                                        onClick={() => setDeleteConfirm(venue.id)}
-                                        className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                        title="Xóa"
+                                        onClick={() => venue.isActive
+                                            ? setDeleteConfirm(venue.id)
+                                            : activeMutation.mutate({ id: venue.id, isActive: true })}
+                                        className={`p-2 rounded-lg transition-colors ${venue.isActive ? 'text-gray-500 hover:text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
+                                        title={venue.isActive ? 'Ngừng hoạt động' : 'Kích hoạt lại'}
                                     >
-                                        <Trash2 className="w-4 h-4" />
+                                        <Power className="w-4 h-4" />
                                     </button>
                                 </div>
                             </div>
@@ -336,7 +340,7 @@ export default function VenuesPage() {
                                             </div>
                                             <div className="flex items-center gap-1 text-foreground-muted">
                                                 <Clock className="w-4 h-4" />
-                                                <span>{status.text}</span>
+                                                <span>{venue.isActive ? status.text : 'Đang ngừng hoạt động'}</span>
                                             </div>
                                         </div>
                                     );
@@ -349,12 +353,12 @@ export default function VenuesPage() {
                             {/* Delete Confirmation */}
                             {deleteConfirm === venue.id && (
                                 <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                                    <div className="flex items-center gap-2 text-red-400 mb-2">
+                                    <div className="flex items-center gap-2 text-amber-500 mb-2">
                                         <AlertCircle className="w-4 h-4" />
-                                        <span className="text-sm font-medium">Xác nhận xóa?</span>
+                                        <span className="text-sm font-medium">Ngừng hoạt động cơ sở?</span>
                                     </div>
                                     <p className="text-sm text-foreground-secondary mb-3">
-                                        Hành động này không thể hoàn tác!
+                                        Cơ sở sẽ không nhận đặt mới. Lịch đặt và hóa đơn hiện có vẫn được giữ lại; bạn có thể kích hoạt lại sau.
                                     </p>
                                     <div className="flex gap-2">
                                         <Button
@@ -366,11 +370,10 @@ export default function VenuesPage() {
                                         </Button>
                                         <Button
                                             size="sm"
-                                            variant="destructive"
-                                            onClick={() => deleteMutation.mutate(venue.id)}
-                                            isLoading={deleteMutation.isPending}
+                                            onClick={() => activeMutation.mutate({ id: venue.id, isActive: false })}
+                                            isLoading={activeMutation.isPending}
                                         >
-                                            Xóa
+                                            Ngừng hoạt động
                                         </Button>
                                     </div>
                                 </div>
@@ -392,11 +395,11 @@ export default function VenuesPage() {
                     {/* Modal */}
                     <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
                         <div
-                            className="bg-background-secondary rounded-2xl shadow-2xl w-full max-w-md"
+                            className="bg-background-secondary rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden"
                             onClick={(e) => e.stopPropagation()}
                         >
                             {/* Header */}
-                            <div className="flex items-center justify-between p-4 border-b border-border">
+                            <div className="flex shrink-0 items-center justify-between p-4 border-b border-border">
                                 <h2 className="text-lg font-semibold text-foreground">
                                     {editingVenue ? 'Chỉnh sửa cơ sở' : 'Thêm cơ sở mới'}
                                 </h2>
@@ -409,7 +412,7 @@ export default function VenuesPage() {
                             </div>
 
                             {/* Form */}
-                            <form onSubmit={handleSubmit} className="p-4 space-y-4">
+                            <form onSubmit={handleSubmit} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
                                         Tên cơ sở *
@@ -600,7 +603,7 @@ export default function VenuesPage() {
                             </form>
 
                             {/* Footer */}
-                            <div className="flex items-center justify-end gap-3 p-4 border-t border-border bg-background-tertiary rounded-b-2xl">
+                            <div className="flex shrink-0 items-center justify-end gap-3 p-4 border-t border-border bg-background-tertiary rounded-b-2xl">
                                 <Button variant="secondary" onClick={handleCloseModal}>
                                     Hủy
                                 </Button>

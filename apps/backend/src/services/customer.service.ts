@@ -1,5 +1,6 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/error.js';
+import { addManualPoints } from './loyalty.service.js';
 
 export interface CreateCustomerInput {
     name: string;
@@ -95,6 +96,10 @@ export class CustomerService {
                     take: 10,
                     orderBy: { createdAt: 'desc' },
                 },
+                pointsTransactions: {
+                    take: 50,
+                    orderBy: { createdAt: 'desc' },
+                },
             },
         });
 
@@ -174,21 +179,7 @@ export class CustomerService {
     }
 
     async addPoints(id: string, points: number, reason: string) {
-        const customer = await prisma.customer.findUnique({ where: { id } });
-        if (!customer) {
-            throw new AppError(404, 'Không tìm thấy khách hàng');
-        }
-
-        const updated = await prisma.customer.update({
-            where: { id },
-            data: {
-                points: customer.points + points,
-            },
-        });
-
-        // TODO: Log points history
-
-        return updated;
+        return prisma.$transaction((tx) => addManualPoints(tx, id, points, reason));
     }
 
     async assignMembership(id: string, tier: string, startDate: Date, endDate: Date) {

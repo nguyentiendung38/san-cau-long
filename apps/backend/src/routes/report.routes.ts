@@ -8,7 +8,8 @@ const router = Router();
 router.get('/dashboard', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const period = (req.query.period as 'day' | 'week' | 'month') || 'day';
-        const stats = await reportService.getDashboardStats(period);
+        const venueId = req.query.venueId as string | undefined;
+        const stats = await reportService.getDashboardStats(period, venueId);
         res.json({ success: true, data: stats });
     } catch (error) {
         next(error);
@@ -64,6 +65,24 @@ router.get('/upcoming-bookings', authenticate, async (req: Request, res: Respons
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 5;
         const bookings = await reportService.getUpcomingBookings(limit);
         res.json({ success: true, data: bookings });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.get('/occupancy', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { startDate, endDate, venueId, courtId } = req.query;
+        if (typeof startDate !== 'string' || typeof endDate !== 'string') {
+            return res.status(400).json({ success: false, message: 'Cần cung cấp ngày bắt đầu và ngày kết thúc' });
+        }
+        const data = await reportService.getOccupancyReport(
+            startDate,
+            endDate,
+            typeof venueId === 'string' ? venueId : undefined,
+            typeof courtId === 'string' ? courtId : undefined,
+        );
+        res.json({ success: true, data });
     } catch (error) {
         next(error);
     }

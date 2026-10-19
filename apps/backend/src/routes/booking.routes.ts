@@ -115,6 +115,15 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
 });
 
 // Get booking by ID
+router.get('/:id/check-in-qr', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const qr = await bookingService.getCheckInToken(req.params.id, req.user?.userId, req.user?.role);
+        res.json({ success: true, data: qr });
+    } catch (error) {
+        next(error);
+    }
+});
+
 router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const booking = await bookingService.findById(req.params.id);
@@ -178,9 +187,31 @@ router.post('/:id/cancel', authenticate, async (req: Request, res: Response, nex
 });
 
 // Check-in
+router.post('/check-in-token', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const booking = await bookingService.checkInByToken(
+            typeof req.body.token === 'string' ? req.body.token : '',
+            req.user?.userId,
+            req.user?.role,
+        );
+        res.json({ success: true, message: 'Check-in thành công', data: booking });
+    } catch (error) {
+        next(error);
+    }
+});
+
+router.post('/:id/no-show', authenticate, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const booking = await bookingService.markNoShow(req.params.id, req.user?.userId, req.user?.role);
+        res.json({ success: true, message: 'Đã ghi nhận khách vắng', data: booking });
+    } catch (error) {
+        next(error);
+    }
+});
+
 router.post('/:id/check-in', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const booking = await bookingService.checkIn(req.params.id);
+        const booking = await bookingService.checkIn(req.params.id, req.user?.userId, req.user?.role);
         res.json({
             success: true,
             message: 'Check-in thành công',

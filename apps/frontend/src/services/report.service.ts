@@ -7,6 +7,15 @@ export interface DashboardStats {
     courtsAvailable: number;
     courtsInUse: number;
     pendingInvoices: number;
+    bookingDistribution?: { label: string; value: number; color: string }[];
+    alerts?: {
+        pendingRequests: number;
+        pendingTransfers: number;
+        pendingCancellations: number;
+        upcomingBookingsCount: number;
+        lowStockCount: number;
+        courtsAvailable: number;
+    };
 }
 
 export interface RevenueChartData {
@@ -45,6 +54,36 @@ export interface UpcomingBooking {
     status: string;
 }
 
+export interface OccupancyReport {
+    availableHours: number;
+    bookedHours: number;
+    occupancyRate: number;
+    cancellations: number;
+    noShows: number;
+    rows: Array<{
+        venueId: string;
+        venueName: string;
+        courtId: string;
+        courtName: string;
+        hour: number;
+        hourLabel: string;
+        availableHours: number;
+        bookedHours: number;
+        occupancyRate: number;
+        cancellations: number;
+        noShows: number;
+    }>;
+    recommendations: Array<{
+        courtId: string;
+        courtName: string;
+        hourLabel: string;
+        occupancyRate: number;
+        availableHours: number;
+        bookedHours: number;
+        suggestion: string;
+    }>;
+}
+
 export const reportApi = {
     async getDashboardStats(period: 'day' | 'week' | 'month' = 'day'): Promise<DashboardStats> {
         const response = await api.get<ApiResponse<DashboardStats>>(`/reports/dashboard?period=${period}`);
@@ -75,5 +114,10 @@ export const reportApi = {
     async getUpcomingBookings(limit = 5): Promise<UpcomingBooking[]> {
         const response = await api.get<ApiResponse<UpcomingBooking[]>>(`/reports/upcoming-bookings?limit=${limit}`);
         return response.data.data || [];
+    },
+
+    async getOccupancyReport(params: { startDate: string; endDate: string; venueId?: string; courtId?: string }): Promise<OccupancyReport> {
+        const response = await api.get<ApiResponse<OccupancyReport>>('/reports/occupancy', { params });
+        return response.data.data!;
     },
 };

@@ -9,13 +9,37 @@ export const portalAuthApi = {
         const response = await api.post('/portal-auth/verify-register', data);
         return response.data;
     },
-    async register(data: any) {
-        const response = await api.post('/portal-auth/register', data);
-        return response.data;
-    },
     async login(data: any) {
         const response = await api.post('/portal-auth/login', data);
         return response.data;
+    },
+    async getMe() {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.get('/portal-auth/me', {
+            headers: { Authorization: `Bearer ${token || ''}` },
+        });
+        return response.data.data;
+    },
+    async getFavorites(): Promise<{ venueIds: string[]; courtIds: string[] }> {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.get('/portal-auth/favorites', {
+            headers: { Authorization: `****** || ''}` },
+        });
+        return response.data.data;
+    },
+    async setFavoriteVenue(venueId: string, favorite: boolean) {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.put(`/portal-auth/favorites/venues/${venueId}`, { favorite }, {
+            headers: { Authorization: `****** || ''}` },
+        });
+        return response.data.data;
+    },
+    async setFavoriteCourt(courtId: string, favorite: boolean) {
+        const token = localStorage.getItem('portalUserToken');
+        const response = await api.put(`/portal-auth/favorites/courts/${courtId}`, { favorite }, {
+            headers: { Authorization: `****** || ''}` },
+        });
+        return response.data.data;
     },
     async forgotPasswordOtp(data: { email: string }) {
         const response = await api.post('/portal-auth/forgot-password-otp', data);

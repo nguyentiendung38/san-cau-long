@@ -3,10 +3,18 @@ import { AppError } from '../middleware/error.js';
 
 export class ExploreContentService {
     async getAll(type?: string, activeOnly = false) {
+        const today = new Date();
+        today.setUTCHours(0, 0, 0, 0);
         return prisma.exploreContent.findMany({
             where: {
                 ...(type ? { type } : {}),
-                ...(activeOnly ? { isActive: true } : {}),
+                ...(activeOnly ? {
+                    isActive: true,
+                    AND: [
+                        { OR: [{ startDate: null }, { startDate: { lte: today } }] },
+                        { OR: [{ endDate: null }, { endDate: { gte: today } }] },
+                    ],
+                } : {}),
             },
             orderBy: [{ sortOrder: 'asc' }, { createdAt: 'desc' }],
         });

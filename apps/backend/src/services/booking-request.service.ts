@@ -4,6 +4,17 @@ import { voucherService } from './voucher.service.js';
 import { isWithinOperatingHours, timeToMinutes } from '../utils/booking-rules.js';
 import { parseBookingOrder } from '../utils/booking-order.js';
 import { invoiceService } from './invoice.service.js';
+import { getBankTransferExpiry, isBookingStartInFuture, isChangeRequestBeforeDeadline } from '../utils/booking-request-policy.js';
+import { randomBytes } from 'node:crypto';
+import { maintenanceClosureService, bookingInterval } from './maintenance-closure.service.js';
+import { notificationService, safelyQueueNotification } from './notification.service.js';
+import {
+    LOYALTY_POINT_VALUE_VND,
+    awardInvoicePoints,
+    getMaxRedeemPoints,
+    redeemBookingPoints,
+    releaseBookingPointReservation,
+} from './loyalty.service.js';
 
 interface RequestedOrderItem {
     id: string;
@@ -14,7 +25,59 @@ interface RequestedOrderItem {
 }
 
 export class BookingRequestService {
+    async expireUnpaidBankTransferRequests(now = new Date()) {
+        const expired = await prisma.bookingRequest.findMany({
+            where: {
+                status: 'PENDING',
+                paymentStatus: { not: 'PAID' },
+                paymentMethod: 'DEPOSIT_TRANSFER',
+                expiresAt: { lte: now },
+            },
+            select: { id: true },
+            take: 100,
+        });
+        let count = 0;
+        for (const { id } of expired) {
+            const didExpire = await prisma.$transaction(async (tx) => {
+                const result = await tx.bookingRequest.updateMany({
+                    where: {
+                        id,
+                        status: 'PENDING',
+                        paymentStatus: { not: 'PAID' },
+                        paymentMethod: 'DEPOSIT_TRANSFER',
+                        expiresAt: { lte: now },
+                    },
+                    data: {
+                        status: 'EXPIRED',
+                        paymentStatus: 'FAILED',
+                    },
+                });
+                if (result.count !== 1) return false;
+                const request = await tx.bookingRequest.findUnique({ where: { id } });
+                if (request) {
+                    await tx.bookingRequest.update({
+                        where: { id },
+                        data: { notes: `[Hết hạn thanh toán sau 30 phút] ${request.notes || ''}`.trim() },
+                    });
+                    await releaseBookingPointReservation(tx, request);
+                }
+                return true;
+            });
+            if (didExpire) {
+                count += 1;
+                try {
+                    const request = await prisma.bookingRequest.findUnique({ where: { id } });
+                    if (request) await safelyQueueNotification(notificationService.bookingExpired(request), 'hết hạn');
+                } catch (error) {
+                    console.error('Không thể xếp email hết hạn vào hàng đợi:', error instanceof Error ? error.message : error);
+                }
+            }
+        }
+        return count;
+    }
+
     async create(data: any) {
+        await this.expireUnpaidBankTransferRequests();
         const { BookingService } = await import('./booking.service.js');
         const bookingService = new BookingService();
         
@@ -26,6 +89,28 @@ export class BookingRequestService {
         if (!court || court.status !== 'ACTIVE') throw new AppError(404, 'Không tìm thấy sân đang nhận đặt');
         if (!court.venue.isActive) throw new AppError(400, 'Cơ sở hiện không nhận đặt sân');
         if (court.venueId !== data.venueId) throw new AppError(400, 'Sân không thuộc cơ sở đã chọn');
+        const paymentMethod = data.paymentMethod || 'DEPOSIT_TRANSFER';
+        if (!['DEPOSIT_TRANSFER', 'VNPAY', 'MOMO'].includes(paymentMethod)) {
+            throw new AppError(400, 'Phương thức thanh toán không hợp lệ');
+        }
+        if (
+            paymentMethod === 'DEPOSIT_TRANSFER' &&
+            (!court.venue.bankCode || !court.venue.bankAccountNumber || !court.venue.bankAccountName)
+        ) {
+            throw new AppError(400, 'Cơ sở chưa cấu hình tài khoản nhận chuyển khoản');
+        }
+        if (typeof data.customerId !== 'string' || !data.customerId) {
+            throw new AppError(401, 'Vui lòng đăng nhập để gửi yêu cầu đặt sân');
+        }
+        const customer = await prisma.customer.findUnique({
+            where: { id: data.customerId },
+            select: { id: true, phone: true, points: true, reservedPoints: true },
+        });
+        if (!customer || customer.phone.trim() !== String(data.phone || '').trim()) {
+            throw new AppError(403, 'Số điện thoại đặt sân phải trùng với tài khoản đã đăng nhập');
+        }
+        const customerId = customer.id;
+        const customerReservedPoints = customer.reservedPoints;
         
         
         const dateObj = new Date(data.date);
@@ -92,8 +177,9 @@ export class BookingRequestService {
                 status: 'PENDING',
                 paymentStatus: { not: 'FAILED' },
                 OR: [
-                    { paymentMethod: { not: 'VNPAY' } },
-                    { createdAt: { gte: fifteenMinsAgo } }
+                    { paymentMethod: 'DEPOSIT_TRANSFER', expiresAt: { gt: new Date() } },
+                    { paymentMethod: 'VNPAY', createdAt: { gte: fifteenMinsAgo } },
+                    { paymentMethod: { notIn: ['DEPOSIT_TRANSFER', 'VNPAY'] } },
                 ]
             }
         });
@@ -112,6 +198,7 @@ export class BookingRequestService {
                 throw new AppError(400, 'Khung giờ này đang có người khác thực hiện đặt sân, vui lòng chọn giờ khác.');
             }
         }
+        await maintenanceClosureService.ensureAvailable(data.courtId, dateObj, data.startTime, data.endTime);
 
         let parsedOrderedItems = data.orderedItems;
         if (typeof data.orderedItems === 'string') {
@@ -190,6 +277,10 @@ export class BookingRequestService {
         let paymentAmount = subtotal;
 
         let discountAmount = 0;
+        const redeemPoints = data.redeemPoints ?? 0;
+        if (!Number.isInteger(redeemPoints) || redeemPoints < 0) {
+            throw new AppError(400, 'Số điểm sử dụng không hợp lệ');
+        }
         let voucherCode: string | undefined;
         if (data.voucherCode) {
             const voucherResult = await voucherService.validate(data.voucherCode, subtotal);
@@ -198,34 +289,115 @@ export class BookingRequestService {
             voucherCode = voucherResult.voucher.code;
         }
 
-        return prisma.bookingRequest.create({
-            data: {
-                venueId: data.venueId,
-                courtId: data.courtId,
-                name: data.name,
-                phone: data.phone,
-                date: new Date(data.date),
-                startTime: data.startTime,
-                endTime: data.endTime,
-                notes: data.notes,
-                status: 'PENDING',
-                paymentMethod: data.paymentMethod || 'DEPOSIT_TRANSFER',
-                paymentAmount,
-                paymentProof: data.paymentProof,
-                orderedItems: JSON.stringify({
-                    items: orderItems,
-                    subtotal,
-                    totalAmount: paymentAmount,
-                    discountAmount,
+        const availablePoints = customer.points - customer.reservedPoints;
+        const maxRedeemPoints = getMaxRedeemPoints(pricing.total, availablePoints);
+        if (redeemPoints > maxRedeemPoints) {
+            throw new AppError(400, `Tối đa có thể đổi ${maxRedeemPoints} điểm cho tiền sân này`);
+        }
+        const loyaltyDiscountAmount = redeemPoints * LOYALTY_POINT_VALUE_VND;
+        if (loyaltyDiscountAmount > paymentAmount) {
+            throw new AppError(400, 'Điểm đổi vượt quá số tiền còn phải thanh toán');
+        }
+        paymentAmount -= loyaltyDiscountAmount;
+
+        const createdAt = new Date();
+        const expiresAt = paymentMethod === 'DEPOSIT_TRANSFER'
+            ? getBankTransferExpiry(createdAt)
+            : null;
+        const transferReference = paymentMethod === 'DEPOSIT_TRANSFER'
+            ? `CTY${randomBytes(5).toString('hex').toUpperCase()}`
+            : null;
+        const request = await prisma.$transaction(async (tx) => {
+            const interval = bookingInterval(dateObj, data.startTime, data.endTime);
+            const transactionClosure = await tx.maintenanceClosure.findFirst({
+                where: {
+                    courtId: data.courtId,
+                    startAt: { lt: interval.endAt },
+                    endAt: { gt: interval.startAt },
+                },
+                select: { id: true },
+            });
+            if (transactionClosure) throw new AppError(409, 'Sân đang đóng bảo trì trong khung giờ này');
+            const transactionBookings = await tx.booking.findMany({
+                where: {
+                    courtId: data.courtId,
+                    date: { gte: dateObjStart, lte: dateObjEnd },
+                    status: { notIn: ['CANCELLED', 'COMPLETED'] },
+                },
+                select: { startTime: true, endTime: true },
+            });
+            const transactionRequests = await tx.bookingRequest.findMany({
+                where: {
+                    courtId: data.courtId,
+                    date: { gte: dateObjStart, lte: dateObjEnd },
+                    status: 'PENDING',
+                    createdAt,
+                    paymentStatus: { not: 'FAILED' },
+                    OR: [
+                        { paymentMethod: 'DEPOSIT_TRANSFER', expiresAt: { gt: new Date() } },
+                        { paymentMethod: 'VNPAY', createdAt: { gte: fifteenMinsAgo } },
+                        { paymentMethod: { notIn: ['DEPOSIT_TRANSFER', 'VNPAY'] } },
+                    ],
+                },
+                select: { startTime: true, endTime: true },
+            });
+            if ([...transactionBookings, ...transactionRequests].some((reservation) =>
+                data.startTime < reservation.endTime && reservation.startTime < data.endTime,
+            )) {
+                throw new AppError(409, 'Khung giờ vừa được giữ bởi yêu cầu khác. Vui lòng tải lại lịch.');
+            }
+            if (redeemPoints > 0) {
+                const reservation = await tx.customer.updateMany({
+                    where: {
+                        id: customerId,
+                        points: { gte: redeemPoints + customerReservedPoints },
+                        reservedPoints: customerReservedPoints,
+                    },
+                    data: { reservedPoints: { increment: redeemPoints } },
+                });
+                if (reservation.count !== 1) {
+                    throw new AppError(409, 'Số dư điểm khả dụng đã thay đổi. Vui lòng tải lại và thử lại.');
+                }
+            }
+            return tx.bookingRequest.create({
+                data: {
+                    venueId: data.venueId,
+                    courtId: data.courtId,
+                    customerId,
+                    name: data.name,
+                    phone: data.phone,
+                    date: new Date(data.date),
+                    startTime: data.startTime,
+                    endTime: data.endTime,
+                    notes: data.notes,
+                    status: 'PENDING',
+                    paymentMethod,
+                    paymentAmount,
+                    paymentProof: data.paymentProof,
+                    expiresAt,
+                    transferReference,
+                    redeemPoints,
+                    loyaltyDiscountAmount,
+                    orderedItems: JSON.stringify({
+                        items: orderItems,
+                        subtotal,
+                        totalAmount: paymentAmount,
+                        discountAmount: discountAmount + loyaltyDiscountAmount,
+                        voucherCode,
+                    }),
                     voucherCode,
-                }),
-                voucherCode,
-                discountAmount,
-            },
+                    discountAmount,
+                },
+            });
         });
+        if (paymentMethod === 'DEPOSIT_TRANSFER') {
+            await safelyQueueNotification(notificationService.paymentDeadline(request), 'deadline thanh toán');
+        }
+        return request;
     }
 
     async getAll(venueId?: string) {
+        await this.expireUnpaidBankTransferRequests();
         return prisma.bookingRequest.findMany({
             where: venueId ? { venueId } : {},
             orderBy: { createdAt: 'desc' },
@@ -236,21 +408,233 @@ export class BookingRequestService {
         });
     }
 
-    async getByPhone(phone: string) {
-        return prisma.bookingRequest.findMany({
-            where: { phone },
+    async getByCustomerId(customerId: string) {
+        await this.expireUnpaidBankTransferRequests();
+        const requests = await prisma.bookingRequest.findMany({
+            where: { customerId },
             orderBy: { createdAt: 'desc' },
             include: {
                 venue: { select: { name: true, address: true, logo: true } },
                 court: { select: { name: true } },
             }
         });
+        return Promise.all(requests.map(async (request) => {
+            let booking: { id: string; checkInToken: string | null; checkedInAt: Date | null } | null = await prisma.booking.findFirst({
+                where: {
+                    notes: { contains: `[Online Request:${request.id}]` },
+                    customerId,
+                    status: { in: ['CONFIRMED', 'IN_PROGRESS'] },
+                },
+                select: { id: true, checkInToken: true, checkedInAt: true },
+            });
+            if (booking && !booking.checkInToken) {
+                await prisma.booking.updateMany({
+                    where: { id: booking.id, checkInToken: null, status: { in: ['CONFIRMED', 'IN_PROGRESS'] } },
+                    data: { checkInToken: randomBytes(32).toString('base64url') },
+                });
+                booking = await prisma.booking.findUnique({
+                    where: { id: booking.id },
+                    select: { id: true, checkInToken: true, checkedInAt: true },
+                });
+            }
+            return { ...request, checkIn: booking };
+        }));
+    }
+
+    async requestCancellation(
+        id: string,
+        customerId: string,
+        reason: string,
+        change: { type?: 'CANCELLATION' | 'RESCHEDULE'; date?: Date; startTime?: string; endTime?: string } = {},
+    ) {
+        const request = await prisma.bookingRequest.findUnique({ where: { id } });
+        if (!request) throw new AppError(404, 'Không tìm thấy yêu cầu đặt sân');
+        if (request.customerId !== customerId) {
+            throw new AppError(403, 'Bạn không có quyền thao tác yêu cầu đặt sân này');
+        }
+        if (!['PENDING', 'APPROVED'].includes(request.status)) {
+            throw new AppError(400, 'Chỉ có thể yêu cầu hủy lịch đang chờ hoặc đã được xác nhận');
+        }
+        if (!isChangeRequestBeforeDeadline(request.date, request.startTime)) {
+            throw new AppError(400, 'Yêu cầu đổi hoặc hủy phải được gửi trước giờ bắt đầu ít nhất 24 giờ');
+        }
+        if (request.cancellationRequestStatus === 'PENDING') {
+            throw new AppError(409, 'Yêu cầu hủy lịch này đang chờ cơ sở xử lý');
+        }
+
+        const isReschedule = change.type === 'RESCHEDULE';
+        if (isReschedule) {
+            if (!change.date || !change.startTime || !change.endTime) {
+                throw new AppError(400, 'Vui lòng chọn ngày và khung giờ mới');
+            }
+            if (!isChangeRequestBeforeDeadline(change.date, change.startTime)) {
+                throw new AppError(400, 'Khung giờ mới phải cách thời điểm gửi ít nhất 24 giờ');
+            }
+            const start = timeToMinutes(change.startTime);
+            const end = timeToMinutes(change.endTime);
+            if (start === null || end === null || start >= end || start % 30 !== 0 || end % 30 !== 0) {
+                throw new AppError(400, 'Khung giờ mới không hợp lệ');
+            }
+            const operatingHours = await prisma.operatingHour.findMany({
+                where: { venueId: request.venueId, isActive: true },
+            });
+            if (!isWithinOperatingHours(operatingHours, change.date.getUTCDay(), change.startTime, change.endTime)) {
+                throw new AppError(400, 'Khung giờ mới nằm ngoài giờ hoạt động của cơ sở');
+            }
+        }
+        const updated = await prisma.bookingRequest.update({
+            where: { id },
+            data: {
+                cancellationRequestStatus: 'PENDING',
+                cancellationRequestType: isReschedule ? 'RESCHEDULE' : 'CANCELLATION',
+                cancellationRequestReason: reason,
+                cancellationRequestedAt: new Date(),
+                cancellationReviewedAt: null,
+                requestedDate: isReschedule ? change.date : null,
+                requestedStartTime: isReschedule ? change.startTime : null,
+                requestedEndTime: isReschedule ? change.endTime : null,
+            },
+        });
+        await safelyQueueNotification(notificationService.bookingChangeRequest(updated, 'SUBMITTED'), 'yêu cầu đổi/hủy lịch');
+        return updated;
+    }
+
+    async reviewCancellationRequest(id: string, status: 'APPROVED' | 'REJECTED', reason?: string) {
+        const updated = await prisma.$transaction(async (tx) => {
+            const request = await tx.bookingRequest.findUnique({ where: { id } });
+            if (!request) throw new AppError(404, 'Không tìm thấy yêu cầu đặt sân');
+            if (request.cancellationRequestStatus !== 'PENDING') {
+                throw new AppError(409, 'Yêu cầu hủy không còn ở trạng thái chờ xử lý');
+            }
+            if (status === 'APPROVED' && !isBookingStartInFuture(request.date, request.startTime)) {
+                throw new AppError(400, 'Không thể duyệt hủy sau khi lịch đã bắt đầu');
+            }
+
+            const isReschedule = request.cancellationRequestType === 'RESCHEDULE';
+            if (status === 'APPROVED' && isReschedule) {
+                if (!request.requestedDate || !request.requestedStartTime || !request.requestedEndTime) {
+                    throw new AppError(409, 'Yêu cầu đổi lịch không có khung giờ mới');
+                }
+                const operatingHours = await tx.operatingHour.findMany({
+                    where: { venueId: request.venueId, isActive: true },
+                });
+                if (!isWithinOperatingHours(
+                    operatingHours,
+                    request.requestedDate.getUTCDay(),
+                    request.requestedStartTime,
+                    request.requestedEndTime,
+                )) {
+                    throw new AppError(409, 'Khung giờ mới hiện không nằm trong giờ hoạt động');
+                }
+                const newDayStart = new Date(Date.UTC(
+                    request.requestedDate.getUTCFullYear(),
+                    request.requestedDate.getUTCMonth(),
+                    request.requestedDate.getUTCDate(),
+                ));
+                const newDayEnd = new Date(newDayStart.getTime() + 24 * 60 * 60_000 - 1);
+                const bookingMarker = `[Online Request:${request.id}]`;
+                const linkedBooking = request.status === 'APPROVED'
+                    ? await tx.booking.findFirst({ where: { notes: { contains: bookingMarker }, courtId: request.courtId || undefined } })
+                    : null;
+                const conflicts = await tx.booking.findMany({
+                    where: {
+                        courtId: request.courtId || undefined,
+                        date: { gte: newDayStart, lte: newDayEnd },
+                        status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+                        ...(linkedBooking ? { id: { not: linkedBooking.id } } : {}),
+                    },
+                    select: { startTime: true, endTime: true },
+                });
+                if (conflicts.some((booking) =>
+                    request.requestedStartTime! < booking.endTime && booking.startTime < request.requestedEndTime!,
+                )) {
+                    throw new AppError(409, 'Khung giờ mới đã có lịch đặt khác');
+                }
+                const pendingRequests = await tx.bookingRequest.findMany({
+                    where: {
+                        id: { not: request.id },
+                        courtId: request.courtId || undefined,
+                        date: { gte: newDayStart, lte: newDayEnd },
+                        status: 'PENDING',
+                        paymentStatus: { not: 'FAILED' },
+                    },
+                    select: { startTime: true, endTime: true },
+                });
+                if (pendingRequests.some((pending) =>
+                    request.requestedStartTime! < pending.endTime && pending.startTime < request.requestedEndTime!,
+                )) {
+                    throw new AppError(409, 'Khung giờ mới đang được giữ bởi một yêu cầu khác');
+                }
+                const interval = bookingInterval(request.requestedDate, request.requestedStartTime, request.requestedEndTime);
+                const maintenance = await tx.maintenanceClosure.findFirst({
+                    where: { courtId: request.courtId || undefined, startAt: { lt: interval.endAt }, endAt: { gt: interval.startAt } },
+                    select: { id: true },
+                });
+                if (maintenance) throw new AppError(409, 'Sân đang đóng bảo trì trong khung giờ mới');
+                if (linkedBooking) {
+                    await tx.booking.update({
+                        where: { id: linkedBooking.id },
+                        data: {
+                            date: request.requestedDate,
+                            startTime: request.requestedStartTime,
+                            endTime: request.requestedEndTime,
+                        },
+                    });
+                }
+            }
+
+            if (status === 'APPROVED' && request.status === 'APPROVED' && !isReschedule) {
+                const bookingMarker = `[Online Request:${request.id}]`;
+                const result = await tx.booking.updateMany({
+                    where: {
+                        courtId: request.courtId || undefined,
+                        date: request.date,
+                        notes: { contains: bookingMarker },
+                        status: { not: 'CANCELLED' },
+                    },
+                    data: { status: 'CANCELLED' },
+                });
+                if (result.count === 0) {
+                    throw new AppError(409, 'Không tìm thấy lịch đã xác nhận để hủy; vui lòng kiểm tra lịch sân');
+                }
+            }
+
+            const notes = reason?.trim()
+                ? `[Admin xử lý yêu cầu ${isReschedule ? 'đổi lịch' : 'hủy'}: ${reason.trim()}] ${request.notes || ''}`.trim()
+                : request.notes;
+            const updatedRequest = await tx.bookingRequest.update({
+                where: { id },
+                data: {
+                    cancellationRequestStatus: status,
+                    cancellationReviewedAt: new Date(),
+                    ...(notes ? { notes } : {}),
+                    ...(status === 'APPROVED' && !isReschedule ? { status: 'CANCELLED' } : {}),
+                    ...(status === 'APPROVED' && isReschedule
+                        ? {
+                            date: request.requestedDate!,
+                            startTime: request.requestedStartTime!,
+                            endTime: request.requestedEndTime!,
+                        }
+                        : {}),
+                },
+            });
+            if (status === 'APPROVED' && !isReschedule) {
+                await releaseBookingPointReservation(tx, updatedRequest);
+            }
+            return updatedRequest;
+        });
+        await safelyQueueNotification(
+            notificationService.bookingChangeRequest(updated, status),
+            'kết quả yêu cầu đổi/hủy lịch',
+        );
+        return updated;
     }
 
     async updatePaymentStatus(id: string, paymentStatus: string, paymentAmount?: number) {
         if (!['PENDING', 'PAID', 'FAILED'].includes(paymentStatus)) {
             throw new AppError(400, 'Trạng thái thanh toán không hợp lệ');
         }
+        await this.expireUnpaidBankTransferRequests();
         return prisma.$transaction(async (tx) => {
             const existing = await tx.bookingRequest.findUnique({ where: { id } });
             if (!existing) throw new AppError(404, 'Không tìm thấy yêu cầu đặt sân');
@@ -262,6 +646,12 @@ export class BookingRequestService {
             const requestedTotal = requestOrder.totalAmount ?? existing.paymentAmount;
             if (amount > requestedTotal) {
                 throw new AppError(400, 'Số tiền đã nhận không được vượt tổng tiền đặt sân');
+            }
+            if (paymentStatus === 'PAID' && !['PENDING', 'APPROVED'].includes(existing.status)) {
+                throw new AppError(409, 'Yêu cầu đã hết hạn hoặc kết thúc; không thể xác nhận thanh toán. Hãy xử lý hoàn tiền và tạo yêu cầu mới.');
+            }
+            if (paymentStatus === 'PAID' && amount < requestedTotal) {
+                throw new AppError(400, 'Chỉ xác nhận đã thanh toán khi số tiền nhận đủ tổng tiền đặt sân');
             }
 
             const request = await tx.bookingRequest.update({
@@ -281,6 +671,11 @@ export class BookingRequestService {
                         : {}),
                 },
             });
+            if (request.status === 'APPROVED' && request.paymentStatus === 'PAID') {
+                await redeemBookingPoints(tx, request);
+            } else if (request.status === 'REJECTED' || request.status === 'CANCELLED') {
+                await releaseBookingPointReservation(tx, request);
+            }
             if (existing.status === 'APPROVED') {
                 const customer = await tx.customer.findUnique({ where: { phone: existing.phone } });
                 const marker = `[Online Request:${existing.id}]`;
@@ -317,7 +712,7 @@ export class BookingRequestService {
                         if (invoiceItem.invoice.paymentStatus === 'PAID' && nextInvoiceStatus !== 'PAID') {
                             throw new AppError(400, 'Không thể giảm trạng thái của hóa đơn đã thanh toán');
                         }
-                        await tx.invoice.update({
+                        const updatedInvoice = await tx.invoice.update({
                             where: { id: invoiceItem.invoiceId },
                             data: {
                                 paymentStatus: nextInvoiceStatus,
@@ -335,6 +730,9 @@ export class BookingRequestService {
                                 data: { totalSpent: { increment: invoiceItem.invoice.total } },
                             });
                         }
+                        if (nextInvoiceStatus === 'PAID' && invoiceItem.invoice.paymentStatus !== 'PAID') {
+                            await awardInvoicePoints(tx, updatedInvoice);
+                        }
                     }
                 }
             }
@@ -342,16 +740,23 @@ export class BookingRequestService {
         });
     }
 
-    async updateStatus(id: string, status: string, userId?: string) {
+    async updateStatus(id: string, status: string, userId?: string, reason?: string) {
+        if (!['APPROVED', 'REJECTED'].includes(status)) {
+            throw new AppError(400, 'Trạng thái yêu cầu đặt sân không hợp lệ');
+        }
+        await this.expireUnpaidBankTransferRequests();
         if (status === 'APPROVED') {
             const request = await prisma.bookingRequest.findUnique({ where: { id } });
             if (!request) throw new AppError(404, 'Không tìm thấy yêu cầu');
             if (request.status === 'APPROVED') return request;
+            if (request.status === 'EXPIRED') throw new AppError(409, 'Yêu cầu đặt sân đã hết hạn thanh toán');
             const courtId = request.courtId;
             if (!courtId) throw new AppError(400, 'Yêu cầu không còn gắn với sân hợp lệ');
 
             // 1. Find or create Customer
-            let customer = await prisma.customer.findUnique({ where: { phone: request.phone } });
+            let customer = request.customerId
+                ? await prisma.customer.findUnique({ where: { id: request.customerId } })
+                : await prisma.customer.findUnique({ where: { phone: request.phone } });
             if (!customer) {
                 customer = await prisma.customer.create({
                     data: {
@@ -378,6 +783,7 @@ export class BookingRequestService {
                     endTime: request.endTime,
                     notes: { contains: requestMarker },
                 },
+                select: { id: true },
             });
             if (!booking) {
                 const created = await bookingService.create({
@@ -389,7 +795,7 @@ export class BookingRequestService {
                     notes: `${requestMarker} [Online] ${request.notes || ''}`,
                     orderedItems: JSON.stringify(requestOrder.items),
                     voucherCode: request.voucherCode || undefined,
-                    discountAmount: request.discountAmount,
+                    discountAmount: requestOrder.discountAmount,
                     createdById: userId,
                     paymentMethod: request.paymentMethod,
                     paymentStatus: isFullyPaid ? 'PAID' : 'PENDING',
@@ -402,33 +808,67 @@ export class BookingRequestService {
                 booking = created.booking;
             }
 
-            // Record successful online payment once; invoice rows are built from the booking snapshot.
-            if (request.paymentMethod === 'VNPAY') {
-                const existingInvoiceItem = await prisma.invoiceItem.findFirst({
-                    where: { bookingId: booking.id },
+            const existingInvoiceItem = await prisma.invoiceItem.findFirst({
+                where: { bookingId: booking.id },
+            });
+            if (!existingInvoiceItem) {
+                const isPaid = request.paymentStatus === 'PAID' && amountReceived >= requestedTotal;
+                await invoiceService.create({
+                    customerId: customer.id,
+                    bookingIds: [booking.id],
+                    paymentMethod: request.paymentMethod,
+                    paymentStatus: isPaid ? 'PAID' : 'PENDING',
+                    paidAmount: isPaid ? amountReceived : 0,
+                    notes: `Thanh toán ${request.paymentMethod}${request.voucherCode ? ` (Voucher: ${request.voucherCode})` : ''}`,
                 });
-                if (!existingInvoiceItem) {
-                    await invoiceService.create({
-                        customerId: customer.id,
-                        bookingIds: [booking.id],
-                        paymentMethod: 'VNPAY',
-                        paymentStatus: 'PAID',
-                        paidAmount: request.paymentAmount,
-                        notes: `Thanh toán VNPAY${request.voucherCode ? ` (Voucher: ${request.voucherCode})` : ''}`,
-                    });
-                }
             }
         }
 
-        return prisma.bookingRequest.update({
-            where: { id },
-            data: { status },
+        const existingReq = await prisma.bookingRequest.findUnique({ where: { id } });
+        let updatedNotes = existingReq?.notes || '';
+        if (reason) {
+            const reasonTag = `[Lý do: ${reason}]`;
+            updatedNotes = updatedNotes ? `${reasonTag} ${updatedNotes}` : reasonTag;
+        }
+
+        const updatedRequest = await prisma.$transaction(async (tx) => {
+            const updatedRequest = await tx.bookingRequest.update({
+                where: { id },
+                data: {
+                    status,
+                    notes: updatedNotes || undefined,
+                },
+            });
+            if (status === 'APPROVED') {
+                await redeemBookingPoints(tx, updatedRequest);
+            } else if (status === 'REJECTED' || status === 'CANCELLED') {
+                await releaseBookingPointReservation(tx, updatedRequest);
+            }
+            return updatedRequest;
         });
+        if (updatedRequest.status === 'APPROVED' || updatedRequest.status === 'REJECTED') {
+            await safelyQueueNotification(notificationService.bookingDecision(updatedRequest), 'quyết định đặt sân');
+        }
+        if (updatedRequest.status === 'APPROVED') {
+            const marker = `[Online Request:${updatedRequest.id}]`;
+            const booking = await prisma.booking.findFirst({
+                where: { notes: { contains: marker } },
+                include: { court: { select: { name: true, venueId: true } } },
+            });
+            if (booking) await safelyQueueNotification(notificationService.upcomingBooking(booking), 'nhắc lịch');
+        }
+        return updatedRequest;
     }
 
     async delete(id: string) {
-        return prisma.bookingRequest.delete({
-            where: { id },
+        return prisma.$transaction(async (tx) => {
+            const request = await tx.bookingRequest.findUnique({ where: { id } });
+            if (!request) throw new AppError(404, 'Không tìm thấy yêu cầu đặt sân');
+            if (request.paymentStatus === 'PAID') {
+                throw new AppError(400, 'Không thể xóa yêu cầu đã thanh toán; hãy xử lý hoàn tiền và hủy lịch trước');
+            }
+            await releaseBookingPointReservation(tx, request);
+            return tx.bookingRequest.delete({ where: { id } });
         });
     }
 }

@@ -183,6 +183,23 @@ export default function InvoicesPage() {
         },
     });
 
+    const refundMutation = useMutation({
+        mutationFn: ({ id, reason }: { id: string; reason: string }) => invoiceApi.refund(id, reason),
+        onSuccess: () => {
+            toast({ title: 'Đã ghi nhận hoàn tiền và điều chỉnh điểm tích lũy', variant: 'success' });
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
+            queryClient.invalidateQueries({ queryKey: ['customers'] });
+            setSelectedInvoice(null);
+        },
+        onError: (error: any) => {
+            toast({
+                title: 'Không thể ghi nhận hoàn tiền',
+                description: error?.response?.data?.message || 'Vui lòng thử lại.',
+                variant: 'error',
+            });
+        },
+    });
+
 
     const deleteMutation = useMutation({
         mutationFn: (id: string) => invoiceApi.delete(id),
@@ -601,6 +618,28 @@ export default function InvoicesPage() {
                                     onClick={() => payMutation.mutate(selectedInvoice.id)}
                                 >
                                     Thanh toán
+                                </Button>
+                            </div>
+                        )}
+                        {selectedInvoice.paymentStatus === 'PAID' && (
+                            <div className="border-t border-border p-4">
+                                <Button
+                                    variant="ghost"
+                                    className="w-full text-red-400 hover:bg-red-500/10 hover:text-red-300"
+                                    disabled={refundMutation.isPending}
+                                    onClick={() => {
+                                        const confirmed = window.confirm(
+                                            'Chỉ tiếp tục sau khi đã hoàn toàn bộ tiền cho khách ngoài hệ thống. Ghi nhận hoàn sẽ thu hồi số điểm còn khả dụng từ hóa đơn này.',
+                                        );
+                                        if (!confirmed) return;
+                                        const reason = window.prompt('Nhập lý do hoàn tiền:');
+                                        if (reason?.trim()) {
+                                            refundMutation.mutate({ id: selectedInvoice.id, reason: reason.trim() });
+                                        }
+                                    }}
+                                >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Ghi nhận đã hoàn tiền
                                 </Button>
                             </div>
                         )}

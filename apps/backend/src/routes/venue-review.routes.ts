@@ -2,13 +2,12 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { venueReviewService } from '../services/venue-review.service.js';
+import { authenticatePortalCustomer } from '../middleware/portal-customer-auth.js';
 
 const router = Router();
 
 const createReviewSchema = z.object({
-    venueId: z.string().min(1),
-    customerName: z.string().trim().min(1).max(100),
-    customerPhone: z.string().trim().min(8).max(30),
+    bookingId: z.string().min(1),
     rating: z.number().int().min(1).max(5),
     content: z.string().trim().min(1).max(2000),
     images: z.array(z.string().max(1_500_000).regex(/^data:image\/(?:jpeg|png|webp);base64,/)).max(5).optional(),
@@ -16,6 +15,15 @@ const createReviewSchema = z.object({
 
 const statusSchema = z.object({
     status: z.enum(['PENDING', 'APPROVED', 'REJECTED']),
+});
+
+router.get('/public/eligible', authenticatePortalCustomer, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const bookings = await venueReviewService.findEligibleBookings(req.portalCustomer!.id);
+        res.json({ success: true, data: bookings });
+    } catch (error) {
+        next(error);
+    }
 });
 
 router.get('/public/:venueId', async (req: Request, res: Response, next: NextFunction) => {
@@ -39,10 +47,10 @@ router.get('/public-summary', async (req: Request, res: Response, next: NextFunc
     }
 });
 
-router.post('/public', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/public', authenticatePortalCustomer, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const validated = createReviewSchema.parse(req.body);
-        const review = await venueReviewService.create(validated);
+        const review = await venueReviewService.create({ ...validated, customerId: req.portalCustomer!.id });
         res.status(201).json({
             success: true,
             message: 'Đánh giá đã được gửi và đang chờ admin duyệt',
