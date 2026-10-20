@@ -4,18 +4,18 @@ services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: courtify-db
+    container_name: san-cau-long-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-courtify}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-courtify123}
-      POSTGRES_DB: ${POSTGRES_DB:-courtify}
+      POSTGRES_USER: ${POSTGRES_USER:-san_cau_long}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-before-deploy}
+      POSTGRES_DB: ${POSTGRES_DB:-san_cau_long}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - courtify-network
+      - san-cau-long-network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-courtify}" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-san_cau_long}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -25,10 +25,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.backend
-    container_name: courtify-backend
+    container_name: san-cau-long-backend
     restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-courtify}:${POSTGRES_PASSWORD:-courtify123}@postgres:5432/${POSTGRES_DB:-courtify}
+    environment:      DATABASE_URL: postgresql://${POSTGRES_USER:-san_cau_long}:${POSTGRES_PASSWORD:-change-me-before-deploy}@postgres:5432/${POSTGRES_DB:-san_cau_long}
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
       NODE_ENV: production
@@ -37,7 +36,7 @@ services:
       postgres:
         condition: service_healthy
     networks:
-      - courtify-network
+      - san-cau-long-network
 
   # Frontend (Nginx + React)
   frontend:
@@ -46,7 +45,7 @@ services:
       dockerfile: docker/Dockerfile.frontend
       args:
         VITE_API_URL: /api
-    container_name: courtify-frontend
+    container_name: san-cau-long-frontend
     restart: unless-stopped
     ports:
       - "80:80"
@@ -54,7 +53,7 @@ services:
     depends_on:
       - backend
     networks:
-      - courtify-network
+      - san-cau-long-network
     volumes:
       # SSL certificates (uncomment when ready)
       # - ./ssl/cert.pem:/etc/nginx/ssl/cert.pem:ro
@@ -62,7 +61,7 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
 
 networks:
-  courtify-network:
+  san-cau-long-network:
     driver: bridge
 
 volumes:

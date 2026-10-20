@@ -18,6 +18,10 @@ export function intervalsOverlap(
     return firstStart < secondEnd && secondStart < firstEnd;
 }
 
+export function getClosureLabel(closureType: string) {
+    return closureType === 'TOURNAMENT' ? 'Tổ chức giải' : 'Bảo trì';
+}
+
 export class MaintenanceClosureService {
     async ensureAvailable(courtId: string, date: Date, startTime: string, endTime: string) {
         const interval = bookingInterval(date, startTime, endTime);
@@ -30,7 +34,7 @@ export class MaintenanceClosureService {
             include: { court: { select: { name: true } } },
         });
         if (closure) {
-            throw new AppError(409, `Sân ${closure.court.name} đang đóng bảo trì trong khung giờ này`);
+            throw new AppError(409, `Sân ${closure.court.name} đang ${getClosureLabel(closure.closureType).toLowerCase()} trong khung giờ này`);
         }
     }
 
@@ -48,16 +52,18 @@ export class MaintenanceClosureService {
         });
     }
 
-    async create(input: { courtId: string; startAt: string; endAt: string; reason?: string }) {
+    async create(input: { courtId: string; startAt: string; endAt: string; reason?: string; closureType?: string }) {
         const startAt = new Date(input.startAt);
         const endAt = new Date(input.endAt);
+        const closureType = input.closureType ?? 'MAINTENANCE';
         if (
             !Number.isFinite(startAt.getTime()) ||
             !Number.isFinite(endAt.getTime()) ||
             startAt >= endAt ||
+            !['MAINTENANCE', 'TOURNAMENT'].includes(closureType) ||
             (input.reason !== undefined && (typeof input.reason !== 'string' || input.reason.trim().length > 250))
         ) {
-            throw new AppError(400, 'Khoảng thời gian bảo trì không hợp lệ');
+            throw new AppError(400, 'Thông tin lịch đóng sân không hợp lệ');
         }
         const court = await prisma.court.findUnique({
             where: { id: input.courtId },
@@ -99,6 +105,7 @@ export class MaintenanceClosureService {
                 startAt,
                 endAt,
                 reason: input.reason?.trim() || null,
+                closureType,
             },
             include: { court: { select: { id: true, name: true } } },
         });

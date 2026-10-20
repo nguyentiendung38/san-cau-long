@@ -57,6 +57,18 @@ router.get('/phone/:phone', authenticate, async (req: Request, res: Response, ne
     }
 });
 
+
+// Verify / Update HUE status for customer
+router.patch('/:id/verify-hue', authenticate, authorize('ADMIN', 'SUPER_ADMIN', 'MANAGER'), async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const { isVerifiedHue, customerType, studentId, faculty } = req.body;
+        const customer = await customerService.verifyHue(req.params.id, isVerifiedHue ?? true, customerType, studentId, faculty);
+        res.json({ success: true, data: customer, message: 'Cập nhật trạng thái HUE thành công' });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Get customer by ID
 router.get('/:id', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {

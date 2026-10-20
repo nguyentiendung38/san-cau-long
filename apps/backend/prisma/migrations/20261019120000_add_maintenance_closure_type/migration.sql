@@ -1,0 +1,2 @@
+ALTER TABLE "maintenance_closures"
+ADD COLUMN "closureType" TEXT NOT NULL DEFAULT 'MAINTENANCE';

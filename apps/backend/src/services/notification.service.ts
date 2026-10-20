@@ -28,7 +28,7 @@ class NotificationService {
                 : null);
             if (!email?.trim()) return;
             const text = input.text;
-            const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033"><p>${escapeHtml(text).replaceAll('\n', '<br>')}</p><p>Trân trọng,<br>Đội ngũ Courtify</p></div>`;
+            const html = `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033"><p>${escapeHtml(text).replaceAll('\n', '<br>')}</p><p>Trân trọng,<br>Đội ngũ quản lý sân cầu lông</p></div>`;
             await prisma.emailNotification.create({
                 data: {
                     dedupeKey: input.dedupeKey,

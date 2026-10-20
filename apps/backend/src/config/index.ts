@@ -22,7 +22,7 @@ export const config = {
     },
 
     cors: {
-        origin: function (origin, callback) { callback(null, true); },
+        origin: function (origin: any, callback: any) { callback(null, true); },
     },
 
     pagination: {

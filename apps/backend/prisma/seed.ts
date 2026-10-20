@@ -22,7 +22,7 @@ async function main() {
     const adminPassword = await bcrypt.hash('admin123', 12);
     const admin = await prisma.user.create({
         data: {
-            email: 'admin@courtify.vn',
+            email: 'admin@san-cau-long.local',
             passwordHash: adminPassword,
             name: 'Quản trị viên',
             phone: '0987654321',
@@ -31,7 +31,7 @@ async function main() {
     });
 
     console.log('✅ Wiped database successfully.');
-    console.log('✅ Created default admin: admin@courtify.vn / admin123');
+    console.log('✅ Created default admin: admin@san-cau-long.local / admin123');
 }
 
 main()

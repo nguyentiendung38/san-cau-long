@@ -10,6 +10,7 @@ import {
     TYPE_ICONS,
 } from '@/services/explore-content.service';
 import { useToast } from '@/hooks/use-toast';
+import { compressImage } from '@/utils/image';
 
 const ALL_TYPES: ExploreContentType[] = ['EVENT', 'COURSE', 'NEWS', 'DEAL', 'PASS'];
 
@@ -36,6 +37,7 @@ export default function ExploreContentPage() {
     const [editItem, setEditItem] = useState<ExploreContent | null>(null);
     const [form, setForm] = useState<ExploreContentInput & { actionText?: string; actionUrl?: string }>(EMPTY_FORM);
     const [deleteConfirm, setDeleteConfirm] = useState<ExploreContent | null>(null);
+    const [isProcessingImage, setIsProcessingImage] = useState(false);
 
     const { data: allItems = [], isLoading } = useQuery({
         queryKey: ['explore-contents'],
@@ -369,15 +371,48 @@ export default function ExploreContentPage() {
                                 </div>
                             </div>
 
-                            {/* Image URL */}
+                            {/* Image upload */}
                             <div className="space-y-1.5">
-                                <label className="text-sm font-semibold text-foreground">URL Hình ảnh</label>
+                                <label className="text-sm font-semibold text-foreground">Hình ảnh</label>
                                 <input
-                                    value={form.imageUrl}
-                                    onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))}
-                                    className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                                    placeholder="https://..."
+                                    type="file"
+                                    accept="image/*"
+                                    disabled={isProcessingImage}
+                                    onChange={async (event) => {
+                                        const file = event.target.files?.[0];
+                                        if (!file) return;
+                                        setIsProcessingImage(true);
+                                        try {
+                                            const imageUrl = await compressImage(file);
+                                            setForm(current => ({ ...current, imageUrl }));
+                                        } catch (error) {
+                                            toast({
+                                                title: 'Không thể tải hình ảnh',
+                                                description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+                                                variant: 'error',
+                                            });
+                                        } finally {
+                                            setIsProcessingImage(false);
+                                            event.target.value = '';
+                                        }
+                                    }}
+                                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-green-600 file:px-3 file:py-1.5 file:font-semibold file:text-white"
                                 />
+                                <p className="text-xs text-foreground-secondary">
+                                    {isProcessingImage ? 'Đang xử lý ảnh...' : 'Chọn ảnh từ thiết bị (tối đa 20 MB).'}
+                                </p>
+                                {form.imageUrl && (
+                                    <div className="flex items-center gap-3 rounded-xl border border-border bg-background-tertiary p-2">
+                                        <img src={form.imageUrl} alt="Ảnh xem trước" className="h-20 w-28 rounded-lg object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => setForm(current => ({ ...current, imageUrl: '' }))}
+                                            className="text-sm font-medium text-red-600 hover:text-red-700"
+                                        >
+                                            Xóa ảnh
+                                        </button>
+                                    </div>
+                                )}
                             </div>
 
                             {/* Action Button Info */}
@@ -463,10 +498,10 @@ export default function ExploreContentPage() {
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={isSaving}
+                                    disabled={isSaving || isProcessingImage}
                                     className="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-semibold transition-colors"
                                 >
-                                    {isSaving ? 'Đang lưu...' : editItem ? 'Cập nhật' : 'Tạo mới'}
+                                    {isProcessingImage ? 'Đang xử lý ảnh...' : isSaving ? 'Đang lưu...' : editItem ? 'Cập nhật' : 'Tạo mới'}
                                 </button>
                             </div>
                         </form>

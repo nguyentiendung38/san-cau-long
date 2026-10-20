@@ -26,6 +26,49 @@ const loginSchema = z.object({
     password: z.string()
 });
 
+
+
+router.post('/request-hue-otp', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        const { studentId, faculty, email } = req.body;
+        const result = await portalAuthService.requestHueOtp(req.portalCustomer!.id, { studentId, faculty, email });
+        res.json({
+            success: true,
+            ...result,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post('/verify-hue-otp', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        const { studentId, faculty, email, otp, customerType } = req.body;
+        const customer = await portalAuthService.verifyHueOtp(req.portalCustomer!.id, { studentId, faculty, email, otp, customerType });
+        res.json({
+            success: true,
+            message: 'Xác thực Sinh viên Trường Đại học Kinh tế Huế thành công! Đã kích hoạt ưu đãi -20% tiền sân.',
+            data: customer,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
+router.post('/verify-hue', authenticatePortalCustomer, async (req, res, next) => {
+    try {
+        const { studentId, faculty, customerType } = req.body;
+        const customer = await portalAuthService.verifyHue(req.portalCustomer!.id, { studentId, faculty, customerType });
+        res.json({
+            success: true,
+            message: 'Xác thực Sinh viên/Cán bộ Trường Đại học Kinh tế Huế thành công! Đã kích hoạt ưu đãi -20% tiền sân.',
+            data: customer,
+        });
+    } catch (err) {
+        next(err);
+    }
+});
+
 router.get('/me', authenticatePortalCustomer, async (req, res, next) => {
     try {
         const customer = await portalAuthService.getCustomerLoyalty(req.portalCustomer!.id);

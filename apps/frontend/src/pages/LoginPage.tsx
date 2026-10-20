@@ -40,7 +40,6 @@ export default function LoginPage() {
                 login(response.data.user, response.data.accessToken, response.data.refreshToken)
                 toast({
                     title: 'Đăng nhập thành công',
-                    description: `Chào mừng ${response.data.user.name}!`,
                     variant: 'success',
                 })
                 navigate('/')
@@ -57,75 +56,108 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen flex">
-            {/* Left - Hero */}
-            <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-primary-600 to-primary-800 p-12 flex-col justify-between relative overflow-hidden">
-                {/* Background pattern */}
-                <div className="absolute inset-0 opacity-10">
-                    <div className="absolute top-20 left-20 w-64 h-64 border border-white rounded-full" />
-                    <div className="absolute bottom-40 right-20 w-96 h-96 border border-white rounded-full" />
-                    <div className="absolute top-1/2 left-1/3 w-48 h-48 border border-white rounded-full" />
-                </div>
+        <div className="h-screen max-h-screen flex overflow-hidden">
+            {/* Left - Hero with Campus Showcase */}
+            <div className="hidden lg:flex lg:w-1/2 p-6 xl:p-8 flex-col justify-between relative overflow-hidden bg-gradient-to-br from-[#063d2c] via-[#085a3c] to-[#04281c] text-white">
+                {/* Decorative background glow */}
+                <div className="absolute -right-20 -top-20 w-80 h-80 rounded-full bg-emerald-400/10 blur-3xl pointer-events-none" />
+                <div className="absolute -left-20 -bottom-20 w-80 h-80 rounded-full bg-lime-400/10 blur-3xl pointer-events-none" />
 
-                {/* Logo */}
+                {/* Header Logo */}
                 <div className="flex items-center gap-3 relative z-10">
-                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur">
-                        <span className="text-white font-bold text-xl">H</span>
+                    <img src="/logo-hue.jpg" alt="Logo Trường Đại học Kinh tế Huế" className="w-11 h-11 rounded-full object-contain bg-white p-0.5 shadow-md border-2 border-white/40" />
+                    <div>
+                        <span className="text-xl font-black text-white tracking-tight block">SÂN CẦU LÔNG HUẾ</span>
+                        <span className="text-xs font-semibold text-lime-300 tracking-wider uppercase">Trường Đại học Kinh tế Huế</span>
                     </div>
-                    <span className="text-2xl font-bold text-white">SÂN CẦU LÔNG HUẾ</span>
                 </div>
 
-                {/* Content */}
-                <div className="relative z-10">
-                    <h1 className="text-4xl font-bold text-white mb-4">
-                        Quản Lý Sân Cầu Lông của<br />Trường Đại Học Kinh Tế Huế
-                    </h1>
-                    <p className="text-white/80 text-lg max-w-md">
-                        Hệ thống toàn diện cho việc quản lý đặt sân, khách hàng,
-                        thanh toán và báo cáo doanh thu cho cơ sở thể thao của trường.
+                {/* Prominent Campus Photo Showcase - 100% rõ nét, không bị che khuất */}
+                <div className="relative z-10 my-2 xl:my-3">
+                    <div className="overflow-hidden rounded-2xl border border-white/30 bg-white/10 p-1.5 shadow-xl backdrop-blur-md">
+                        <img
+                            src="/nha-thi-dau-hue.jpg"
+                            alt="Nhà Thi Đấu Đa Năng HUE - Gắn kết để phát triển"
+                            className="w-full h-36 xl:h-44 object-cover rounded-xl shadow-md transition-transform duration-500 hover:scale-[1.01]"
+                        />
+                        <div className="mt-2 px-1.5 flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-white flex items-center gap-1">
+                                🏟️ Nhà Thi Đấu Đa Năng HUE
+                            </span>
+                            <span className="font-semibold text-lime-300 bg-black/40 px-2 py-0.5 rounded-full border border-lime-300/30">
+                                Gắn kết để phát triển
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Bottom System Info & Stats */}
+                <div className="relative z-10 bg-black/35 rounded-2xl p-3.5 xl:p-4 border border-white/20 backdrop-blur-md shadow-lg">
+                    <div className="flex items-center justify-between mb-1.5">
+                        <h2 className="text-sm font-extrabold text-white">
+                            Hệ Thống Quản Lý Sân Cầu Lông HUE
+                        </h2>
+                        <span className="text-[10px] font-bold text-lime-300 bg-white/10 px-2 py-0.5 rounded-full">
+                            Khu Thể Thao Trường
+                        </span>
+                    </div>
+                    <p className="text-[11px] text-emerald-100/85 leading-snug mb-2.5 line-clamp-2">
+                        Quản lý toàn diện đặt sân, thanh toán và vận hành cơ sở thể thao trường Đại học Kinh tế Huế.
                     </p>
-                </div>
-
-                {/* Stats */}
-                <div className="flex gap-12 relative z-10">
-                    <div>
-                        <p className="text-3xl font-bold text-white">500+</p>
-                        <p className="text-white/70">Khách hàng</p>
-                    </div>
-                    <div>
-                        <p className="text-3xl font-bold text-white">50+</p>
-                        <p className="text-white/70">Sân hoạt động</p>
-                    </div>
-                    <div>
-                        <p className="text-3xl font-bold text-white">10K+</p>
-                        <p className="text-white/70">Lượt đặt sân</p>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/15 text-center">
+                        <div>
+                            <p className="text-lg xl:text-xl font-black text-lime-300 leading-tight">500+</p>
+                            <p className="text-[10px] text-white/70">Khách hàng</p>
+                        </div>
+                        <div>
+                            <p className="text-lg xl:text-xl font-black text-lime-300 leading-tight">50+</p>
+                            <p className="text-[10px] text-white/70">Sân hoạt động</p>
+                        </div>
+                        <div>
+                            <p className="text-lg xl:text-xl font-black text-lime-300 leading-tight">10K+</p>
+                            <p className="text-[10px] text-white/70">Lượt đặt</p>
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Right - Form */}
-            <div className="flex-1 flex items-center justify-center p-8 bg-background">
+            <div className="flex-1 flex items-center justify-center p-6 bg-background overflow-y-auto">
                 <div className="w-full max-w-md">
                     {/* Mobile logo */}
-                    <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-                        <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center">
-                            <span className="text-white font-bold text-xl">H</span>
+                    <div className="lg:hidden flex flex-col items-center gap-3 mb-6 justify-center">
+                        <div className="flex items-center gap-3">
+                            <img src="/logo-hue.jpg" alt="Logo Trường Đại học Kinh tế Huế" className="w-12 h-12 rounded-full object-contain bg-white p-0.5 shadow-md border border-slate-200" />
+                            <div>
+                                <span className="text-xl font-black text-emerald-700 block">SÂN CẦU LÔNG HUẾ</span>
+                                <span className="text-xs text-slate-500 font-medium">Trường Đại học Kinh tế Huế</span>
+                            </div>
                         </div>
-                        <span className="text-2xl font-bold text-primary-500">SÂN CẦU LÔNG HUẾ</span>
+                        {/* Mobile Campus Card */}
+                        <div className="w-full mt-2 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white p-1">
+                            <img
+                                src="/nha-thi-dau-hue.jpg"
+                                alt="Nhà Thi Đấu Đa Năng HUE"
+                                className="w-full h-36 object-cover rounded-lg"
+                            />
+                            <p className="text-[11px] text-center text-slate-600 font-semibold py-1">
+                                🏟️ Nhà Thi Đấu Đa Năng HUE · Gắn kết để phát triển
+                            </p>
+                        </div>
                     </div>
 
-                    <div className="mb-8">
-                        <h2 className="text-2xl font-bold text-foreground">Đăng nhập</h2>
+                    <div className="mb-4">
+                        <h2 className="text-2xl font-black text-foreground">Đăng nhập</h2>
                         <p className="text-foreground-secondary mt-2">
                             Nhập thông tin tài khoản để truy cập hệ thống
                         </p>
                     </div>
 
-                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-3.5">
                         <Input
                             label="Email"
                             type="email"
-                            placeholder="admin@courtify.vn"
+                            placeholder="admin@gmail.com"
                             icon={<Mail className="w-4 h-4" />}
                             error={errors.email?.message}
                             {...register('email')}
@@ -172,15 +204,6 @@ export default function LoginPage() {
                         </Button>
                     </form>
 
-                    {/* Demo accounts */}
-                    <div className="mt-8 p-4 bg-background-secondary rounded-lg border border-border">
-                        <p className="text-xs text-foreground-muted mb-2">Tài khoản demo:</p>
-                        <div className="space-y-1 text-xs text-foreground-secondary">
-                            <p><strong>Admin:</strong> admin@courtify.vn / admin123</p>
-                            <p><strong>Manager:</strong> manager@courtify.vn / manager123</p>
-                            <p><strong>Staff:</strong> staff@courtify.vn / staff123</p>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

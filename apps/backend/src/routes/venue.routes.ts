@@ -97,8 +97,8 @@ router.get('/:id/availability', async (req: Request, res: Response, next: NextFu
                 date: startOfDay,
                 startTime: toTime(clippedStart),
                 endTime: toTime(clippedEnd),
-                status: 'MAINTENANCE',
-                notes: closure.reason || 'Bảo trì',
+                status: closure.closureType === 'TOURNAMENT' ? 'TOURNAMENT' : 'MAINTENANCE',
+                notes: closure.reason || (closure.closureType === 'TOURNAMENT' ? 'Tổ chức giải' : 'Bảo trì'),
             };
         });
         const allBlockedSlots = [...bookings, ...pendingRequests, ...closureSlots];

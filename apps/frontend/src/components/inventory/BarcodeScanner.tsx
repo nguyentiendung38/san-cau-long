@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Camera, X, RotateCcw, Check, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-
+import type { FormEvent } from 'react';
 
 interface BarcodeScannerProps {
     onScan: (barcode: string) => void;
@@ -17,233 +17,143 @@ export function BarcodeScanner({
     acceptedFormats = ['all'],
 }: BarcodeScannerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const streamRef = useRef<MediaStream | null>(null);
-    const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+    const controlsRef = useRef<{ stop: () => void } | null>(null);
+    const onScanRef = useRef(onScan);
     const [error, setError] = useState<string | null>(null);
-    const [scanning, setScanning] = useState(false);
     const [lastScanned, setLastScanned] = useState<string | null>(null);
     const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment');
+    const [scanning, setScanning] = useState(false);
 
-    const startCamera = useCallback(async () => {
-        try {
-            setError(null);
+    onScanRef.current = onScan;
 
-            // Stop any existing stream
-            if (streamRef.current) {
-                streamRef.current.getTracks().forEach(track => track.stop());
-            }
+    useEffect(() => {
+        if (!isOpen) return;
 
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode,
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                },
-            });
-
-            streamRef.current = stream;
-
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                await videoRef.current.play();
-                setHasPermission(true);
-                setScanning(true);
-            }
-        } catch (err) {
-            console.error('Camera error:', err);
-            setHasPermission(false);
-            setError('Không thể truy cập camera. Vui lòng cấp quyền.');
-        }
-    }, [facingMode]);
-
-    const stopCamera = useCallback(() => {
+        let active = true;
+        let hasScanned = false;
+        setError(null);
+        setLastScanned(null);
         setScanning(false);
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
+
+        if (!navigator.mediaDevices?.getUserMedia) {
+            setError('Trình duyệt không hỗ trợ camera. Hãy mở trang bằng Chrome hoặc Safari mới nhất.');
+            return;
         }
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
+        if (!window.isSecureContext) {
+            setError('Camera cần kết nối an toàn HTTPS. Hãy mở website bằng địa chỉ HTTPS rồi thử lại.');
+            return;
         }
-    }, []);
 
-    // Simulated barcode detection (in production, use a library like @nicolo-ribaudo/barcode-detector)
-    useEffect(() => {
-        if (!scanning || !videoRef.current || !canvasRef.current) return;
+        const startScanning = async () => {
+            try {
+                const { BrowserMultiFormatReader, BrowserQRCodeReader } = await import('@zxing/browser');
+                if (!active) return;
+                const video = videoRef.current;
+                if (!video) return;
+                const reader = acceptedFormats.length === 1 && acceptedFormats[0] === 'qr'
+                    ? new BrowserQRCodeReader()
+                    : new BrowserMultiFormatReader();
+                const controls = await reader.decodeFromConstraints(
+                    { video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } } },
+                    video,
+                    (result) => {
+                        if (!active || hasScanned || !result) return;
+                        hasScanned = true;
+                        const value = result.getText();
+                        setLastScanned(value);
+                        setScanning(false);
+                        if (navigator.vibrate) navigator.vibrate(100);
+                        onScanRef.current(value);
+                    },
+                );
 
-        const video = videoRef.current;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        let animationId: number;
-        let lastDetectionTime = 0;
-        const detectionCooldown = 1000; // 1 second between detections
-
-        const detectBarcode = () => {
-            if (!scanning) return;
-
-            const now = Date.now();
-            if (now - lastDetectionTime < detectionCooldown) {
-                animationId = requestAnimationFrame(detectBarcode);
-                return;
+                if (!active) {
+                    controls.stop();
+                    return;
+                }
+                controlsRef.current = controls;
+                setScanning(true);
+            } catch (scanError) {
+                if (!active) return;
+                console.error('QR scanner error:', scanError);
+                setError('Không mở được camera. Hãy cấp quyền camera cho trình duyệt, kiểm tra HTTPS rồi thử lại.');
             }
-
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0);
-
-            // In production, use BarcodeDetector API or a library
-            // This is a placeholder that simulates detection
-            if ('BarcodeDetector' in window) {
-                // @ts-expect-error BarcodeDetector is not in TypeScript types yet
-                const detector = new window.BarcodeDetector({
-                    formats: acceptedFormats.includes('all')
-                        ? ['ean_13', 'ean_8', 'code_128', 'qr_code', 'code_39', 'upc_a']
-                        : acceptedFormats.map(f => {
-                            const formatMap: Record<string, string> = {
-                                ean: 'ean_13',
-                                code128: 'code_128',
-                                qr: 'qr_code',
-                            };
-                            return formatMap[f] || f;
-                        }),
-                });
-
-                detector.detect(canvas).then((barcodes: { rawValue: string }[]) => {
-                    if (barcodes.length > 0) {
-                        const barcode = barcodes[0].rawValue;
-                        lastDetectionTime = now;
-                        setLastScanned(barcode);
-
-                        // Vibrate feedback on mobile
-                        if (navigator.vibrate) {
-                            navigator.vibrate(100);
-                        }
-
-                        onScan(barcode);
-                    }
-                }).catch(console.error);
-            }
-
-            animationId = requestAnimationFrame(detectBarcode);
         };
 
-        animationId = requestAnimationFrame(detectBarcode);
-
+        void startScanning();
         return () => {
-            cancelAnimationFrame(animationId);
+            active = false;
+            controlsRef.current?.stop();
+            controlsRef.current = null;
         };
-    }, [scanning, onScan, acceptedFormats]);
-
-    useEffect(() => {
-        if (isOpen) {
-            startCamera();
-        } else {
-            stopCamera();
-        }
-
-        return () => {
-            stopCamera();
-        };
-    }, [isOpen, startCamera, stopCamera]);
-
-    const toggleCamera = () => {
-        setFacingMode(prev => prev === 'environment' ? 'user' : 'environment');
-    };
+    }, [acceptedFormats, facingMode, isOpen]);
 
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-50 bg-black">
-            {/* Header */}
-            <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 bg-gradient-to-b from-black/60 to-transparent">
-                <Button variant="ghost" size="icon" onClick={onClose} className="text-white">
-                    <X className="w-6 h-6" />
+            <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent p-4">
+                <Button variant="ghost" size="icon" onClick={onClose} className="text-white" aria-label="Đóng máy quét">
+                    <X className="h-6 w-6" />
                 </Button>
-                <span className="text-white font-medium">Quét mã vạch</span>
-                <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={toggleCamera} className="text-white">
-                        <RotateCcw className="w-6 h-6" />
-                    </Button>
-                </div>
+                <span className="font-medium text-white">
+                    {acceptedFormats.length === 1 && acceptedFormats[0] === 'qr' ? 'Quét mã QR check-in' : 'Quét mã'}
+                </span>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setFacingMode((mode) => mode === 'environment' ? 'user' : 'environment')}
+                    className="text-white"
+                    aria-label="Đổi camera"
+                >
+                    <RotateCcw className="h-6 w-6" />
+                </Button>
             </div>
 
-            {/* Camera View */}
-            {hasPermission === false ? (
-                <div className="h-full flex items-center justify-center p-8">
-                    <div className="text-center">
-                        <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-                        <p className="text-white text-lg mb-2">{error}</p>
-                        <Button onClick={startCamera} className="mt-4">
-                            <Camera className="w-4 h-4 mr-2" />
-                            Thử lại
-                        </Button>
+            <video ref={videoRef} className="h-full w-full object-cover" playsInline muted />
+
+            {error ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/75 p-8">
+                    <div className="max-w-sm text-center">
+                        <AlertCircle className="mx-auto mb-4 h-14 w-14 text-red-400" />
+                        <p className="text-white">{error}</p>
+                        <Button onClick={onClose} className="mt-5">Đóng</Button>
                     </div>
                 </div>
             ) : (
                 <>
-                    <video
-                        ref={videoRef}
-                        className="h-full w-full object-cover"
-                        playsInline
-                        muted
-                    />
-                    <canvas ref={canvasRef} className="hidden" />
-
-                    {/* Scanning Overlay */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <div className="relative w-64 h-64">
-                            {/* Corners */}
-                            <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary-500 rounded-tl-lg" />
-                            <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary-500 rounded-tr-lg" />
-                            <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary-500 rounded-bl-lg" />
-                            <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary-500 rounded-br-lg" />
-
-                            {/* Scanning Line */}
-                            {scanning && (
-                                <div className="absolute left-4 right-4 h-0.5 bg-primary-500 animate-scan" />
-                            )}
+                    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                        <div className="relative h-64 w-64">
+                            <div className="absolute left-0 top-0 h-8 w-8 rounded-tl-lg border-l-4 border-t-4 border-primary-500" />
+                            <div className="absolute right-0 top-0 h-8 w-8 rounded-tr-lg border-r-4 border-t-4 border-primary-500" />
+                            <div className="absolute bottom-0 left-0 h-8 w-8 rounded-bl-lg border-b-4 border-l-4 border-primary-500" />
+                            <div className="absolute bottom-0 right-0 h-8 w-8 rounded-br-lg border-b-4 border-r-4 border-primary-500" />
+                            {scanning && <div className="absolute left-4 right-4 top-1/2 h-0.5 bg-primary-500 animate-pulse" />}
                         </div>
                     </div>
 
-                    {/* Last Scanned */}
                     {lastScanned && (
                         <div className="absolute bottom-24 left-4 right-4">
-                            <div className="bg-green-500/90 text-white p-4 rounded-xl flex items-center gap-3">
-                                <Check className="w-6 h-6" />
+                            <div className="flex items-center gap-3 rounded-xl bg-green-500/90 p-4 text-white">
+                                <Check className="h-6 w-6" />
                                 <div>
                                     <p className="text-sm opacity-80">Đã quét</p>
-                                    <p className="font-mono font-bold">{lastScanned}</p>
+                                    <p className="break-all font-mono font-bold">{lastScanned}</p>
                                 </div>
                             </div>
                         </div>
                     )}
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-8">
+                        <p className="text-center text-sm text-white/90">
+                            Đưa mã QR vào khung hình, giữ điện thoại ổn định
+                        </p>
+                    </div>
                 </>
             )}
-
-            {/* Footer */}
-            <div className="absolute bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-black/60 to-transparent">
-                <p className="text-white/80 text-center text-sm">
-                    Đưa mã vạch vào khung hình để quét
-                </p>
-            </div>
-
-            <style>{`
-                @keyframes scan {
-                    0%, 100% { top: 10%; }
-                    50% { top: 90%; }
-                }
-                .animate-scan {
-                    animation: scan 2s ease-in-out infinite;
-                }
-            `}</style>
         </div>
     );
 }
 
-// Manual barcode input fallback
 interface ManualBarcodeInputProps {
     onSubmit: (barcode: string) => void;
     placeholder?: string;
@@ -253,37 +163,19 @@ export function ManualBarcodeInput({ onSubmit, placeholder = 'Nhập mã vạch.
     const [value, setValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (value.trim()) {
-            onSubmit(value.trim());
-            setValue('');
-        }
-    };
-
-    // Auto-submit on Enter or when barcode scanner sends data quickly
     useEffect(() => {
         const input = inputRef.current;
         if (!input) return;
 
         let buffer = '';
         let lastKeyTime = 0;
-
-        const handleKeyDown = (e: KeyboardEvent) => {
+        const handleKeyDown = (event: KeyboardEvent) => {
             const now = Date.now();
-
-            // If keys are pressed rapidly (< 50ms apart), likely from scanner
-            if (now - lastKeyTime < 50) {
-                buffer += e.key;
-            } else {
-                buffer = e.key;
-            }
+            buffer = now - lastKeyTime < 50 ? `${buffer}${event.key}` : event.key;
             lastKeyTime = now;
 
-            // Submit on Enter if buffer has content
-            if (e.key === 'Enter' && buffer.length > 1) {
-                const barcode = buffer.slice(0, -1); // Remove Enter key
-                onSubmit(barcode);
+            if (event.key === 'Enter' && buffer.length > 1) {
+                onSubmit(buffer.slice(0, -1));
                 setValue('');
                 buffer = '';
             }
@@ -293,18 +185,26 @@ export function ManualBarcodeInput({ onSubmit, placeholder = 'Nhập mã vạch.
         return () => input.removeEventListener('keydown', handleKeyDown);
     }, [onSubmit]);
 
+    const handleSubmit = (event: FormEvent) => {
+        event.preventDefault();
+        const barcode = value.trim();
+        if (!barcode) return;
+        onSubmit(barcode);
+        setValue('');
+    };
+
     return (
         <form onSubmit={handleSubmit} className="flex gap-2">
             <input
                 ref={inputRef}
                 type="text"
                 value={value}
-                onChange={(e) => setValue(e.target.value)}
+                onChange={(event) => setValue(event.target.value)}
                 placeholder={placeholder}
-                className="flex-1 px-4 py-2 bg-background-tertiary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="flex-1 rounded-lg border border-border bg-background-tertiary px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
-            <Button type="submit" disabled={!value.trim()}>
-                <Check className="w-4 h-4" />
+            <Button type="submit" disabled={!value.trim()} aria-label="Nhập mã">
+                <Check className="h-4 w-4" />
             </Button>
         </form>
     );

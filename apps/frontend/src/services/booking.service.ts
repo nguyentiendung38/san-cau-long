@@ -46,6 +46,20 @@ export interface Booking {
     };
 }
 
+export interface CheckInBookingInfo {
+    bookingId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: Booking['status'];
+    checkedInAt: string | null;
+    totalAmount: number;
+    paymentStatus?: string | null;
+    courtName: string;
+    venueName: string;
+    venueAddress: string;
+}
+
 export interface Court {
     id: string;
     name: string;
@@ -62,6 +76,7 @@ export interface CalendarData {
         startAt: string;
         endAt: string;
         reason?: string | null;
+        closureType: 'MAINTENANCE' | 'TOURNAMENT';
         court: { id: string; name: string };
     }>;
 }
@@ -172,6 +187,13 @@ export const bookingApi = {
         return response.data.data!.token;
     },
 
+    async getCheckInInfo(token: string): Promise<CheckInBookingInfo> {
+        const response = await api.get<ApiResponse<CheckInBookingInfo>>(
+            `/bookings/check-in-info/${encodeURIComponent(token)}`,
+        );
+        return response.data.data!;
+    },
+
     // Check-out
     async checkOut(id: string): Promise<Booking> {
         const response = await api.post<ApiResponse<Booking>>(`/bookings/${id}/check-out`);
@@ -215,7 +237,12 @@ export interface BookingRequest {
     requestedDate?: string | null;
     requestedStartTime?: string | null;
     requestedEndTime?: string | null;
-    checkIn?: { id: string; checkInToken: string | null; checkedInAt: string | null } | null;
+    checkIn?: {
+        id: string;
+        checkInToken: string | null;
+        checkedInAt: string | null;
+        status: Booking['status'];
+    } | null;
     redeemPoints?: number;
     loyaltyDiscountAmount?: number;
     venue?: { name: string };

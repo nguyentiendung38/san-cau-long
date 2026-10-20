@@ -67,7 +67,9 @@ export function BookingDetailPanel({
 
     const canCheckIn = booking.status === 'CONFIRMED' || booking.status === 'PENDING';
     const canCheckOut = booking.status === 'IN_PROGRESS' || booking.status === 'CONFIRMED';
-    const bookingEnd = new Date(`${booking.date.slice(0, 10)}T${booking.endTime}:00Z`);
+    const [year, month, day] = booking.date.slice(0, 10).split('-').map(Number);
+    const [endHour, endMinute] = booking.endTime.split(':').map(Number);
+    const bookingEnd = new Date(Date.UTC(year, month - 1, day, endHour - 7, endMinute));
     const canMarkNoShow = booking.status === 'CONFIRMED' && bookingEnd <= new Date();
     const canCancel = !['CANCELLED', 'COMPLETED', 'NO_SHOW'].includes(booking.status);
     const canEdit = !['CANCELLED', 'COMPLETED', 'IN_PROGRESS', 'NO_SHOW'].includes(booking.status);

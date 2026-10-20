@@ -264,7 +264,7 @@ export class FinanceService {
             orderBy: { _sum: { amount: 'desc' } },
         });
 
-        return grouped.map(g => ({
+        return (grouped as any[]).map((g: any) => ({
             category: g.category,
             label: EXPENSE_LABELS[g.category] || g.category,
             amount: g._sum.amount || 0,
@@ -281,7 +281,7 @@ export class FinanceService {
             take: limit,
         });
 
-        return orders.map(o => ({
+        return (orders as any[]).map((o: any) => ({
             id: o.id,
             orderCode: o.orderCode,
             customerName: o.customerName,

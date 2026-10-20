@@ -94,7 +94,7 @@ export default function ChatAIPage() {
   );
 
   return (
-    <Page className="flex flex-col bg-gray-50" style={{ height: "100vh" }}>
+    <Page className="flex flex-col bg-gray-50 page-with-header" style={{ height: "100vh", boxSizing: "border-box" }}>
       <Header
         title="Trợ lý AI 🏸"
         showBackIcon

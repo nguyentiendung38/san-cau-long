@@ -48,7 +48,7 @@ describe('booking no-show handling', () => {
         prismaMock.booking.findUnique.mockResolvedValue({
             id: 'booking-1',
             date: new Date('2026-10-17T00:00:00.000Z'),
-            endTime: '16:00',
+            endTime: '23:30',
             status: 'CONFIRMED',
             checkedInAt: null,
             court: { venueId: 'venue-1' },

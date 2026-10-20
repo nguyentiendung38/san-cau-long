@@ -7,7 +7,8 @@ import {
     Calendar as CalendarIcon,
     Repeat,
     Wrench,
-    Trash2
+    Trash2,
+    ChevronDown,
 } from 'lucide-react';
 import { cn, formatCurrency, formatDate } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -65,6 +66,7 @@ function getStatusColor(status: string): string {
     switch (status) {
         case 'CONFIRMED': return 'bg-blue-500/20 border-blue-500 text-blue-400';
         case 'IN_PROGRESS': return 'bg-green-500/20 border-green-500 text-green-400';
+        case 'NO_SHOW': return 'bg-red-500/20 border-red-500 text-red-400';
         case 'PENDING': return 'bg-yellow-500/20 border-yellow-500 text-yellow-400';
         case 'COMPLETED': return 'bg-gray-500/20 border-gray-500 text-gray-400';
         case 'CANCELLED': return 'bg-red-500/20 border-red-500 text-red-400';
@@ -76,6 +78,7 @@ function getStatusLabel(status: string): string {
     switch (status) {
         case 'CONFIRMED': return 'Đã xác nhận';
         case 'IN_PROGRESS': return 'Đang chơi';
+        case 'NO_SHOW': return 'Khách vắng';
         case 'PENDING': return 'Chờ xác nhận';
         case 'COMPLETED': return 'Hoàn thành';
         case 'CANCELLED': return 'Đã hủy';
@@ -103,7 +106,8 @@ export default function BookingCalendarPage() {
     const [closureEndAt, setClosureEndAt] = useState('');
     const [closureCourtId, setClosureCourtId] = useState('');
     const [closureReason, setClosureReason] = useState('');
-    const [checkInToken, setCheckInToken] = useState('');
+    const [closureType, setClosureType] = useState<'MAINTENANCE' | 'TOURNAMENT'>('MAINTENANCE');
+    const [showClosureForm, setShowClosureForm] = useState(false);
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -127,6 +131,7 @@ export default function BookingCalendarPage() {
         queryKey: ['calendar', selectedVenueId, formattedDate],
         queryFn: () => bookingApi.getCalendarData(selectedVenueId, formattedDate, formattedDate),
         enabled: !!selectedVenueId,
+        refetchInterval: 30_000,
     });
     useEffect(() => {
         const courts = calendarData?.courts || [];
@@ -143,32 +148,19 @@ export default function BookingCalendarPage() {
                 startAt: canonicalTime(closureStartAt),
                 endAt: canonicalTime(closureEndAt),
                 reason: closureReason.trim() || undefined,
+                closureType,
             });
         },
         onSuccess: () => {
-            toast({ title: 'Đã thêm lịch đóng bảo trì' });
+            toast({ title: closureType === 'TOURNAMENT' ? 'Đã thêm lịch tổ chức giải' : 'Đã thêm lịch đóng bảo trì' });
             setClosureStartAt('');
             setClosureEndAt('');
             setClosureReason('');
             queryClient.invalidateQueries({ queryKey: ['calendar', selectedVenueId] });
         },
         onError: (error: any) => toast({
-            title: 'Không thể thêm lịch bảo trì',
+            title: 'Không thể thêm lịch đóng sân',
             description: error?.response?.data?.message || 'Vui lòng kiểm tra thời gian và lịch đặt hiện có.',
-            variant: 'error',
-        }),
-    });
-
-    const checkInTokenMutation = useMutation({
-        mutationFn: (token: string) => bookingApi.checkInWithToken(token),
-        onSuccess: () => {
-            toast({ title: 'Đã xác nhận khách đến sân' });
-            setCheckInToken('');
-            queryClient.invalidateQueries({ queryKey: ['calendar', selectedVenueId] });
-        },
-        onError: (error: any) => toast({
-            title: 'Không thể check-in',
-            description: error?.response?.data?.message || 'Mã QR không hợp lệ hoặc lịch không thuộc cơ sở được phân quyền.',
             variant: 'error',
         }),
     });
@@ -176,10 +168,10 @@ export default function BookingCalendarPage() {
     const deleteClosureMutation = useMutation({
         mutationFn: (id: string) => courtApi.deleteMaintenanceClosure(id),
         onSuccess: () => {
-            toast({ title: 'Đã xóa lịch đóng bảo trì' });
+            toast({ title: 'Đã xóa lịch đóng sân' });
             queryClient.invalidateQueries({ queryKey: ['calendar', selectedVenueId] });
         },
-        onError: () => toast({ title: 'Không thể xóa lịch bảo trì', variant: 'error' }),
+        onError: () => toast({ title: 'Không thể xóa lịch đóng sân', variant: 'error' }),
     });
 
 
@@ -343,23 +335,6 @@ export default function BookingCalendarPage() {
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <form
-                        className="hidden lg:flex items-center gap-2"
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            const token = checkInToken.trim().replace(/^COURTIFY-CHECKIN:/, '');
-                            if (token) checkInTokenMutation.mutate(token);
-                        }}
-                    >
-                        <input
-                            value={checkInToken}
-                            onChange={(event) => setCheckInToken(event.target.value)}
-                            aria-label="Mã QR check-in"
-                            placeholder="Quét / nhập mã QR"
-                            className="w-40 rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm text-foreground"
-                        />
-                        <Button type="submit" variant="secondary" disabled={!checkInToken.trim() || checkInTokenMutation.isPending}>Check-in QR</Button>
-                    </form>
                     <Button variant="secondary" className="gap-2" onClick={() => setShowRecurringModal(true)}>
                         <Repeat className="w-4 h-4" />
                         <span className="hidden sm:inline">Lịch cố định</span>
@@ -370,24 +345,6 @@ export default function BookingCalendarPage() {
                     </Button>
                 </div>
             </div>
-
-            <form
-                className="flex lg:hidden items-center gap-2 mb-4"
-                onSubmit={(event) => {
-                    event.preventDefault();
-                    const token = checkInToken.trim().replace(/^COURTIFY-CHECKIN:/, '');
-                    if (token) checkInTokenMutation.mutate(token);
-                }}
-            >
-                <input
-                    value={checkInToken}
-                    onChange={(event) => setCheckInToken(event.target.value)}
-                    aria-label="Mã QR check-in"
-                    placeholder="Quét hoặc nhập mã QR check-in"
-                    className="min-w-0 flex-1 rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm text-foreground"
-                />
-                <Button type="submit" variant="secondary" disabled={!checkInToken.trim() || checkInTokenMutation.isPending}>Check-in QR</Button>
-            </form>
 
             {/* Controls */}
             <div className="flex items-center justify-between mb-4 p-4 bg-background-secondary rounded-lg border border-border">
@@ -458,71 +415,113 @@ export default function BookingCalendarPage() {
                 </div>
             </div>
 
-            <section className="mb-4 rounded-xl border border-border bg-background-secondary p-4">
-                <div className="mb-3 flex items-center gap-2">
-                    <Wrench className="h-4 w-4 text-foreground-secondary" />
-                    <h2 className="font-semibold text-foreground">Đóng sân bảo trì</h2>
-                    <span className="text-xs text-foreground-secondary">Các khung này sẽ bị chặn trên lịch khách hàng.</span>
-                </div>
-                <form
-                    className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5"
-                    onSubmit={(event) => {
-                        event.preventDefault();
-                        createClosureMutation.mutate();
-                    }}
-                >
-                    <select
-                        required
-                        value={closureCourtId}
-                        onChange={(event) => setClosureCourtId(event.target.value)}
-                        className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground"
-                    >
-                        {(calendarData?.courts || []).map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}
-                    </select>
-                    <label className="text-xs text-foreground-secondary">
-                        Bắt đầu
-                        <input required type="datetime-local" value={closureStartAt} onChange={(event) => setClosureStartAt(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background-tertiary px-2 py-1.5 text-sm text-foreground" />
-                    </label>
-                    <label className="text-xs text-foreground-secondary">
-                        Kết thúc
-                        <input required type="datetime-local" value={closureEndAt} onChange={(event) => setClosureEndAt(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background-tertiary px-2 py-1.5 text-sm text-foreground" />
-                    </label>
-                    <input
-                        value={closureReason}
-                        maxLength={250}
-                        onChange={(event) => setClosureReason(event.target.value)}
-                        placeholder="Lý do (không bắt buộc)"
-                        className="self-end rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted"
-                    />
-                    <Button type="submit" disabled={!closureCourtId || createClosureMutation.isPending} className="self-end">
-                        {createClosureMutation.isPending ? 'Đang lưu…' : 'Thêm lịch đóng'}
-                    </Button>
-                </form>
-                <div className="mt-3 space-y-2">
-                    {(calendarData?.maintenanceClosures || []).map((closure) => (
-                        <div key={closure.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm">
-                            <span className="font-semibold text-foreground">{closure.court.name}</span>
-                            <span className="text-foreground-secondary">
-                                {new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }).format(new Date(closure.startAt))}
-                                {' – '}
-                                {new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }).format(new Date(closure.endAt))}
-                                {closure.reason ? ` · ${closure.reason}` : ''}
-                            </span>
-                            <button
-                                type="button"
-                                aria-label={`Xóa lịch bảo trì sân ${closure.court.name}`}
-                                disabled={deleteClosureMutation.isPending}
-                                onClick={() => deleteClosureMutation.mutate(closure.id)}
-                                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-foreground-secondary hover:bg-background-secondary hover:text-foreground"
-                            >
-                                <Trash2 className="h-3.5 w-3.5" /> Xóa
-                            </button>
+            <section className="mb-4 rounded-xl border border-border bg-background-secondary">
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background-tertiary">
+                            <Wrench className="h-4 w-4 text-foreground-secondary" />
+                        </span>
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-semibold text-foreground">Lịch đóng sân</h2>
+                            <p className="truncate text-xs text-foreground-secondary">
+                                Bảo trì hoặc tổ chức giải · {(calendarData?.maintenanceClosures || []).length} lịch trong ngày
+                            </p>
                         </div>
-                    ))}
-                    {!isLoading && (calendarData?.maintenanceClosures || []).length === 0 && (
-                        <p className="text-xs text-foreground-secondary">Chưa có lịch đóng bảo trì trong ngày đang chọn.</p>
-                    )}
+                    </div>
+                    <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        aria-expanded={showClosureForm}
+                        onClick={() => setShowClosureForm((visible) => !visible)}
+                        className="h-8 shrink-0 gap-1.5 px-2.5"
+                    >
+                        {showClosureForm ? 'Thu gọn' : 'Quản lý'}
+                        <ChevronDown className={`h-4 w-4 transition-transform ${showClosureForm ? 'rotate-180' : ''}`} />
+                    </Button>
                 </div>
+                {showClosureForm && (
+                    <div className="border-t border-border px-3 py-3 sm:px-4">
+                        <p className="mb-3 text-xs text-foreground-secondary">
+                            Các lịch này sẽ chặn đặt sân trong khung giờ đã chọn.
+                        </p>
+                        <form
+                            className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                createClosureMutation.mutate();
+                            }}
+                        >
+                            <select
+                                required
+                                value={closureCourtId}
+                                onChange={(event) => setClosureCourtId(event.target.value)}
+                                aria-label="Sân cần đóng"
+                                className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground"
+                            >
+                                {(calendarData?.courts || []).map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}
+                            </select>
+                            <select
+                                value={closureType}
+                                onChange={(event) => setClosureType(event.target.value as 'MAINTENANCE' | 'TOURNAMENT')}
+                                aria-label="Loại lịch đóng sân"
+                                className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground"
+                            >
+                                <option value="MAINTENANCE">Bảo trì</option>
+                                <option value="TOURNAMENT">Tổ chức giải</option>
+                            </select>
+                            <label className="text-xs text-foreground-secondary">
+                                Bắt đầu
+                                <input required type="datetime-local" value={closureStartAt} onChange={(event) => setClosureStartAt(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background-tertiary px-2 py-1.5 text-sm text-foreground" />
+                            </label>
+                            <label className="text-xs text-foreground-secondary">
+                                Kết thúc
+                                <input required type="datetime-local" value={closureEndAt} onChange={(event) => setClosureEndAt(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background-tertiary px-2 py-1.5 text-sm text-foreground" />
+                            </label>
+                            <input
+                                value={closureReason}
+                                maxLength={250}
+                                onChange={(event) => setClosureReason(event.target.value)}
+                                placeholder={closureType === 'TOURNAMENT' ? 'Tên giải / ghi chú (không bắt buộc)' : 'Lý do bảo trì (không bắt buộc)'}
+                                aria-label={closureType === 'TOURNAMENT' ? 'Tên giải hoặc ghi chú' : 'Lý do bảo trì'}
+                                className="rounded-lg border border-border bg-background-tertiary px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted"
+                            />
+                            <Button type="submit" disabled={!closureCourtId || createClosureMutation.isPending} className="h-9">
+                                {createClosureMutation.isPending ? 'Đang lưu…' : closureType === 'TOURNAMENT' ? 'Thêm lịch giải' : 'Thêm lịch bảo trì'}
+                            </Button>
+                        </form>
+                        <div className="mt-3 space-y-1.5">
+                            {(calendarData?.maintenanceClosures || []).map((closure) => (
+                                <div key={closure.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border bg-background-tertiary px-3 py-2 text-xs">
+                                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                                        <span className="font-semibold text-foreground">{closure.court.name}</span>
+                                        <span className={`font-semibold ${closure.closureType === 'TOURNAMENT' ? 'text-violet-600' : 'text-amber-600'}`}>
+                                            {closure.closureType === 'TOURNAMENT' ? 'GIẢI' : 'BẢO TRÌ'}
+                                        </span>
+                                        <span className="text-foreground-secondary">
+                                            {new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }).format(new Date(closure.startAt))}
+                                            {' – '}
+                                            {new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', dateStyle: 'short', timeStyle: 'short' }).format(new Date(closure.endAt))}
+                                        </span>
+                                        {closure.reason && <span className="break-words text-foreground-secondary">{closure.reason}</span>}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        aria-label={`Xóa lịch đóng sân ${closure.court.name}`}
+                                        disabled={deleteClosureMutation.isPending}
+                                        onClick={() => deleteClosureMutation.mutate(closure.id)}
+                                        className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 font-semibold text-foreground-secondary hover:bg-background-secondary hover:text-foreground"
+                                    >
+                                        <Trash2 className="h-3.5 w-3.5" /> Xóa
+                                    </button>
+                                </div>
+                            ))}
+                            {!isLoading && (calendarData?.maintenanceClosures || []).length === 0 && (
+                                <p className="rounded-lg bg-background-tertiary px-3 py-2 text-xs text-foreground-secondary">Chưa có lịch đóng sân trong ngày đang chọn.</p>
+                            )}
+                        </div>
+                    </div>
+                )}
             </section>
 
             {/* Main content with sidebar */}
@@ -564,7 +563,7 @@ export default function BookingCalendarPage() {
                 </aside>
 
                 {/* Calendar Views */}
-                <div className="flex-1 overflow-auto bg-background-secondary rounded-lg border border-border">
+                <div className="flex-1 min-h-[640px] overflow-auto bg-background-secondary rounded-lg border border-border">
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full">
                             <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
@@ -581,7 +580,7 @@ export default function BookingCalendarPage() {
                                 <div
                                     className="grid min-w-max"
                                     style={{
-                                        gridTemplateColumns: `80px repeat(${calendarData?.courts.length || 1}, minmax(200px, 1fr))`,
+                                        gridTemplateColumns: `80px repeat(${calendarData?.courts.length || 1}, minmax(240px, 1fr))`,
                                         gridTemplateRows: `auto repeat(${timeSlots.length * 2}, 30px)`,
                                     }}
                                 >
@@ -681,14 +680,21 @@ export default function BookingCalendarPage() {
                                         return (
                                             <div
                                                 key={`maintenance-${closure.id}`}
-                                                title={closure.reason || 'Đóng sân bảo trì'}
-                                                className="z-10 flex items-center justify-center overflow-hidden rounded-lg border border-dashed border-amber-600 bg-amber-400/25 px-2 text-xs font-bold text-amber-950"
+                                                title={`${closure.closureType === 'TOURNAMENT' ? 'Tổ chức giải' : 'Bảo trì'}${closure.reason ? ` · ${closure.reason}` : ''}`}
+                                                className={`z-10 flex items-center justify-center overflow-hidden rounded-lg border border-dashed px-2 text-xs font-bold ${
+                                                    closure.closureType === 'TOURNAMENT'
+                                                        ? 'border-violet-600 bg-violet-400/25 text-violet-950'
+                                                        : 'border-amber-600 bg-amber-400/25 text-amber-950'
+                                                }`}
                                                 style={{
                                                     gridColumn: courtIdx + 2,
                                                     gridRow: `${position.gridRow} / span ${position.gridRowSpan}`,
                                                 }}
                                             >
-                                                <span className="truncate">BẢO TRÌ{closure.reason ? ` · ${closure.reason}` : ''}</span>
+                                                <span className="truncate">
+                                                    {closure.closureType === 'TOURNAMENT' ? 'TỔ CHỨC GIẢI' : 'BẢO TRÌ'}
+                                                    {closure.reason ? ` · ${closure.reason}` : ''}
+                                                </span>
                                             </div>
                                         );
                                     })}

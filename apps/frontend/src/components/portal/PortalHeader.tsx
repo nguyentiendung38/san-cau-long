@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { CalendarDays, ChevronDown, Compass, LogOut, MapPin, Sparkles, UserRound } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { CalendarDays, ChevronDown, Compass, Flame, LogOut, MapPin, Sparkles, UserRound } from 'lucide-react';
 
 export function PortalHeader() {
     const navigate = useNavigate();
+    const location = useLocation();
     const [customerName, setCustomerName] = useState('');
     const [menuOpen, setMenuOpen] = useState(false);
+    const activeTab = location.pathname === '/trang-chu'
+        ? new URLSearchParams(location.search).get('tab') || 'home'
+        : '';
 
     useEffect(() => {
         const readCustomer = () => {
@@ -49,23 +53,28 @@ export function PortalHeader() {
                     type="button"
                     onClick={() => navigate('/trang-chu')}
                     className="flex shrink-0 items-center gap-2.5"
-                    aria-label="Courtify - Trang chủ"
+                    aria-label="Hệ thống quản lý sân cầu lông - Trang chủ"
                 >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-700 text-white shadow-md shadow-emerald-700/20">
-                        <Sparkles className="h-5 w-5" />
-                    </span>
-                    <span className="text-lg font-black tracking-tight text-slate-900">Courtify</span>
+                    <img
+                        src="/logo-hue.jpg"
+                        alt="Logo Trường Đại học Kinh tế Huế"
+                        className="h-10 w-10 rounded-full object-contain bg-white p-0.5 border border-slate-200 shadow-sm"
+                    />
+                    <span className="text-sm font-black tracking-tight text-slate-900 sm:text-base">Quản lý sân cầu lông</span>
                 </button>
 
                 <nav className="hidden items-center gap-1 lg:flex" aria-label="Menu chính">
-                    <button onClick={() => goToTab('home')} className="rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:bg-emerald-50 hover:text-emerald-700">
+                    <button onClick={() => goToTab('home')} aria-current={activeTab === 'home' ? 'page' : undefined} className={`rounded-xl px-3.5 py-2 text-sm font-semibold transition ${activeTab === 'home' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}`}>
                         Trang chủ
                     </button>
-                    <button onClick={() => goToTab('map')} className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:bg-emerald-50 hover:text-emerald-700">
+                    <button onClick={() => goToTab('map')} aria-current={activeTab === 'map' ? 'page' : undefined} className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${activeTab === 'map' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}`}>
                         <MapPin className="h-4 w-4" /> Bản đồ
                     </button>
-                    <button onClick={() => goToTab('explore')} className="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold text-slate-600 transition hover:bg-emerald-50 hover:text-emerald-700">
+                    <button onClick={() => goToTab('explore')} aria-current={activeTab === 'explore' ? 'page' : undefined} className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${activeTab === 'explore' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}`}>
                         <Compass className="h-4 w-4" /> Khám phá
+                    </button>
+                    <button onClick={() => goToTab('featured_courts')} aria-current={activeTab === 'featured_courts' ? 'page' : undefined} className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${activeTab === 'featured_courts' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}`}>
+                        <Flame className="h-4 w-4" /> Sân nổi bật
                     </button>
                 </nav>
 

@@ -290,7 +290,7 @@ export function ChatBotWidget() {
                                 <button
                                     key={q}
                                     onClick={() => sendQuickMessage(q)}
-                                    className="text-xs bg-white border border-gray-200 rounded-full px-2.5 py-1 hover:bg-green-50 hover:border-green-300 hover:text-green-700 transition-colors"
+                                    className="text-xs font-semibold text-slate-700 bg-white border border-slate-300 shadow-xs rounded-full px-3 py-1.5 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 transition-all active:scale-95"
                                 >
                                     {q}
                                 </button>

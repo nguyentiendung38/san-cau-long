@@ -1,3 +1,4 @@
+import { useToast } from '@/hooks/use-toast';
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, X } from 'lucide-react';
 import { Venue, Court } from '@/services/venue.service';
@@ -12,6 +13,7 @@ interface VisualBookingModalProps {
 }
 
 export function VisualBookingModal({ isOpen, onClose, venue, courts, initialCourtId, onNext }: VisualBookingModalProps) {
+    const { toast } = useToast();
     const [selectedDate, setSelectedDate] = useState<string>(() => {
         const today = new Date();
         return `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -95,7 +97,7 @@ export function VisualBookingModal({ isOpen, onClose, venue, courts, initialCour
 
     const handleNext = () => {
         if (!selectedCourtId || selectedSlots.length === 0) {
-            alert('Vui lòng chọn ít nhất một khung giờ trống.');
+            toast({ title: 'Vui lòng chọn ít nhất một khung giờ trống.', variant: 'error' });
             return;
         }
 

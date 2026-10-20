@@ -12,6 +12,18 @@ function withoutCheckInToken<T extends { checkInToken?: string | null }>(booking
     return safeBooking;
 }
 
+function getBookingEndDate(date: Date, endTime: string) {
+    const endMinutes = timeToMinutes(endTime);
+    if (endMinutes === null) return null;
+    return new Date(Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate(),
+        Math.floor(endMinutes / 60) - 7,
+        endMinutes % 60,
+    ));
+}
+
 export interface PricingRuleForCalculation {
     name: string;
     dayOfWeek: string | null;
@@ -206,13 +218,13 @@ export class BookingService {
                 startAt: { lt: interval.endAt },
                 endAt: { gt: interval.startAt },
             },
-            select: { id: true, startAt: true, endAt: true, reason: true },
+            select: { id: true, startAt: true, endAt: true, reason: true, closureType: true },
         });
         conflicts.push(...closures.map((closure) => ({
             id: closure.id,
             startTime: closure.startAt.toISOString(),
             endTime: closure.endAt.toISOString(),
-            status: 'MAINTENANCE',
+            status: closure.closureType === 'TOURNAMENT' ? 'TOURNAMENT' : 'MAINTENANCE',
             customer: null,
         })));
 
@@ -359,6 +371,45 @@ export class BookingService {
         }
         if (!token) throw new AppError(409, 'Không thể cấp mã QR cho lịch này');
         return { bookingId: id, token };
+    }
+
+    async getCheckInInfo(token: string) {
+        if (!token || token.length < 32 || token.length > 100) {
+            throw new AppError(400, 'Liên kết check-in không hợp lệ');
+        }
+        const booking = await prisma.booking.findUnique({
+            where: { checkInToken: token },
+            select: {
+                id: true,
+                date: true,
+                startTime: true,
+                endTime: true,
+                status: true,
+                checkedInAt: true,
+                totalAmount: true,
+                paymentStatus: true,
+                court: {
+                    select: {
+                        name: true,
+                        venue: { select: { name: true, address: true } },
+                    },
+                },
+            },
+        });
+        if (!booking) throw new AppError(404, 'Không tìm thấy lịch đặt cho mã QR này');
+        return {
+            bookingId: booking.id,
+            date: booking.date,
+            startTime: booking.startTime,
+            endTime: booking.endTime,
+            status: booking.status,
+            checkedInAt: booking.checkedInAt,
+            totalAmount: booking.totalAmount,
+            paymentStatus: booking.paymentStatus,
+            courtName: booking.court.name,
+            venueName: booking.court.venue.name,
+            venueAddress: booking.court.venue.address,
+        };
     }
 
     async create(
@@ -696,17 +747,10 @@ export class BookingService {
             throw new AppError(409, 'Chỉ lịch đã xác nhận và chưa check-in mới có thể ghi nhận vắng');
         }
 
-        const endMinutes = timeToMinutes(existing.endTime);
-        if (endMinutes === null) {
+        const bookingEnd = getBookingEndDate(existing.date, existing.endTime);
+        if (!bookingEnd) {
             throw new AppError(400, 'Giờ kết thúc lịch đặt không hợp lệ');
         }
-        const bookingEnd = new Date(Date.UTC(
-            existing.date.getUTCFullYear(),
-            existing.date.getUTCMonth(),
-            existing.date.getUTCDate(),
-            Math.floor(endMinutes / 60),
-            endMinutes % 60,
-        ));
         if (bookingEnd > new Date()) {
             throw new AppError(400, 'Chỉ có thể ghi nhận khách vắng sau khi hết giờ đặt sân');
         }
@@ -722,6 +766,43 @@ export class BookingService {
         const booking = await prisma.booking.findUnique({ where: { id } });
         if (!booking) throw new AppError(404, 'Không tìm thấy lịch đặt sân');
         return withoutCheckInToken(booking);
+    }
+
+    async markExpiredBookingsNoShow() {
+        const now = new Date();
+        const todayParts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Asia/Ho_Chi_Minh',
+            year: 'numeric',
+            month: 'numeric',
+            day: 'numeric',
+        }).formatToParts(now);
+        const todayValues = Object.fromEntries(todayParts.map(({ type, value }) => [type, Number(value)]));
+        const todayUtc = new Date(Date.UTC(todayValues.year, todayValues.month - 1, todayValues.day));
+        const bookings = await prisma.booking.findMany({
+            where: {
+                status: 'CONFIRMED',
+                checkedInAt: null,
+                date: { lte: todayUtc },
+            },
+            select: { id: true, date: true, endTime: true },
+        });
+        const expiredIds = bookings
+            .filter((booking) => {
+                const bookingEnd = getBookingEndDate(booking.date, booking.endTime);
+                return bookingEnd !== null && bookingEnd <= now;
+            })
+            .map((booking) => booking.id);
+        if (expiredIds.length === 0) return 0;
+
+        const result = await prisma.booking.updateMany({
+            where: {
+                id: { in: expiredIds },
+                status: 'CONFIRMED',
+                checkedInAt: null,
+            },
+            data: { status: 'NO_SHOW' },
+        });
+        return result.count;
     }
 
     async checkOut(id: string) {
@@ -765,7 +846,7 @@ export class BookingService {
                     gte: startDate,
                     lte: endDate,
                 },
-                status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+                status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'NO_SHOW'] },
             },
             include: {
                 customer: {

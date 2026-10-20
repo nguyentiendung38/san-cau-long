@@ -228,6 +228,16 @@ export default function CustomersPage() {
                                                 )}>
                                                     {getMembershipLabel(customer.membershipTier)}
                                                 </span>
+                                                {customer.isVerifiedHue && (
+                                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1 border border-emerald-200">
+                                                        🎓 HUE: {customer.studentId || "Sinh viên"}
+                                                    </span>
+                                                )}
+                                                {customer.faculty && (
+                                                    <span className="hidden sm:inline-block text-[11px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-medium border border-emerald-100">
+                                                        {customer.faculty}
+                                                    </span>
+                                                )}
                                             </div>
 
                                             <div className="flex items-center gap-4 mt-1 text-sm text-foreground-secondary">

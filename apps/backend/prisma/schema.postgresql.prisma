@@ -1,4 +1,4 @@
-// Prisma Schema for Courtify - Badminton Court Management System
+// Prisma schema for the badminton court management system
 // Database: PostgreSQL for production
 
 generator client {
@@ -115,6 +115,10 @@ model Customer {
   dateOfBirth     DateTime?
   address         String?
   notes           String?
+  studentId       String?
+  faculty         String?
+  customerType    String    @default("EXTERNAL")
+  isVerifiedHue   Boolean   @default(false)
   membershipTier  String?   // BRONZE, SILVER, GOLD, PLATINUM
   membershipStart DateTime?
   membershipEnd   DateTime?

@@ -1,14 +1,149 @@
 .page {
-  padding: 16px 16px 96px 16px;
+  padding: calc(var(--zaui-safe-area-inset-top, 0px) + 12px) 14px 96px 14px;
+  background-color: #F8FAFC;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+/* Khoảng cách an toàn cho các trang có Header cố định phía trên */
+.page-with-header {
+  padding-top: calc(var(--zaui-safe-area-inset-top, 0px) + 56px) !important;
+}
+
+.zaui-page:has(.zaui-header) {
+  padding-top: calc(var(--zaui-safe-area-inset-top, 0px) + 56px) !important;
+}
+
+.zaui-header {
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.95) !important;
+  border-bottom: 1px solid #E2E8F0 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  z-index: 999 !important;
+}
+
+.zaui-header-title {
+  font-weight: 700 !important;
+  font-size: 16px !important;
+  color: #0F172A !important;
 }
 
 .section-container {
   padding: 16px;
   background: #ffffff;
-  border-radius: 8px;
-  margin-bottom: 24px;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .zaui-list-item {
   cursor: pointer;
+}
+
+/* Custom modern inputs */
+.modern-input {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  background-color: #F8FAFC;
+  font-size: 14px;
+  color: #1E293B;
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.modern-input:focus {
+  border-color: #059669;
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+}
+
+.modern-select {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid #E2E8F0;
+  background-color: #F8FAFC;
+  font-size: 14px;
+  color: #1E293B;
+  outline: none;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px;
+}
+
+.modern-select:focus {
+  border-color: #059669;
+  background-color: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.12);
+}
+
+/* Pulse animation for live status */
+@keyframes pulse-dot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #22C55E;
+  border-radius: 50%;
+  display: inline-block;
+  animation: pulse-dot 2s infinite;
+}
+
+/* Tinh chỉnh Modal Zalo UI: Chỉ dùng 1 thanh cuộn duy nhất, giao diện mượt mà */
+.zaui-modal-content {
+  border-radius: 20px !important;
+  max-height: 85vh !important;
+  width: calc(100vw - 32px) !important;
+  max-width: 440px !important;
+  overflow: hidden !important;
+}
+
+.zaui-modal-content .zaui-modal-content-title {
+  padding-top: 18px !important;
+  margin-bottom: 6px !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  color: #0F172A !important;
+}
+
+.zaui-modal-content-main {
+  padding: 12px 18px 20px 18px !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Thanh cuộn đơn mảnh đẹp mắt */
+.zaui-modal-content-main::-webkit-scrollbar {
+  width: 4px;
+}
+.zaui-modal-content-main::-webkit-scrollbar-track {
+  background: transparent;
+}
+.zaui-modal-content-main::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+.zaui-modal-content-main::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
 }

@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, XCircle, Eye, EyeOff, Loader2, MailCheck } from 'lucide-react';
 import { portalAuthApi } from '@/services/portal-auth.service';
+import { useToast } from '@/hooks/use-toast';
 
 export default function PortalForgotPasswordPage() {
     const navigate = useNavigate();
+    const { toast } = useToast();
     const [step, setStep] = useState<1 | 2>(1);
     const [isLoading, setIsLoading] = useState(false);
     
@@ -33,7 +35,7 @@ export default function PortalForgotPasswordPage() {
         e.preventDefault();
         
         if (!email) {
-            alert('Vui lòng nhập email đăng ký tài khoản');
+            toast({ title: 'Vui lòng nhập email đăng ký tài khoản', variant: 'error' });
             return;
         }
 
@@ -41,7 +43,7 @@ export default function PortalForgotPasswordPage() {
         try {
             const res = await portalAuthApi.forgotPasswordOtp({ email });
             
-            alert(res.data?.message || 'Đã gửi mã OTP, vui lòng kiểm tra email của bạn');
+            toast({ title: 'Đã gửi mã OTP', description: res.data?.message || 'Vui lòng kiểm tra email của bạn', variant: 'success' });
             setOtp(['', '', '', '', '', '']);
 
             setStep(2);
@@ -49,7 +51,7 @@ export default function PortalForgotPasswordPage() {
             setCanResend(false);
         } catch (error: any) {
             const msg = error.response?.data?.message || 'Không thể gửi mã OTP, vui lòng kiểm tra lại email';
-            alert(msg);
+            toast({ title: 'Lỗi', description: msg, variant: 'error' });
         } finally {
             setIsLoading(false);
         }
@@ -121,23 +123,23 @@ export default function PortalForgotPasswordPage() {
         e.preventDefault();
         const otpString = otp.join('');
         if (otpString.length < 6) {
-            alert('Vui lòng nhập đủ 6 số OTP');
+            toast({ title: 'Vui lòng nhập đủ 6 số OTP', variant: 'error' });
             return;
         }
 
         if (newPassword.length < 8) {
-            alert('Mật khẩu mới phải có ít nhất 8 ký tự');
+            toast({ title: 'Mật khẩu mới phải có ít nhất 8 ký tự', variant: 'error' });
             return;
         }
 
         setIsLoading(true);
         try {
             await portalAuthApi.resetPassword({ email, otp: otpString, newPassword });
-            alert('Đổi mật khẩu thành công! Vui lòng đăng nhập lại.');
+            toast({ title: 'Thành công', description: 'Đổi mật khẩu thành công! Vui lòng đăng nhập lại.', variant: 'success' });
             navigate('/dang-nhap');
         } catch (error: any) {
             const msg = error.response?.data?.message || 'Mã OTP không đúng hoặc đã hết hạn';
-            alert(msg);
+            toast({ title: 'Lỗi', description: msg, variant: 'error' });
         } finally {
             setIsLoading(false);
         }

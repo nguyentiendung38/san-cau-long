@@ -6,6 +6,7 @@ import { config } from './config/index.js';
 import { errorHandler, notFoundHandler } from './middleware/error.js';
 import routes from './routes/index.js';
 import { bookingRequestService } from './services/booking-request.service.js';
+import { bookingService } from './services/booking.service.js';
 import { notificationService } from './services/notification.service.js';
 
 const app = express();
@@ -45,6 +46,11 @@ const server = app.listen(config.port, () => {
         void bookingRequestService.expireUnpaidBankTransferRequests().catch((error) => {
             console.error('Không thể giải phóng yêu cầu đặt sân hết hạn:', error instanceof Error ? error.message : error);
         });
+        void bookingService.markExpiredBookingsNoShow().then((count) => {
+            if (count > 0) console.info(`Đã tự động đánh dấu ${count} lịch là khách vắng`);
+        }).catch((error) => {
+            console.error('Không thể tự động đánh dấu lịch khách vắng:', error instanceof Error ? error.message : error);
+        });
         void notificationService.runDue();
     };
     runMaintenance();
@@ -55,7 +61,7 @@ const server = app.listen(config.port, () => {
     console.log(`
   ╔═══════════════════════════════════════════════╗
   ║                                               ║
-  ║   🏸 Courtify API Server                      ║
+  ║   🏸 Hệ thống quản lý sân cầu lông API        ║
   ║                                               ║
   ║   Environment: ${config.env.padEnd(28)}║
   ║   Port: ${String(config.port).padEnd(36)}║

@@ -31,7 +31,9 @@ import PortalForgotPasswordPage from '@/pages/PortalForgotPasswordPage'
 import BookingRequestsPage from '@/pages/BookingRequestsPage'
 import ExploreContentPage from '@/pages/ExploreContentPage'
 import VenueReviewsPage from '@/pages/VenueReviewsPage'
+import StaffPage from '@/pages/StaffPage'
 import PortalLayout from '@/components/portal/PortalLayout'
+import CheckInPage from '@/pages/CheckInPage'
 
 function App() {
     const { isAuthenticated } = useAuthStore()
@@ -71,6 +73,7 @@ function App() {
                     path="/client-forgot-password"
                     element={<PortalForgotPasswordPage />}
                 />
+                <Route path="/check-in/:token" element={<CheckInPage />} />
 
                 {/* Alobo Clone Portal Layout */}
                 <Route element={<PortalLayout />}>
@@ -105,6 +108,7 @@ function App() {
                                     <Route path="/inventory" element={<InventoryPage />} />
                                     <Route path="/venues" element={<VenuesPage />} />
                                     <Route path="/reports" element={<ReportsPage />} />
+                                    <Route path="/staff" element={<StaffPage />} />
                                     <Route path="/settings" element={<SettingsPage />} />
                                     <Route path="/explore-content" element={<ExploreContentPage />} />
                                     <Route path="/venue-reviews" element={<VenueReviewsPage />} />

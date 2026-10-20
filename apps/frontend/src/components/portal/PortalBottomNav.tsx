@@ -20,7 +20,7 @@ export function PortalBottomNav() {
     };
 
     return (
-        <nav aria-label="Điều hướng chính" className="fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2">
+        <nav aria-label="Điều hướng chính" className="fixed inset-x-0 bottom-0 z-50 px-3 pb-[max(env(safe-area-inset-bottom),10px)] pt-2 lg:hidden">
             <div className="mx-auto flex max-w-xl items-center justify-around rounded-2xl border border-slate-200/80 bg-white/95 px-1 py-1.5 shadow-[0_10px_40px_rgba(15,23,42,0.14)] backdrop-blur-xl">
                 {items.map(({ id, label, Icon }) => {
                     const isActive = activeTab === id;

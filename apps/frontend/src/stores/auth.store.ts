@@ -20,7 +20,7 @@ interface AuthState {
     updateTokens: (accessToken: string, refreshToken: string) => void
 }
 
-const AUTH_STORAGE_KEY = 'courtify-auth'
+const AUTH_STORAGE_KEY = 'quan-ly-san-cau-long-auth'
 
 export const useAuthStore = create<AuthState>()(
     persist(

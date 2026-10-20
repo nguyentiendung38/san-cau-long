@@ -37,7 +37,7 @@ describe('mailService.sendOTP', () => {
     });
 
     it('reports missing SMTP credentials without attempting a delivery', async () => {
-        process.env.SMTP_FROM = 'courtify@example.com';
+        process.env.SMTP_FROM = 'san-cau-long@example.com';
 
         await expect(mailService.sendOTP('customer@example.com', '123456'))
             .rejects.toMatchObject({ statusCode: 503 });

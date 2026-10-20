@@ -144,6 +144,20 @@ export class BookingRequestService {
         ) {
             throw new AppError(400, 'Không thể đặt khung giờ đã bắt đầu');
         }
+        // Kiểm tra giờ mở cửa cơ sở
+        const venueOpenMinutes = timeToMinutes(court.venue.openTime || '06:00');
+        const venueCloseMinutes = timeToMinutes(court.venue.closeTime || '23:00');
+        if (
+            venueOpenMinutes !== null &&
+            venueCloseMinutes !== null &&
+            (startMinutes < venueOpenMinutes || endMinutes > venueCloseMinutes)
+        ) {
+            throw new AppError(
+                400,
+                `Cơ sở ${court.venue.name} chỉ mở cửa từ ${court.venue.openTime || '06:00'} đến ${court.venue.closeTime || '23:00'}. Khung giờ bạn chọn nằm ngoài thời gian mở cửa.`
+            );
+        }
+
         const dayNum = dateObj.getUTCDay();
         const operatingHours = await prisma.operatingHour.findMany({
             where: { venueId: data.venueId, isActive: true }
@@ -305,7 +319,7 @@ export class BookingRequestService {
             ? getBankTransferExpiry(createdAt)
             : null;
         const transferReference = paymentMethod === 'DEPOSIT_TRANSFER'
-            ? `CTY${randomBytes(5).toString('hex').toUpperCase()}`
+            ? `HUE${randomBytes(5).toString('hex').toUpperCase()}`
             : null;
         const request = await prisma.$transaction(async (tx) => {
             const interval = bookingInterval(dateObj, data.startTime, data.endTime);
@@ -315,9 +329,16 @@ export class BookingRequestService {
                     startAt: { lt: interval.endAt },
                     endAt: { gt: interval.startAt },
                 },
-                select: { id: true },
+                select: { id: true, closureType: true },
             });
-            if (transactionClosure) throw new AppError(409, 'Sân đang đóng bảo trì trong khung giờ này');
+            if (transactionClosure) {
+                throw new AppError(
+                    409,
+                    transactionClosure.closureType === 'TOURNAMENT'
+                        ? 'Sân đang tổ chức giải trong khung giờ này'
+                        : 'Sân đang đóng bảo trì trong khung giờ này',
+                );
+            }
             const transactionBookings = await tx.booking.findMany({
                 where: {
                     courtId: data.courtId,
@@ -419,22 +440,64 @@ export class BookingRequestService {
             }
         });
         return Promise.all(requests.map(async (request) => {
-            let booking: { id: string; checkInToken: string | null; checkedInAt: Date | null } | null = await prisma.booking.findFirst({
+            let booking: {
+                id: string;
+                checkInToken: string | null;
+                checkedInAt: Date | null;
+                status: string;
+            } | null = await prisma.booking.findFirst({
                 where: {
                     notes: { contains: `[Online Request:${request.id}]` },
                     customerId,
-                    status: { in: ['CONFIRMED', 'IN_PROGRESS'] },
+                    status: { not: 'CANCELLED' },
                 },
-                select: { id: true, checkInToken: true, checkedInAt: true },
+                select: { id: true, checkInToken: true, checkedInAt: true, status: true },
             });
-            if (booking && !booking.checkInToken) {
+            if (booking && !booking.checkInToken && ['CONFIRMED', 'IN_PROGRESS'].includes(booking.status)) {
                 await prisma.booking.updateMany({
                     where: { id: booking.id, checkInToken: null, status: { in: ['CONFIRMED', 'IN_PROGRESS'] } },
                     data: { checkInToken: randomBytes(32).toString('base64url') },
                 });
                 booking = await prisma.booking.findUnique({
                     where: { id: booking.id },
-                    select: { id: true, checkInToken: true, checkedInAt: true },
+                    select: { id: true, checkInToken: true, checkedInAt: true, status: true },
+                });
+            }
+            return { ...request, checkIn: booking };
+        }));
+    }
+
+    async getByPhone(phone: string) {
+        await this.expireUnpaidBankTransferRequests();
+        const requests = await prisma.bookingRequest.findMany({
+            where: { phone },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                venue: { select: { name: true, address: true, logo: true } },
+                court: { select: { name: true } },
+            }
+        });
+        return Promise.all(requests.map(async (request) => {
+            let booking: {
+                id: string;
+                checkInToken: string | null;
+                checkedInAt: Date | null;
+                status: string;
+            } | null = await prisma.booking.findFirst({
+                where: {
+                    notes: { contains: `[Online Request:${request.id}]` },
+                    status: { not: 'CANCELLED' },
+                },
+                select: { id: true, checkInToken: true, checkedInAt: true, status: true },
+            });
+            if (booking && !booking.checkInToken && ['CONFIRMED', 'IN_PROGRESS'].includes(booking.status)) {
+                await prisma.booking.updateMany({
+                    where: { id: booking.id, checkInToken: null, status: { in: ['CONFIRMED', 'IN_PROGRESS'] } },
+                    data: { checkInToken: randomBytes(32).toString('base64url') },
+                });
+                booking = await prisma.booking.findUnique({
+                    where: { id: booking.id },
+                    select: { id: true, checkInToken: true, checkedInAt: true, status: true },
                 });
             }
             return { ...request, checkIn: booking };
@@ -568,9 +631,16 @@ export class BookingRequestService {
                 const interval = bookingInterval(request.requestedDate, request.requestedStartTime, request.requestedEndTime);
                 const maintenance = await tx.maintenanceClosure.findFirst({
                     where: { courtId: request.courtId || undefined, startAt: { lt: interval.endAt }, endAt: { gt: interval.startAt } },
-                    select: { id: true },
+                    select: { id: true, closureType: true },
                 });
-                if (maintenance) throw new AppError(409, 'Sân đang đóng bảo trì trong khung giờ mới');
+                if (maintenance) {
+                    throw new AppError(
+                        409,
+                        maintenance.closureType === 'TOURNAMENT'
+                            ? 'Sân đang tổ chức giải trong khung giờ mới'
+                            : 'Sân đang đóng bảo trì trong khung giờ mới',
+                    );
+                }
                 if (linkedBooking) {
                     await tx.booking.update({
                         where: { id: linkedBooking.id },

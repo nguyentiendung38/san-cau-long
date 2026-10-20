@@ -52,34 +52,51 @@ export default function PortalLoginPage() {
             </button>
 
             <section className="relative grid w-full max-w-5xl overflow-hidden rounded-[2rem] border border-white/10 bg-white shadow-2xl shadow-black/30 md:grid-cols-[0.95fr_1.05fr]">
-                <aside className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-emerald-700 via-green-700 to-teal-900 p-10 text-white md:flex">
-                    <div className="absolute -right-20 top-20 h-64 w-64 rounded-full border border-white/10" />
-                    <div className="absolute -right-8 top-32 h-40 w-40 rounded-full border border-white/10" />
+                <aside className="relative hidden flex-col justify-between overflow-hidden p-8 text-white md:flex bg-gradient-to-br from-emerald-800 via-green-800 to-teal-900">
                     <div className="relative flex items-center gap-3">
-                        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20">
-                            <Sparkles className="h-6 w-6" />
-                        </span>
-                        <span className="text-xl font-black tracking-tight">Courtify</span>
+                        <img src="/logo-hue.jpg" alt="Logo Trường Đại học Kinh tế Huế" className="h-12 w-12 rounded-full object-contain bg-white p-0.5 shadow-md border-2 border-white/40" />
+                        <div>
+                            <span className="text-xl font-black tracking-tight block">SÂN CẦU LÔNG HUẾ</span>
+                            <span className="text-xs text-lime-200 font-semibold">Trường Đại học Kinh tế Huế</span>
+                        </div>
                     </div>
-                    <div className="relative py-12">
-                        <p className="mb-4 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-100">Chào mừng trở lại</p>
-                        <h1 className="max-w-sm text-4xl font-bold leading-tight">Sẵn sàng cho trận cầu tiếp theo?</h1>
-                        <p className="mt-5 max-w-sm leading-7 text-emerald-50/80">
-                            Đăng nhập để đặt sân nhanh chóng, theo dõi lịch chơi và quản lý yêu cầu của bạn.
+
+                    {/* Campus Image Frame - Hiển thị ảnh trường sáng rõ */}
+                    <div className="relative my-4 overflow-hidden rounded-2xl border-2 border-white/30 bg-white/10 p-1.5 shadow-2xl backdrop-blur-md">
+                        <img
+                            src="/campus-hue.jpg"
+                            alt="Trường Đại học Kinh tế Huế - Nâng cánh những ước mơ"
+                            className="w-full h-44 object-cover rounded-xl shadow-md"
+                        />
+                        <div className="mt-2 px-1 flex items-center justify-between text-[11px] font-bold text-white">
+                            <span>🏛️ Cơ sở ĐH Kinh tế Huế</span>
+                            <span className="text-lime-300">Nâng cánh những ước mơ</span>
+                        </div>
+                    </div>
+
+                    <div className="relative bg-black/25 rounded-2xl p-4 border border-white/15 backdrop-blur-sm">
+                        <p className="text-xs font-bold uppercase tracking-wider text-lime-300 mb-1">Chào mừng bạn</p>
+                        <h2 className="text-xl font-black leading-snug">Sẵn sàng cho trận cầu tiếp theo?</h2>
+                        <p className="mt-2 text-xs leading-relaxed text-emerald-50/90">
+                            Đăng nhập tài khoản để đặt sân nhanh chóng, nhận ưu đãi sinh viên và theo dõi lịch chơi tiện lợi.
                         </p>
                     </div>
-                    <div className="relative flex items-center gap-3 text-sm text-emerald-50/80">
-                        <ShieldCheck className="h-5 w-5" />
-                        Thông tin tài khoản được bảo vệ an toàn
+
+                    <div className="relative flex items-center gap-2.5 text-xs text-emerald-100/90 pt-2 border-t border-white/15">
+                        <ShieldCheck className="h-4 w-4 text-lime-300 shrink-0" />
+                        <span>Bảo mật thông tin tài khoản người dùng</span>
                     </div>
                 </aside>
 
                 <div className="px-6 py-10 sm:px-10 sm:py-12">
                     <div className="mb-9 md:hidden">
-                        <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-lg shadow-emerald-600/20">
-                            <Sparkles className="h-6 w-6" />
+                        <div className="mb-6 flex items-center gap-3">
+                            <img src="/logo-hue.jpg" alt="Logo Trường Đại học Kinh tế Huế" className="h-12 w-12 rounded-full object-contain bg-white p-0.5 shadow-md border border-emerald-100" />
+                            <div>
+                                <p className="text-base font-bold text-gray-900">SÂN CẦU LÔNG HUẾ</p>
+                                <p className="text-xs text-emerald-700">Trường Đại học Kinh tế Huế</p>
+                            </div>
                         </div>
-                        <p className="text-sm font-bold uppercase tracking-[0.18em] text-emerald-700">Courtify</p>
                     </div>
                     <div className="mb-8">
                         <p className="mb-2 text-sm font-semibold text-emerald-700">Tài khoản khách hàng</p>

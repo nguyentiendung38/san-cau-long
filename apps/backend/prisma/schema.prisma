@@ -127,6 +127,10 @@ model Customer {
   dateOfBirth     DateTime?
   address         String?
   notes           String?
+  studentId       String?
+  faculty         String?
+  customerType    String    @default("EXTERNAL")
+  isVerifiedHue   Boolean   @default(false)
   membershipTier  String? // BRONZE, SILVER, GOLD, PLATINUM
   membershipStart DateTime?
   membershipEnd   DateTime?
@@ -496,6 +500,7 @@ model BookingRequest {
   discountAmount            Float     @default(0)
   redeemPoints              Int       @default(0)
   loyaltyDiscountAmount     Float     @default(0)
+  hueDiscountAmount         Float     @default(0)
   expiresAt                 DateTime?
   transferReference         String?   @unique
   cancellationRequestStatus String?
@@ -542,12 +547,13 @@ model CustomerFavoriteCourt {
 }
 
 model MaintenanceClosure {
-  id        String   @id @default(cuid())
-  courtId   String
-  startAt   DateTime
-  endAt     DateTime
-  reason    String?
-  createdAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  courtId      String
+  startAt      DateTime
+  endAt        DateTime
+  reason       String?
+  closureType  String   @default("MAINTENANCE")
+  createdAt    DateTime @default(now())
 
   court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
 

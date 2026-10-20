@@ -165,6 +165,19 @@ export class CustomerService {
         return customer;
     }
 
+    
+    async verifyHue(id: string, isVerifiedHue: boolean, customerType?: string, studentId?: string, faculty?: string) {
+        return prisma.customer.update({
+            where: { id },
+            data: {
+                isVerifiedHue,
+                ...(customerType ? { customerType } : {}),
+                ...(studentId !== undefined ? { studentId } : {}),
+                ...(faculty !== undefined ? { faculty } : {}),
+            } as any,
+        });
+    }
+
     async delete(id: string) {
         const existing = await prisma.customer.findUnique({
             where: { id }

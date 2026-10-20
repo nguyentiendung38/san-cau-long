@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import { 
     Search, MapPin, Map as MapIcon, CalendarCheck, Heart, User, Home, Flame, Compass,
-    Settings2, Calendar, ChevronRight, Info, ShieldCheck, Sparkles, Globe, X, ChevronLeft,
+    Settings2, Calendar, ChevronRight, ChevronDown, ChevronUp, Info, ShieldCheck, Sparkles, Globe, X, ChevronLeft,
     Star, Navigation, Clock, CalendarDays, Bell, BookOpen, Gift, LogOut, Phone,
     ArrowUpRight, CalendarRange, RefreshCw
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABEL
 import { venueReviewApi } from '@/services/venue-review.service';
 import { portalAuthApi } from '@/services/portal-auth.service';
 import BookingCheckInQr from '@/components/booking/BookingCheckInQr';
+import { HueStudentVerifyModal } from '@/components/portal/HueStudentVerifyModal';
 
 const TIME_SLOTS: string[] = [];
 for (let h = 6; h <= 23; h++) {
@@ -27,6 +29,40 @@ for (let h = 6; h <= 23; h++) {
 
 const formatVnd = (amount: number) =>
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+
+function getBookingEndTime(request: { date: string; endTime: string }) {
+    const bookingDate = new Date(request.date);
+    if (typeof request.endTime !== 'string') return null;
+    const [hours, minutes] = request.endTime.split(':').map(Number);
+    if (
+        Number.isNaN(bookingDate.getTime()) ||
+        !Number.isFinite(hours) ||
+        !Number.isFinite(minutes) ||
+        !Number.isInteger(hours) ||
+        !Number.isInteger(minutes) ||
+        hours < 0 || hours > 23 ||
+        minutes < 0 || minutes > 59
+    ) {
+        return null;
+    }
+    return new Date(Date.UTC(
+        bookingDate.getUTCFullYear(),
+        bookingDate.getUTCMonth(),
+        bookingDate.getUTCDate(),
+        hours - 7,
+        minutes,
+    ));
+}
+
+const pricingDayLabels: Record<string, string> = {
+    MONDAY: 'Thứ Hai',
+    TUESDAY: 'Thứ Ba',
+    WEDNESDAY: 'Thứ Tư',
+    THURSDAY: 'Thứ Năm',
+    FRIDAY: 'Thứ Sáu',
+    SATURDAY: 'Thứ Bảy',
+    SUNDAY: 'Chủ Nhật',
+};
 
 const exploreTypeBackgrounds: Record<ExploreContentType, string> = {
     EVENT: 'from-violet-900 via-purple-800 to-fuchsia-600',
@@ -217,8 +253,10 @@ export default function PortalPage() {
         const toggleFavorite = (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
             const isRemoving = favoriteVenueIds.includes(id);
-            if (portalToken) {
-                portalAuthApi.setFavoriteVenue(id, !isRemoving).then((favorites) => {
+            const currentPortalToken = localStorage.getItem('portalUserToken') || '';
+            if (currentPortalToken) {
+                if (currentPortalToken !== portalToken) setPortalToken(currentPortalToken);
+                portalAuthApi.setFavoriteVenue(id, !isRemoving, currentPortalToken).then((favorites) => {
                     setFavoriteVenueIds(favorites.venueIds);
                     setFavToast({ show: true, isAdd: !isRemoving, id: Date.now() });
                 }).catch((error: any) => toast({
@@ -228,6 +266,7 @@ export default function PortalPage() {
                 }));
                 return;
             }
+            if (portalToken) setPortalToken('');
             setFavoriteVenueIds(prev => {
                 const next = isRemoving ? prev.filter(v => v !== id) : [...prev, id];
                 localStorage.setItem('portal_favorites', JSON.stringify(next));
@@ -290,7 +329,20 @@ export default function PortalPage() {
         : exploreItems.filter((item) => item.type === exploreFilter);
     const [userPhone, setUserPhone] = useState(localStorage.getItem('portalUserPhone') || '');
     const [portalToken, setPortalToken] = useState(localStorage.getItem('portalUserToken') || '');
-    const [portalCustomerId] = useState(localStorage.getItem('portalUserId') || '');
+    const [portalCustomerId, setPortalCustomerId] = useState(localStorage.getItem('portalUserId') || '');
+    const [showHueModal, setShowHueModal] = useState(false);
+    const [hueStudentIdInput, setHueStudentIdInput] = useState('');
+    const [hueFacultyInput, setHueFacultyInput] = useState('Khoa Quản trị kinh doanh');
+    const [isVerifyingHue, setIsVerifyingHue] = useState(false);
+    useEffect(() => {
+        const syncPortalSession = () => {
+            setPortalToken(localStorage.getItem('portalUserToken') || '');
+            setPortalCustomerId(localStorage.getItem('portalUserId') || '');
+            setUserPhone(localStorage.getItem('portalUserPhone') || '');
+        };
+        window.addEventListener('storage', syncPortalSession);
+        return () => window.removeEventListener('storage', syncPortalSession);
+    }, []);
     const {
         data: loyaltyAccount,
         isLoading: isLoadingLoyalty,
@@ -299,13 +351,24 @@ export default function PortalPage() {
     } = useQuery<{
         points: number;
         reservedPoints: number;
+        studentId?: string | null;
+        faculty?: string | null;
+        customerType?: string;
+        isVerifiedHue?: boolean;
         pointsTransactions: Array<{ id: string; type: string; points: number; reason: string; createdAt: string }>;
     }>({
         queryKey: ['portal-loyalty', portalCustomerId],
         queryFn: portalAuthApi.getMe,
-        enabled: activeTab === 'account' && !!portalToken,
+        enabled: (activeTab === 'account' || activeTab === 'home') && !!portalToken,
     });
+    const [isLoyaltyExpanded, setIsLoyaltyExpanded] = useState(false);
     const [historyFilter, setHistoryFilter] = useState<'upcoming' | 'past' | 'all'>('upcoming');
+    const [historyNow, setHistoryNow] = useState(() => new Date());
+    useEffect(() => {
+        if (activeTab !== 'history') return;
+        const timer = window.setInterval(() => setHistoryNow(new Date()), 30_000);
+        return () => window.clearInterval(timer);
+    }, [activeTab]);
 
     const { data: accountFavorites } = useQuery({
         queryKey: ['portal-favorites', portalCustomerId],
@@ -319,6 +382,42 @@ export default function PortalPage() {
     }, [accountFavorites]);
 
     // Customer cancellation / rescheduling state
+    
+    const handleVerifyHue = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!hueStudentIdInput.trim()) {
+            toast({
+                title: 'Thiếu thông tin',
+                description: 'Vui lòng nhập Mã số sinh viên (MSSV)',
+                variant: 'error',
+            });
+            return;
+        }
+        setIsVerifyingHue(true);
+        try {
+            await portalAuthApi.verifyHue({
+                studentId: hueStudentIdInput.trim(),
+                faculty: hueFacultyInput,
+                customerType: 'STUDENT',
+            });
+            setShowHueModal(false);
+            await refetchLoyalty();
+            toast({
+                title: 'Xác thực thành công!',
+                description: 'Xác thực Sinh viên HUE thành công! Ưu đãi -20% tiền sân đã được kích hoạt.',
+                variant: 'success',
+            });
+        } catch (err: any) {
+            toast({
+                title: 'Xác thực thất bại',
+                description: err?.response?.data?.message || 'Không thể xác thực, vui lòng thử lại',
+                variant: 'error',
+            });
+        } finally {
+            setIsVerifyingHue(false);
+        }
+    };
+
     const [customerCancelModal, setCustomerCancelModal] = useState<{ isOpen: boolean; request: any | null }>({
         isOpen: false,
         request: null,
@@ -369,24 +468,29 @@ export default function PortalPage() {
         queryKey: ['my-requests', portalCustomerId],
         queryFn: () => bookingRequestApi.getMyRequests().then(data => data.filter((b: any) => !b.notes?.includes('Zalo'))),
         enabled: activeTab === 'history' && !!portalToken,
+        refetchInterval: activeTab === 'history' && portalToken ? 30_000 : false,
     });
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
     const filteredRequests = myRequests.filter((request: any) => {
         if (historyFilter === 'all') return true;
-        const requestDate = new Date(request.date);
-        requestDate.setHours(0, 0, 0, 0);
-        return historyFilter === 'upcoming' ? requestDate >= today : requestDate < today;
+        const bookingEndTime = getBookingEndTime(request);
+        if (!bookingEndTime) return historyFilter === 'upcoming';
+        return historyFilter === 'upcoming' ? bookingEndTime > historyNow : bookingEndTime <= historyNow;
     });
     const { data: venueReviews = [], isLoading: isLoadingReviews } = useQuery({
         queryKey: ['venue-reviews-public', selectedVenueDetail?.id],
         queryFn: () => venueReviewApi.getPublic(selectedVenueDetail!.id),
         enabled: !!selectedVenueDetail && activeModalTab === 'reviews',
     });
-    const { data: eligibleReviewBookings = [] } = useQuery({
+    const {
+        data: eligibleReviewBookings = [],
+        isLoading: isLoadingEligibleReviewBookings,
+        isError: isEligibleReviewBookingsError,
+        error: eligibleReviewBookingsError,
+    } = useQuery({
         queryKey: ['eligible-review-bookings', portalCustomerId],
         queryFn: () => venueReviewApi.getEligibleBookings(),
         enabled: !!portalToken && !!selectedVenueDetail && activeModalTab === 'reviews',
+        refetchInterval: activeModalTab === 'reviews' && portalToken ? 30_000 : false,
     });
 
     const getByType = (type: ExploreContentType) => exploreItems.filter(item => item.type === type);
@@ -652,40 +756,95 @@ export default function PortalPage() {
             {/* Main Content Areas */}
             {activeTab === 'home' && (
                 <div className="flex flex-col flex-1 gap-6 pb-24 px-4 py-6 max-w-[1240px] mx-auto w-full">
-                    <section className="relative isolate overflow-hidden rounded-[28px] bg-gradient-to-br from-[#063d2c] via-[#087a4c] to-[#16a36a] px-6 py-8 text-white shadow-[0_24px_60px_-28px_rgba(6,61,44,0.65)] sm:px-10 sm:py-10 lg:min-h-[300px] lg:px-14">
+                    <section className="relative isolate overflow-hidden rounded-[28px] bg-gradient-to-br from-[#063d2c] via-[#087a4c] to-[#16a36a] p-6 text-white shadow-[0_24px_60px_-28px_rgba(6,61,44,0.65)] sm:p-8 lg:p-10">
+                        {/* Hiệu ứng nền mờ */}
                         <div className="absolute -right-16 -top-24 -z-10 h-72 w-72 rounded-full border-[36px] border-white/5" />
                         <div className="absolute -bottom-40 right-24 -z-10 h-80 w-80 rounded-full bg-lime-300/10 blur-2xl" />
-                        <div className="absolute right-8 top-8 hidden h-20 w-20 rotate-12 items-center justify-center rounded-3xl border border-white/20 bg-white/10 text-4xl shadow-xl backdrop-blur-sm sm:flex">
-                            🏸
-                        </div>
 
-                        <div className="max-w-2xl">
-                            <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-emerald-50 backdrop-blur-sm">
-                                <Sparkles className="h-3.5 w-3.5 text-lime-300" />
-                                SÂN THỂ THAO GẦN BẠN
-                            </span>
-                            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[42px]">
-                                Sẵn sàng cho một
-                                <span className="block text-lime-300">trận đấu thật hay?</span>
-                            </h1>
-                            <p className="mt-3 max-w-xl text-sm leading-6 text-emerald-50/85 sm:text-base">
-                                Tìm sân phù hợp, xem thông tin và đặt lịch nhanh chóng ngay trên điện thoại.
-                            </p>
-                            <div className="mt-6 flex flex-wrap items-center gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => document.getElementById('venue-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-lime-300 px-5 py-3 text-sm font-bold text-emerald-950 shadow-lg shadow-black/10 transition hover:bg-lime-200"
-                                >
-                                    Tìm sân ngay
-                                    <ChevronRight className="h-4 w-4" />
-                                </button>
-                                <span className="inline-flex items-center gap-2 text-sm font-medium text-white/80">
-                                    <ShieldCheck className="h-4 w-4 text-lime-300" />
-                                    Đặt sân tiện lợi, xác nhận nhanh
+                        <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
+                            <div className="max-w-xl flex-1">
+                                <span className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold tracking-wide text-emerald-50 backdrop-blur-sm">
+                                    <Sparkles className="h-3.5 w-3.5 text-lime-300" />
+                                    NHÀ THI ĐẤU ĐA NĂNG HUE
                                 </span>
+                                <h1 className="mt-4 text-3xl font-black leading-tight tracking-tight sm:text-4xl lg:text-[40px]">
+                                    Sẵn sàng cho một
+                                    <span className="block text-lime-300">trận đấu thật hay?</span>
+                                </h1>
+                                <p className="mt-3 text-sm leading-6 text-emerald-50/90 sm:text-base">
+                                    Tìm sân phù hợp, xem thông tin và đặt lịch nhanh chóng ngay trên điện thoại.
+                                </p>
+                                <div className="mt-6 flex flex-wrap items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => document.getElementById('venue-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                        className="inline-flex items-center gap-2 rounded-xl bg-lime-300 px-5 py-3 text-sm font-bold text-emerald-950 shadow-lg shadow-black/10 transition hover:bg-lime-200 active:scale-95"
+                                    >
+                                        Tìm sân ngay
+                                        <ChevronRight className="h-4 w-4" />
+                                    </button>
+                                    <span className="inline-flex items-center gap-2 text-sm font-medium text-white/85">
+                                        <ShieldCheck className="h-4 w-4 text-lime-300" />
+                                        Đặt sân tiện lợi, xác nhận nhanh
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Poster Nhà Thi Đấu Đa Năng HUE */}
+                            <div className="relative shrink-0 w-full sm:w-80 lg:w-[340px] xl:w-[380px]">
+                                <div className="group relative overflow-hidden rounded-2xl border-2 border-white/30 bg-white/10 p-1.5 shadow-2xl backdrop-blur-md transition hover:scale-[1.02]">
+                                    <img
+                                        src="/nha-thi-dau-hue.jpg"
+                                        alt="Nhà thi đấu đa năng HUE - Gắn kết để phát triển"
+                                        className="w-full h-auto max-h-72 sm:max-h-80 lg:max-h-[320px] object-cover rounded-xl shadow-inner"
+                                    />
+                                    <div className="absolute bottom-3 left-3 right-3 rounded-xl bg-slate-950/75 px-3 py-1.5 backdrop-blur-md flex items-center justify-between text-[11px] font-bold text-white border border-white/15">
+                                        <span>🏸 Cầu lông · Pickleball · Bóng bàn</span>
+                                        <span className="text-lime-300">ĐH Kinh tế Huế</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+                    </section>
+
+                    {/* Banner Đặc quyền HUE */}
+                    <section className="overflow-hidden rounded-2xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-900 via-teal-900 to-emerald-800 p-5 text-white shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-2xl bg-white border border-white/30 flex items-center justify-center p-1 shrink-0 shadow-md">
+                                <img src="/logo-hue.jpg" alt="Logo Trường Đại học Kinh tế Huế" className="w-full h-full object-contain rounded-full" />
+                            </div>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="bg-lime-300 text-emerald-950 text-xs font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                                        Đặc quyền HUE
+                                    </span>
+                                    <span className="text-xs text-emerald-200">Trường ĐH Kinh tế Huế</span>
+                                </div>
+                                <h3 className="text-lg font-black mt-1">Giảm trực tiếp 20% tiền sân cho Sinh viên & Cán bộ trường</h3>
+                                <p className="text-xs text-emerald-100/90 mt-0.5">Xác thực tài khoản bằng Mã số sinh viên (MSSV) để tự động áp dụng ưu đãi khi đặt sân tại trường.</p>
+                            </div>
+                        </div>
+                        {loyaltyAccount?.isVerifiedHue ? (
+                            <div className="px-4 py-2.5 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl text-white text-xs font-bold flex items-center gap-2 shrink-0">
+                                <span className="w-2 h-2 rounded-full bg-lime-400 animate-pulse" />
+                                <span>Đã xác thực MSSV: <strong className="text-lime-300">{loyaltyAccount?.studentId || 'Sinh viên HUE'}</strong> (-20%)</span>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!portalToken) {
+                                        navigate("/dang-nhap");
+                                    } else {
+                                        setShowHueModal(true);
+                                    }
+                                }}
+                                className="px-5 py-3 bg-lime-300 hover:bg-lime-200 text-emerald-950 font-black text-sm rounded-xl shadow-md shrink-0 transition-all flex items-center justify-center gap-2 active:scale-95"
+                            >
+                                <span>Xác thực MSSV ngay</span>
+                                <ChevronRight className="w-4 h-4" />
+                            </button>
+                        )}
                     </section>
 
                     {homeHighlights.length > 0 && (
@@ -1168,50 +1327,86 @@ export default function PortalPage() {
                     </div>
 
                     {portalToken ? (
-                        <section className="mb-6 overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-orange-50 shadow-sm">
-                            <div className="flex items-start justify-between gap-4 p-5 sm:p-6">
-                                <div>
-                                    <p className="text-xs font-bold uppercase tracking-[0.15em] text-amber-800">Quà tặng thành viên</p>
-                                    <h3 className="mt-2 text-2xl font-black text-slate-900">
-                                        {isLoadingLoyalty ? '...' : (loyaltyAccount?.points ?? 0).toLocaleString('vi-VN')}
-                                        <span className="ml-2 text-base font-bold text-amber-700">điểm</span>
-                                    </h3>
-                                    <p className="mt-1 text-xs text-slate-500">
-                                        Khả dụng: {Math.max(0, (loyaltyAccount?.points ?? 0) - (loyaltyAccount?.reservedPoints ?? 0)).toLocaleString('vi-VN')} điểm
-                                    </p>
-                                </div>
-                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                                    <Gift className="h-6 w-6" />
-                                </div>
-                            </div>
-                            <div className="border-t border-amber-100 bg-white/70 px-5 py-3 text-xs leading-5 text-slate-600 sm:px-6">
-                                Mỗi hóa đơn thanh toán đủ từ 100.000đ nhận 1 điểm (làm tròn xuống theo hóa đơn). 100 điểm đổi 10.000đ, dùng điểm giảm tối đa 20% tiền sân khi đặt trực tuyến.
-                            </div>
-                            <div className="px-5 py-4 sm:px-6">
-                                <h4 className="mb-3 text-sm font-bold text-slate-800">Lịch sử điểm gần đây</h4>
-                                {isLoyaltyError ? (
-                                    <div className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">
-                                        Không tải được lịch sử điểm.
-                                        <button onClick={() => void refetchLoyalty()} className="ml-2 font-bold underline">Thử lại</button>
+                        <section className="mb-6 overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50/70 via-white to-orange-50/50 shadow-xs transition-all">
+                            {/* Header rút gọn dạng thẻ ngắn (Compact Short Bar) */}
+                            <div className="flex items-center justify-between gap-3 p-4 sm:p-5">
+                                <div className="flex items-center gap-3.5 min-w-0">
+                                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 shadow-xs">
+                                        <Gift className="h-5 w-5" />
                                     </div>
-                                ) : !loyaltyAccount?.pointsTransactions.length ? (
-                                    <p className="text-sm text-slate-500">Chưa có giao dịch điểm. Điểm được cộng sau khi hóa đơn thanh toán đủ.</p>
-                                ) : (
-                                    <ul className="divide-y divide-amber-100">
-                                        {loyaltyAccount.pointsTransactions.slice(0, 8).map((entry) => (
-                                            <li key={entry.id} className="flex items-center justify-between gap-4 py-2.5">
-                                                <div className="min-w-0">
-                                                    <p className="truncate text-sm font-medium text-slate-700">{entry.reason}</p>
-                                                    <p className="mt-0.5 text-xs text-slate-400">{new Date(entry.createdAt).toLocaleDateString('vi-VN')}</p>
-                                                </div>
-                                                <span className={`shrink-0 text-sm font-bold ${entry.points > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
-                                                    {entry.points > 0 ? '+' : ''}{entry.points.toLocaleString('vi-VN')} điểm
-                                                </span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                )}
+                                    <div className="min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-xs font-bold uppercase tracking-wider text-amber-800">Quà tặng thành viên</p>
+                                            <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100/80 text-amber-800">
+                                                100 điểm = 10.000đ
+                                            </span>
+                                        </div>
+                                        <div className="flex items-baseline gap-2 mt-0.5">
+                                            <h3 className="text-xl font-black text-slate-900">
+                                                {isLoadingLoyalty ? '...' : (loyaltyAccount?.points ?? 0).toLocaleString('vi-VN')}
+                                                <span className="ml-1 text-xs font-bold text-amber-700">điểm</span>
+                                            </h3>
+                                            <span className="text-xs text-slate-500">
+                                                (Khả dụng: <strong className="text-amber-800">{Math.max(0, (loyaltyAccount?.points ?? 0) - (loyaltyAccount?.reservedPoints ?? 0)).toLocaleString('vi-VN')}</strong>)
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setIsLoyaltyExpanded(!isLoyaltyExpanded)}
+                                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-900 bg-amber-100/80 hover:bg-amber-200/80 rounded-xl transition-all active:scale-95 shadow-xs"
+                                >
+                                    <span>{isLoyaltyExpanded ? 'Thu gọn' : 'Xem lịch sử'}</span>
+                                    {isLoyaltyExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                </button>
                             </div>
+
+                            {/* Khung chi tiết và lịch sử có thể thu gọn / mở rộng, giới hạn chiều cao chống tràn */}
+                            {isLoyaltyExpanded && (
+                                <div className="border-t border-amber-100 bg-white/70 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <div className="px-5 py-2.5 text-xs text-slate-600 border-b border-amber-100/60 leading-relaxed bg-amber-50/40">
+                                        💡 Mỗi hóa đơn thanh toán từ 100.000đ nhận 1 điểm. Dùng điểm giảm tối đa 20% tiền sân khi đặt trực tuyến.
+                                    </div>
+
+                                    <div className="p-4 sm:p-5">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                                Lịch sử giao dịch ({loyaltyAccount?.pointsTransactions.length || 0})
+                                            </h4>
+                                            {loyaltyAccount?.pointsTransactions && loyaltyAccount.pointsTransactions.length > 4 && (
+                                                <span className="text-[11px] text-slate-400">Cuộn để xem thêm</span>
+                                            )}
+                                        </div>
+
+                                        {isLoyaltyError ? (
+                                            <div className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700">
+                                                Không tải được lịch sử điểm.
+                                                <button onClick={() => void refetchLoyalty()} className="ml-2 font-bold underline">Thử lại</button>
+                                            </div>
+                                        ) : !loyaltyAccount?.pointsTransactions.length ? (
+                                            <p className="text-xs text-slate-500 py-2 italic">Chưa có giao dịch tích điểm nào.</p>
+                                        ) : (
+                                            <div className="max-h-56 overflow-y-auto pr-1 divide-y divide-amber-100/70">
+                                                {loyaltyAccount.pointsTransactions.map((entry) => (
+                                                    <div key={entry.id} className="flex items-center justify-between gap-3 py-2 text-xs">
+                                                        <div className="min-w-0">
+                                                            <p className="truncate font-medium text-slate-700">{entry.reason}</p>
+                                                            <p className="text-[11px] text-slate-400">
+                                                                {new Date(entry.createdAt).toLocaleDateString('vi-VN')} {new Date(entry.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                            </p>
+                                                        </div>
+                                                        <span className={`shrink-0 font-bold ${entry.points > 0 ? 'text-emerald-700' : 'text-rose-600'}`}>
+                                                            {entry.points > 0 ? '+' : ''}{entry.points.toLocaleString('vi-VN')} đ
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </section>
                     ) : (
                         <div className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -1264,7 +1459,7 @@ export default function PortalPage() {
                                     <ChevronLeft className="h-4 w-4" /> Trang chủ
                                 </button>
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-emerald-50">
-                                    <Sparkles className="h-3.5 w-3.5" /> Tin mới từ Courtify
+                                    <Sparkles className="h-3.5 w-3.5" /> Tin mới từ hệ thống
                                 </span>
                             </div>
                             <div className="mt-7 max-w-2xl sm:mt-9">
@@ -1594,13 +1789,15 @@ export default function PortalPage() {
                                                 </p>
                                             </div>
                                             <div className={`px-2 py-1 rounded text-xs font-bold ${
+                                                req.checkIn?.status === 'NO_SHOW' ? 'bg-rose-100 text-rose-700' :
                                                 req.cancellationRequestStatus === 'PENDING' ? 'bg-amber-100 text-amber-700' :
                                                 req.status === 'CANCELLED' || req.status === 'REJECTED' ? 'bg-red-100 text-red-600' :
                                                 req.status === 'EXPIRED' ? 'bg-gray-200 text-gray-700' :
                                                 req.status === 'PENDING' ? 'bg-orange-100 text-orange-600' :
                                                 req.status === 'APPROVED' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
                                             }`}>
-                                                {req.cancellationRequestStatus === 'PENDING' ? `Chờ duyệt ${req.cancellationRequestType === 'RESCHEDULE' ? 'đổi lịch' : 'hủy'}` :
+                                                {req.checkIn?.status === 'NO_SHOW' ? 'Khách vắng' :
+                                                 req.cancellationRequestStatus === 'PENDING' ? `Chờ duyệt ${req.cancellationRequestType === 'RESCHEDULE' ? 'đổi lịch' : 'hủy'}` :
                                                  req.status === 'CANCELLED' ? 'Đã hủy' :
                                                  req.status === 'EXPIRED' ? 'Hết hạn thanh toán' :
                                                  req.status === 'PENDING' ? 'Chờ xác nhận' :
@@ -1637,13 +1834,43 @@ export default function PortalPage() {
                                                     )}
                                                 </div>
                                             )}
-                                            {req.status === 'APPROVED' && req.checkIn?.checkInToken && !req.checkIn.checkedInAt && (
-                                                <div className="mt-2 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                                                    <BookingCheckInQr token={req.checkIn.checkInToken} />
-                                                    <div className="text-xs text-emerald-900">
-                                                        <p className="font-bold">Mã QR check-in</p>
-                                                        <p className="mt-1">Hiển thị mã này cho nhân viên khi đến sân. Mã chỉ dùng để xác nhận lịch đặt này.</p>
-                                                    </div>
+                                            {req.status === 'APPROVED' && (
+                                                <div className="mt-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                                                    {req.checkIn?.status === 'NO_SHOW' ? (
+                                                        <p className="text-sm font-semibold text-rose-800">
+                                                            Lịch đã được hệ thống tự động ghi nhận khách vắng sau giờ kết thúc vì chưa check-in.
+                                                        </p>
+                                                    ) : req.checkIn?.checkedInAt ? (
+                                                        <p className="text-sm font-semibold text-emerald-800">
+                                                            Lịch đã check-in lúc {new Date(req.checkIn.checkedInAt).toLocaleString('vi-VN')}.
+                                                        </p>
+                                                    ) : req.checkIn?.checkInToken ? (
+                                                        <div className="flex flex-col items-center gap-3 sm:flex-row">
+                                                            <BookingCheckInQr token={req.checkIn.checkInToken} />
+                                                            <div className="text-center text-xs text-emerald-900 sm:text-left">
+                                                                <p className="font-bold">Mã QR xem lịch đặt</p>
+                                                                <p className="mt-1">Tải mã về hoặc quét để mở nhanh thông tin lịch. Nhân viên sẽ check-in trực tiếp trên lịch quản lý.</p>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="text-sm text-amber-900">
+                                                            <p className="font-bold">Chưa có mã QR check-in cho lịch này.</p>
+                                                            <p className="mt-1 text-xs">Tải lại trang sau ít phút. Nếu vẫn chưa thấy mã, vui lòng liên hệ cơ sở để kiểm tra lịch đặt.</p>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void refetchRequests()}
+                                                                className="mt-2 rounded-lg bg-amber-100 px-3 py-1.5 text-xs font-bold text-amber-900 hover:bg-amber-200"
+                                                            >
+                                                                Tải lại lịch
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {req.status === 'PENDING' && req.paymentStatus === 'PAID' && (
+                                                <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                                    <p className="font-bold">Đã nhận thanh toán, lịch đang chờ cơ sở xác nhận.</p>
+                                                    <p className="mt-1 text-xs">Mã QR check-in sẽ hiển thị tại đây sau khi lịch được xác nhận.</p>
                                                 </div>
                                             )}
 
@@ -1671,8 +1898,14 @@ export default function PortalPage() {
 
                                             {/* Thao tác quản lý lịch đặt */}
                                             {(req.status === 'PENDING' || req.status === 'APPROVED') && (
-                                                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                                                    <span className="text-[11px] text-gray-500">
+                                                <div className="mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3">
+                                                    <span className={`w-fit max-w-full rounded-lg px-3 py-2 text-xs font-medium leading-snug ${
+                                                        req.cancellationRequestStatus === 'PENDING'
+                                                            ? 'bg-amber-50 text-amber-800'
+                                                            : req.status === 'PENDING'
+                                                                ? 'bg-orange-50 text-orange-700'
+                                                                : 'bg-emerald-50 text-emerald-800'
+                                                    }`}>
                                                         {req.cancellationRequestStatus === 'PENDING'
                                                             ? `Yêu cầu ${req.cancellationRequestType === 'RESCHEDULE' ? 'đổi lịch' : 'hủy'} đang chờ cơ sở duyệt`
                                                             : req.status === 'PENDING'
@@ -1680,7 +1913,7 @@ export default function PortalPage() {
                                                                 : 'Đã giữ chỗ thành công'}
                                                     </span>
                                                     {req.cancellationRequestStatus !== 'PENDING' && (
-                                                        <>
+                                                        <div className="grid grid-cols-2 gap-2">
                                                         <button
                                                             type="button"
                                                             onClick={() => {
@@ -1688,7 +1921,7 @@ export default function PortalPage() {
                                                                 setCustomerCancelModal({ isOpen: true, request: req });
                                                                 setCustomerCancelReason('');
                                                             }}
-                                                            className="text-xs text-rose-600 hover:text-rose-700 font-semibold inline-flex items-center gap-1 py-1 px-3 rounded-lg border border-rose-200 hover:bg-rose-50 transition"
+                                                            className="inline-flex min-w-0 items-center justify-center gap-1 rounded-lg border border-rose-200 px-2.5 py-2 text-center text-xs font-semibold leading-tight text-rose-600 transition hover:bg-rose-50 hover:text-rose-700"
                                                         >
                                                             <X className="w-3.5 h-3.5" />
                                                             Yêu cầu hủy
@@ -1703,11 +1936,11 @@ export default function PortalPage() {
                                                                 setCustomerRequestedStart('');
                                                                 setCustomerRequestedEnd('');
                                                             }}
-                                                            className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold inline-flex items-center gap-1 py-1 px-3 rounded-lg border border-emerald-200 hover:bg-emerald-50 transition"
+                                                            className="inline-flex min-w-0 items-center justify-center gap-1 rounded-lg border border-emerald-200 px-2.5 py-2 text-center text-xs font-semibold leading-tight text-emerald-700 transition hover:bg-emerald-50 hover:text-emerald-800"
                                                         >
                                                             Đổi lịch
                                                         </button>
-                                                        </>
+                                                        </div>
                                                     )}
                                                     {req.courtId && req.venueId && (
                                                         <button
@@ -1717,7 +1950,7 @@ export default function PortalPage() {
                                                                 const dateValue = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
                                                                 navigate(`/dat-lich/${req.venueId}/${req.courtId}?date=${dateValue}&startTime=${encodeURIComponent(req.startTime)}&endTime=${encodeURIComponent(req.endTime)}`);
                                                             }}
-                                                            className="mt-3 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-bold text-emerald-800 transition hover:bg-emerald-100"
+                                                            className="w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-center text-sm font-bold leading-tight text-emerald-800 transition hover:bg-emerald-100"
                                                         >
                                                             Đặt lại khung giờ này
                                                         </button>
@@ -1775,7 +2008,7 @@ export default function PortalPage() {
                             <div className="flex flex-row items-start gap-4 -mt-12 mb-5">
                                 {/* Logo to trồi lên ảnh bìa */}
                                 <div className="w-24 h-24 rounded-full border-4 border-white bg-white shadow-lg p-1.5 overflow-hidden shrink-0 flex items-center justify-center relative z-10">
-                                    <img src="/images/courts/logo.jpg" alt="Logo HCE" className="w-full h-full object-contain p-1" />
+                                    <img src="/images/courts/logo.jpg" alt="Logo HUE" className="w-full h-full object-contain p-1" />
                                 </div>
                                 {/* Tên sân & Tag đẩy xuống hẳn nền trắng */}
                                 <div className="flex-1 min-w-0 pt-12 sm:pt-14">
@@ -1917,57 +2150,87 @@ export default function PortalPage() {
                             )}
 
                             {activeModalTab === 'services' && (
-                                <div className="space-y-5 max-h-[52vh] overflow-y-auto pr-1">
+                                <div className="max-h-[52vh] space-y-6 overflow-y-auto pr-1">
                                     {venueDetailLoading ? (
                                         <div className="py-10 text-center text-sm text-gray-500">Đang tải thông tin...</div>
                                     ) : (
                                         <>
                                             <section>
-                                                <h4 className="font-bold text-gray-800 mb-3">Bảng giá sân</h4>
+                                                <div className="mb-3 flex items-end justify-between gap-3">
+                                                    <div>
+                                                        <h4 className="font-bold text-slate-900">Bảng giá sân</h4>
+                                                        <p className="mt-0.5 text-xs text-slate-500">Giá thuê được áp dụng theo ngày và khung giờ.</p>
+                                                    </div>
+                                                    <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Giá / giờ</span>
+                                                </div>
                                                 {selectedVenueDetail.pricingRules?.length ? (
-                                                    <div className="space-y-2">
+                                                    <div className="grid gap-3 sm:grid-cols-2">
                                                         {selectedVenueDetail.pricingRules.map((rule) => (
-                                                            <div key={rule.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3 flex flex-wrap items-center justify-between gap-2">
-                                                                <div>
-                                                                    <p className="font-semibold text-gray-800">{rule.name}</p>
-                                                                    <p className="text-xs text-gray-500">
-                                                                        {[rule.dayOfWeek, rule.startTime && rule.endTime ? `${rule.startTime} - ${rule.endTime}` : null].filter(Boolean).join(' · ') || 'Tất cả các ngày, cả ngày'}
-                                                                    </p>
-                                                                    {rule.description && <p className="text-xs text-gray-500 mt-1">{rule.description}</p>}
+                                                            <article key={rule.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-200 hover:shadow-md">
+                                                                <div className="flex items-start justify-between gap-3">
+                                                                    <div className="min-w-0">
+                                                                        <h5 className="break-words text-sm font-bold text-slate-900">{rule.name}</h5>
+                                                                        <p className="mt-1 text-xs text-slate-500">
+                                                                            {rule.dayOfWeek ? pricingDayLabels[rule.dayOfWeek] || rule.dayOfWeek : 'Mọi ngày'}
+                                                                        </p>
+                                                                    </div>
+                                                                    <div className="shrink-0 text-right">
+                                                                        <p className="text-base font-black leading-tight text-emerald-700">{formatVnd(rule.pricePerHour)}</p>
+                                                                        <p className="mt-0.5 text-[10px] text-slate-500">mỗi giờ</p>
+                                                                    </div>
                                                                 </div>
-                                                                <span className="font-bold text-[#19b251]">{formatVnd(rule.pricePerHour)}/giờ</span>
-                                                            </div>
+                                                                <div className="mt-3 flex flex-wrap gap-2">
+                                                                    <span className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800">
+                                                                        {rule.startTime && rule.endTime ? `${rule.startTime} – ${rule.endTime}` : 'Mọi khung giờ'}
+                                                                    </span>
+                                                                    <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-600">
+                                                                        30 phút · {formatVnd(rule.pricePerHour / 2)}
+                                                                    </span>
+                                                                </div>
+                                                                {rule.description && <p className="mt-3 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">{rule.description}</p>}
+                                                            </article>
                                                         ))}
                                                     </div>
                                                 ) : (
-                                                    <p className="text-sm text-gray-500 rounded-xl bg-gray-50 p-4">Cơ sở chưa cập nhật bảng giá.</p>
+                                                    <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">Cơ sở chưa cập nhật bảng giá.</p>
                                                 )}
                                             </section>
                                             <section>
-                                                <h4 className="font-bold text-gray-800 mb-3">Kho & Dịch vụ</h4>
-                                                <div className="space-y-2">
+                                                <div className="mb-3">
+                                                    <h4 className="font-bold text-slate-900">Sản phẩm & dịch vụ</h4>
+                                                    <p className="mt-0.5 text-xs text-slate-500">Tiện ích có thể lựa chọn thêm khi đặt sân.</p>
+                                                </div>
+                                                <div className="grid gap-3 sm:grid-cols-2">
                                                     {selectedVenueDetail.products?.map((product) => (
-                                                        <div key={product.id} className="rounded-xl border border-gray-100 p-3 flex items-center justify-between gap-3">
-                                                            <div>
-                                                                <p className="font-medium text-gray-800">{product.name}</p>
-                                                                <p className="text-xs text-gray-500">Còn {product.stock} {product.unit}</p>
-                                                                {product.description && <p className="text-xs text-gray-500 mt-1">{product.description}</p>}
+                                                        <article key={product.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <span className="inline-flex rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Sản phẩm</span>
+                                                                    <h5 className="mt-2 break-words text-sm font-bold text-slate-900">{product.name}</h5>
+                                                                </div>
+                                                                <p className="shrink-0 text-sm font-extrabold text-emerald-700">{formatVnd(product.price)}</p>
                                                             </div>
-                                                            <span className="font-semibold text-gray-800">{formatVnd(product.price)}</span>
-                                                        </div>
+                                                            <p className={`mt-3 text-xs font-medium ${product.stock > 0 ? 'text-slate-500' : 'text-rose-600'}`}>
+                                                                {product.stock > 0 ? `Còn ${product.stock} ${product.unit || 'cái'}` : 'Tạm hết hàng'}
+                                                            </p>
+                                                            {product.description && <p className="mt-2 text-xs leading-5 text-slate-500">{product.description}</p>}
+                                                        </article>
                                                     ))}
                                                     {selectedVenueDetail.services?.map((service) => (
-                                                        <div key={service.id} className="rounded-xl border border-gray-100 p-3 flex items-center justify-between gap-3">
-                                                            <div>
-                                                                <p className="font-medium text-gray-800">{service.name}</p>
-                                                                <p className="text-xs text-gray-500">Dịch vụ · {service.unit}</p>
-                                                                {service.description && <p className="text-xs text-gray-500 mt-1">{service.description}</p>}
+                                                        <article key={service.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                            <div className="flex items-start justify-between gap-3">
+                                                                <div className="min-w-0">
+                                                                    <span className="inline-flex rounded-full bg-violet-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-700">Dịch vụ</span>
+                                                                    <h5 className="mt-2 break-words text-sm font-bold text-slate-900">{service.name}</h5>
+                                                                </div>
+                                                                <p className="shrink-0 text-sm font-extrabold text-emerald-700">{formatVnd(service.price)}</p>
                                                             </div>
-                                                            <span className="font-semibold text-gray-800">{formatVnd(service.price)}</span>
-                                                        </div>
+                                                            <p className="mt-3 text-xs text-slate-500">Đơn vị: {service.unit || 'lần'}</p>
+                                                            {service.description && <p className="mt-2 text-xs leading-5 text-slate-500">{service.description}</p>}
+                                                        </article>
                                                     ))}
                                                     {!selectedVenueDetail.products?.length && !selectedVenueDetail.services?.length && (
-                                                        <p className="text-sm text-gray-500 rounded-xl bg-gray-50 p-4">Cơ sở chưa cập nhật sản phẩm hoặc dịch vụ.</p>
+                                                        <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500 sm:col-span-2">Cơ sở chưa cập nhật sản phẩm hoặc dịch vụ.</p>
                                                     )}
                                                 </div>
                                             </section>
@@ -2004,7 +2267,7 @@ export default function PortalPage() {
                                             <p className="rounded-lg bg-white p-2 text-xs text-amber-800">Đăng nhập tài khoản khách hàng để đánh giá lịch đã hoàn thành.</p>
                                         ) : (
                                             <>
-                                                <select value={reviewBookingId} onChange={(event) => setReviewBookingId(event.target.value)} required className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-900">
+                                                <select value={reviewBookingId} onChange={(event) => setReviewBookingId(event.target.value)} required disabled={isLoadingEligibleReviewBookings || isEligibleReviewBookingsError} className="w-full rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs text-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100">
                                                     <option value="">Chọn lịch đã hoàn thành tại cơ sở này</option>
                                                     {eligibleReviewBookings.filter((booking) => booking.court.venue.id === selectedVenueDetail.id).map((booking) => (
                                                         <option key={booking.id} value={booking.id}>
@@ -2012,8 +2275,18 @@ export default function PortalPage() {
                                                         </option>
                                                     ))}
                                                 </select>
-                                                {!eligibleReviewBookings.some((booking) => booking.court.venue.id === selectedVenueDetail.id) && (
-                                                    <p className="text-[11px] text-gray-500">Chưa có lịch đã hoàn thành nào đủ điều kiện đánh giá tại cơ sở này.</p>
+                                                {isLoadingEligibleReviewBookings ? (
+                                                    <p className="text-[11px] text-gray-500">Đang tải lịch đủ điều kiện đánh giá...</p>
+                                                ) : isEligibleReviewBookingsError ? (
+                                                    <p className="text-[11px] text-red-600">
+                                                        {isAxiosError<{ message?: string }>(eligibleReviewBookingsError)
+                                                            ? eligibleReviewBookingsError.response?.data?.message || 'Không thể tải lịch đánh giá. Vui lòng thử lại sau.'
+                                                            : 'Không thể tải lịch đánh giá. Vui lòng thử lại sau.'}
+                                                    </p>
+                                                ) : !eligibleReviewBookings.some((booking) => booking.court.venue.id === selectedVenueDetail.id) && (
+                                                    <p className="text-[11px] text-gray-500">
+                                                        Không có lịch đủ điều kiện. Lịch phải đã check-out, gắn với tài khoản này và chưa được gửi đánh giá.
+                                                    </p>
                                                 )}
                                             </>
                                         )}
@@ -2215,6 +2488,13 @@ export default function PortalPage() {
                     </div>
                 </div>
             )}
+
+            {/* Modal Xác thực Sinh viên HUE */}
+            <HueStudentVerifyModal 
+                isOpen={showHueModal} 
+                onClose={() => setShowHueModal(false)} 
+                onSuccess={() => refetchLoyalty()} 
+            />
 
             <ChatBotWidget />
         </div>

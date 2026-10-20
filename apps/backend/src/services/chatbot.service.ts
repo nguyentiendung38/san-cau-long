@@ -87,7 +87,7 @@ async function sendMessageWithRetry<T>(send: () => Promise<T>): Promise<T> {
             const providerDelayMs = getProviderRetryDelayMs(error);
             if (providerDelayMs !== undefined && providerDelayMs > 30000) {
                 const retryAfterSeconds = Math.ceil(providerDelayMs / 1000);
-                Object.assign(error, { retryAfterSeconds });
+                Object.assign(error as object, { retryAfterSeconds });
                 console.warn('[Chatbot] Gemini rate limit; defer retry to client', {
                     retryAfterSeconds,
                 });
@@ -678,7 +678,7 @@ function isExplicitBookingConfirmation(message: string): boolean {
 // ============================================================
 // SYSTEM PROMPT — Nhân cách chatbot
 // ============================================================
-const SYSTEM_PROMPT = `Bạn là **Courtify AI** — trợ lý thông minh của hệ thống quản lý sân cầu lông Courtify.
+const SYSTEM_PROMPT = `Bạn là trợ lý thông minh của hệ thống quản lý sân cầu lông.
 
 ## NHIỆM VỤ CỦA BẠN:
 - Giúp khách hàng đặt sân cầu lông nhanh chóng, dễ dàng

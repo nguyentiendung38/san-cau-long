@@ -15,7 +15,7 @@ const vnpay = new VNPay({
     secureSecret: process.env.VNPAY_HASH_SECRET?.trim() || 'TDAQRPYXKBCBJJYUVKECLMCABMVGQCBO',
     vnpayHost: 'https://sandbox.vnpayment.vn',
     testMode: true, 
-    hashAlgorithm: 'SHA512', 
+    hashAlgorithm: 'SHA512' as any, 
     enableLog: false, 
     loggerFn: ignoreLogger, 
 });
@@ -55,9 +55,9 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
             vnp_IpAddr: ipAddr,
             vnp_TxnRef: orderId + '-' + Date.now(),
             vnp_OrderInfo: 'Payment_for_order_' + orderId, 
-            vnp_OrderType: 'other',
+            vnp_OrderType: 'other' as any,
             vnp_ReturnUrl: vnp_ReturnUrl,
-            vnp_Locale: 'vn',
+            vnp_Locale: 'vn' as any,
             vnp_CreateDate: Number(createDateStr),
             ...(bankCode ? { vnp_BankCode: bankCode } : {})
         });

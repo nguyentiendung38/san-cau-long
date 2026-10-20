@@ -13,10 +13,21 @@ import { formatCurrency, cn } from '@/lib/utils';
 import { format, isSameDay } from 'date-fns';
 import { voucherApi } from '@/services/voucher.service';
 import { portalAuthApi } from '@/services/portal-auth.service';
+import { HueStudentVerifyModal } from '@/components/portal/HueStudentVerifyModal';
 
 interface Court { id: string; name: string; status: string; }
 interface Product { id: string; name: string; price: number; stock: number; image?: string; }
 interface Service { id: string; name: string; price: number; }
+
+const PRICING_DAY_LABELS: Record<string, string> = {
+    MONDAY: 'Thứ Hai',
+    TUESDAY: 'Thứ Ba',
+    WEDNESDAY: 'Thứ Tư',
+    THURSDAY: 'Thứ Năm',
+    FRIDAY: 'Thứ Sáu',
+    SATURDAY: 'Thứ Bảy',
+    SUNDAY: 'Chủ Nhật',
+};
 
 const getNextHalfHour = (time: string) => {
     const [hour, minute] = time.split(':').map(Number);
@@ -129,6 +140,11 @@ export default function PortalBookingVisual() {
     const [appliedVoucher, setAppliedVoucher] = useState<{code: string, discountAmount: number} | null>(null);
     const [isCheckingVoucher, setIsCheckingVoucher] = useState(false);
     const [availableLoyaltyPoints, setAvailableLoyaltyPoints] = useState(0);
+    const [customerProfile, setCustomerProfile] = useState<any>(null);
+    const [showHueModal, setShowHueModal] = useState(false);
+    const [hueStudentIdInput, setHueStudentIdInput] = useState('');
+    const [hueFacultyInput, setHueFacultyInput] = useState('Khoa Quản trị kinh doanh');
+    const [isVerifyingHue, setIsVerifyingHue] = useState(false);
     const [redeemPoints, setRedeemPoints] = useState(0);
     const [isLoadingLoyaltyPoints, setIsLoadingLoyaltyPoints] = useState(false);
     const [favoriteCourtIds, setFavoriteCourtIds] = useState<string[]>(() => {
@@ -282,6 +298,40 @@ export default function PortalBookingVisual() {
         return true;
     }), [visibleSlots, slotPeriod]);
 
+    
+    const venueStatus = useMemo(() => {
+        if (!venue) return { isOpen: false, label: 'Đang tải...', badge: 'bg-white/10 text-white border-white/20' };
+
+        const now = new Date();
+        const currentMins = now.getHours() * 60 + now.getMinutes();
+        const openTime = venue.openTime || '06:00';
+        const closeTime = venue.closeTime || '23:00';
+        const [oH, oM] = openTime.split(':').map(Number);
+        const [cH, cM] = closeTime.split(':').map(Number);
+        const openMins = oH * 60 + oM;
+        const closeMins = cH * 60 + cM;
+
+        if (currentMins >= openMins && currentMins < closeMins) {
+            return {
+                isOpen: true,
+                label: `🟢 Đang mở cửa (${openTime} - ${closeTime})`,
+                badge: 'bg-emerald-500/20 text-emerald-100 border-emerald-400/40',
+            };
+        } else if (currentMins < openMins) {
+            return {
+                isOpen: false,
+                label: `🔴 Chưa đến giờ mở cửa (Mở lúc ${openTime})`,
+                badge: 'bg-amber-500/25 text-amber-100 border-amber-400/50',
+            };
+        } else {
+            return {
+                isOpen: false,
+                label: `⚪ Đã đóng cửa hôm nay (Mở lại ${openTime})`,
+                badge: 'bg-white/15 text-white/80 border-white/20',
+            };
+        }
+    }, [venue]);
+
     const timeSlotCounts = useMemo(() => ({
         all: visibleSlots.length,
         morning: visibleSlots.filter((time) => Number(time.slice(0, 2)) < 12).length,
@@ -294,6 +344,10 @@ export default function PortalBookingVisual() {
 
     const getSlotStatus = (time: string) => {
         if (!selectedCourt) return 'unavailable';
+
+        const openTime = venue?.openTime || '06:00';
+        const closeTime = venue?.closeTime || '23:00';
+        if (time < openTime || time >= closeTime) return 'outside_hours';
         const dateStr = format(selectedDate, 'yyyy-MM-dd');
         const now = new Date();
         const nowStr = format(now, 'yyyy-MM-dd');
@@ -306,6 +360,7 @@ export default function PortalBookingVisual() {
             b.startTime <= time && 
             b.endTime > time
         );
+        if (blockingSlot?.status === 'TOURNAMENT') return 'tournament';
         if (blockingSlot?.status === 'MAINTENANCE') return 'maintenance';
         if (blockingSlot) return 'booked';
 
@@ -405,13 +460,15 @@ export default function PortalBookingVisual() {
 
     const itemsAmount = orderedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const courtAmount = Math.max(0, totalAmount - itemsAmount);
+    const isHueMember = Boolean(customerProfile?.isVerifiedHue || customerProfile?.customerType === 'STUDENT' || customerProfile?.customerType === 'FACULTY');
+    const hueDiscount = isHueMember ? Math.round(courtAmount * 0.20) : 0;
     const maxRedeemPoints = Math.max(0, Math.min(
         availableLoyaltyPoints,
         Math.floor((courtAmount * 0.2) / 100),
     ));
     const safeRedeemPoints = Math.min(redeemPoints, maxRedeemPoints);
     const loyaltyDiscount = safeRedeemPoints * 100;
-    const finalAmount = Math.max(0, totalAmount - (appliedVoucher?.discountAmount || 0) - loyaltyDiscount);
+    const finalAmount = Math.max(0, totalAmount - (appliedVoucher?.discountAmount || 0) - loyaltyDiscount - hueDiscount);
     useEffect(() => {
         if (redeemPoints > maxRedeemPoints) setRedeemPoints(maxRedeemPoints);
     }, [redeemPoints, maxRedeemPoints]);
@@ -430,7 +487,10 @@ export default function PortalBookingVisual() {
         setIsLoadingLoyaltyPoints(true);
         portalAuthApi.getMe()
             .then((customer) => {
-                if (active) setAvailableLoyaltyPoints(Math.max(0, customer.points - customer.reservedPoints));
+                if (active) {
+                    setCustomerProfile(customer);
+                    setAvailableLoyaltyPoints(Math.max(0, customer.points - customer.reservedPoints));
+                }
             })
             .catch((error: any) => {
                 if (active) {
@@ -450,6 +510,38 @@ export default function PortalBookingVisual() {
     const bankTransferConfigured = Boolean(
         venue?.bankCode && venue?.bankAccountNumber && venue?.bankAccountName,
     );
+
+    
+    const handleVerifyHue = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!hueStudentIdInput.trim()) {
+            toast({ title: 'Vui lòng nhập Mã số sinh viên (MSSV)', variant: 'error' });
+            return;
+        }
+        setIsVerifyingHue(true);
+        try {
+            const res = await portalAuthApi.verifyHue({
+                studentId: hueStudentIdInput.trim(),
+                faculty: hueFacultyInput,
+                customerType: 'STUDENT',
+            });
+            setCustomerProfile(res.data);
+            setShowHueModal(false);
+            toast({
+                title: 'Xác thực thành công!',
+                description: 'Đã kích hoạt ưu đãi giảm 20% giá sân cho Sinh viên HUE.',
+                variant: 'success',
+            });
+        } catch (err: any) {
+            toast({
+                title: 'Xác thực thất bại',
+                description: err?.response?.data?.message || 'Có lỗi xảy ra',
+                variant: 'error',
+            });
+        } finally {
+            setIsVerifyingHue(false);
+        }
+    };
 
     const handleCheckVoucher = async () => {
         if (!voucherCodeInput) {
@@ -609,6 +701,14 @@ export default function PortalBookingVisual() {
                                 <span className="line-clamp-1">{venue.address}</span>
                             </span>
                         </h1>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            <span className={cn("px-2.5 py-0.5 rounded-full text-xs font-bold border shrink-0 inline-flex items-center gap-1 shadow-xs", venueStatus.badge)}>
+                                {venueStatus.label}
+                            </span>
+                            <span className="text-green-100 text-[11px] font-medium hidden sm:inline">
+                                Giờ hoạt động: <strong>{venue.openTime || '06:00'} - {venue.closeTime || '23:00'}</strong>
+                            </span>
+                        </div>
                     </div>
                     <button onClick={() => setShowPricing(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-sm transition-colors shrink-0 border border-white/20 shadow-sm" title="Bảng giá">
                         <Info className="w-4 h-4" />
@@ -682,6 +782,51 @@ export default function PortalBookingVisual() {
                 </div>
             ) : (
                 <div className="px-4 mt-6">
+                    {!venueStatus.isOpen && (
+                        <div className="mb-4 rounded-2xl border border-amber-300 bg-amber-50 p-3.5 text-xs text-amber-950 flex items-start gap-2.5 shadow-xs">
+                            <Clock className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                            <div className="leading-relaxed">
+                                <strong>Cơ sở hiện chưa đến giờ mở cửa.</strong> Bạn đang sử dụng chức năng <strong>Đặt giữ chỗ trước</strong>. Vui lòng chọn các khung giờ trong thời gian hoạt động của cơ sở (<strong>{venue.openTime || '06:00'} - {venue.closeTime || '23:00'}</strong>) bên dưới để đặt sân.
+                            </div>
+                        </div>
+                    )}
+                    {/* Banner Ưu đãi HUE trên Lịch Sân */}
+                    <div className="mb-5 rounded-2xl border-2 border-emerald-400 bg-gradient-to-r from-emerald-50 via-teal-50 to-white p-4 shadow-sm flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <span className="text-3xl shrink-0">🎓</span>
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black uppercase text-emerald-800 tracking-wider bg-emerald-100 px-2 py-0.5 rounded-full">
+                                        Ưu đãi HUE
+                                    </span>
+                                    <span className="text-xs font-bold text-gray-900">
+                                        {isHueMember ? "Đã áp dụng giảm 20% tiền sân" : "Sinh viên & Giảng viên ĐH Kinh tế Huế"}
+                                    </span>
+                                </div>
+                                <p className="text-xs text-emerald-900/80 mt-0.5">
+                                    {isHueMember
+                                        ? `MSSV: ${customerProfile?.studentId || "Chính quy"} · ${customerProfile?.faculty || "HUE"}`
+                                        : "Giảm trực tiếp 20% tiền sân cho mọi khung giờ. Bấm xác thực để nhận ưu đãi."}
+                                </p>
+                            </div>
+                        </div>
+                        {!isHueMember && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!localStorage.getItem("portalUserToken")) {
+                                        navigate("/dang-nhap");
+                                    } else {
+                                        setShowHueModal(true);
+                                    }
+                                }}
+                                className="shrink-0 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all"
+                            >
+                                Xác thực ngay
+                            </button>
+                        )}
+                    </div>
+
                     {/* Court Selector */}
                     {courts.length > 0 ? (
                         <>
@@ -820,13 +965,17 @@ export default function PortalBookingVisual() {
                                                     {filteredTimeSlots.map(time => {
                                                         const status = getSlotStatus(time);
                                                         const isSelected = selectedSlots.includes(time);
-                                                        const isUnavailable = status === 'booked' || status === 'maintenance' || status === 'past' || status === 'unavailable' || status === 'unpriced';
+                                                        const isUnavailable = status === 'booked' || status === 'maintenance' || status === 'tournament' || status === 'past' || status === 'unavailable' || status === 'unpriced' || status === 'outside_hours';
                                                         const statusLabel = isSelected
                                                             ? 'Đã chọn'
                                                             : status === 'booked'
                                                                 ? 'Đã có lịch'
                                                                 : status === 'maintenance'
                                                                     ? 'Bảo trì'
+                                                                : status === 'tournament'
+                                                                    ? 'Tổ chức giải'
+                                                                : status === 'outside_hours'
+                                                                    ? 'Chưa mở cửa'
                                                                 : status === 'past'
                                                                     ? 'Đã qua'
                                                                     : status === 'unpriced'
@@ -846,7 +995,8 @@ export default function PortalBookingVisual() {
                                                                     "group relative flex min-h-11 items-center justify-between gap-1.5 rounded-xl border px-2.5 py-2 text-left transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 sm:min-h-12 sm:px-3",
                                                                     isSelected && "border-emerald-700 bg-emerald-700 text-white shadow-md shadow-emerald-900/15",
                                                                     status === 'available' && !isSelected && "border-gray-200 bg-white text-gray-800 hover:-translate-y-0.5 hover:border-emerald-400 hover:bg-emerald-50/60 hover:shadow-sm",
-                                                                    isUnavailable && "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-400"
+                                                                    isUnavailable && "cursor-not-allowed border-gray-100 bg-gray-50 text-gray-400",
+                                                                    status === 'tournament' && "border-violet-200 bg-violet-50 text-violet-700"
                                                                 )}
                                                             >
                                                                 <span className="whitespace-nowrap text-xs font-bold tracking-tight sm:text-sm">
@@ -856,7 +1006,8 @@ export default function PortalBookingVisual() {
                                                                     "shrink-0 rounded-full px-1.5 py-1 text-[9px] font-bold sm:px-2",
                                                                     isSelected && "bg-white/15 text-white",
                                                                     status === 'available' && !isSelected && "bg-emerald-50 text-emerald-700",
-                                                                    isUnavailable && "bg-gray-100 text-gray-500"
+                                                                    isUnavailable && "bg-gray-100 text-gray-500",
+                                                                    status === 'tournament' && "bg-violet-100 text-violet-700"
                                                                 )}>
                                                                     {statusLabel}
                                                                 </span>
@@ -872,52 +1023,90 @@ export default function PortalBookingVisual() {
                             
                             {/* Inventory Toggle */}
                             {(products.length > 0 || services.length > 0) && (
-                                <div className="mb-6">
+                                <section className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                                     <button 
                                         onClick={() => setShowInventory(!showInventory)}
-                                        className="w-full bg-white px-5 py-4 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between"
+                                        aria-expanded={showInventory}
+                                        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left transition hover:bg-slate-50 sm:px-5"
                                     >
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
-                                                <ShoppingBag className="w-5 h-5" />
+                                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-50 to-blue-100 text-blue-700">
+                                                <ShoppingBag className="h-5 w-5" />
                                             </div>
-                                            <div className="text-left">
-                                                <h3 className="font-bold text-gray-800">Dịch vụ đi kèm</h3>
-                                                <p className="text-xs text-gray-500">Nước uống, thuê vợt, v.v.</p>
+                                            <div className="min-w-0">
+                                                <h3 className="font-bold text-slate-900">Sản phẩm & dịch vụ</h3>
+                                                <p className="mt-0.5 text-xs text-slate-500">Thêm tiện ích vào lịch đặt của bạn</p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex shrink-0 items-center gap-2">
                                             {orderedItems.length > 0 && (
-                                                <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">
+                                                <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-blue-600 px-2 text-xs font-bold text-white">
                                                     {orderedItems.reduce((s, i) => s + i.quantity, 0)}
                                                 </span>
                                             )}
-                                            <ChevronRight className={cn("w-5 h-5 text-gray-400 transition-transform", showInventory && "rotate-90")} />
+                                            <ChevronRight className={cn("h-5 w-5 text-slate-400 transition-transform", showInventory && "rotate-90")} />
                                         </div>
                                     </button>
                                     
                                     {showInventory && (
-                                        <div className="mt-3 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 space-y-4 animate-in slide-in-from-top-2">
+                                        <div className="grid gap-3 border-t border-slate-100 bg-slate-50/70 p-3 animate-in slide-in-from-top-2 sm:grid-cols-2 sm:p-4">
                                             {[...products, ...services].map((item: any) => {
                                                 const type = item.stock !== undefined ? 'product' : 'service';
                                                 const qty = orderedItems.find(i => i.id === item.id && i.type === type)?.quantity || 0;
+                                                const outOfStock = type === 'product' && item.stock < 1;
+                                                const atStockLimit = type === 'product' && qty >= item.stock;
                                                 return (
-                                                    <div key={item.id} className="flex items-center justify-between pb-4 border-b border-gray-50 last:border-0 last:pb-0">
-                                                        <div>
-                                                            <div className="font-semibold text-gray-800 text-sm">{item.name}</div>
-                                                            <div className="text-blue-600 text-xs font-bold mt-0.5">{formatCurrency(item.price)}</div>
+                                                    <article key={`${type}-${item.id}`} className="flex min-w-0 flex-col justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="min-w-0">
+                                                                <span className={cn(
+                                                                    "inline-flex rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide",
+                                                                    type === 'product' ? "bg-sky-50 text-sky-700" : "bg-violet-50 text-violet-700",
+                                                                )}>
+                                                                    {type === 'product' ? 'Sản phẩm' : 'Dịch vụ'}
+                                                                </span>
+                                                                <h4 className="mt-2 break-words text-sm font-bold text-slate-900">{item.name}</h4>
+                                                                {item.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{item.description}</p>}
+                                                            </div>
+                                                            <div className="shrink-0 text-right">
+                                                                <p className="text-sm font-extrabold text-emerald-700">{formatCurrency(item.price)}</p>
+                                                                <p className="mt-0.5 text-[11px] text-slate-500">/{item.unit || (type === 'product' ? 'cái' : 'lần')}</p>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex items-center gap-3 bg-gray-50 rounded-xl p-1">
-                                                            <button onClick={() => updateItemQuantity(item, type, -1)} className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center text-gray-600 hover:text-blue-600 font-bold">-</button>
-                                                            <span className="w-4 text-center font-bold text-sm text-gray-800">{qty}</span>
-                                                            <button onClick={() => updateItemQuantity(item, type, 1)} className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center text-gray-600 hover:text-blue-600 font-bold">+</button>
+                                                        <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                                                            <span className={cn("text-xs font-medium", outOfStock ? "text-rose-600" : "text-slate-500")}>
+                                                                {type === 'product' ? outOfStock ? 'Tạm hết hàng' : `Còn ${item.stock} ${item.unit || 'cái'}` : 'Có thể thêm vào đơn'}
+                                                            </span>
+                                                            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1">
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Giảm số lượng ${item.name}`}
+                                                                    disabled={qty === 0}
+                                                                    onClick={() => updateItemQuantity(item, type, -1)}
+                                                                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-lg font-semibold text-slate-600 shadow-sm transition hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                                                >−</button>
+                                                                <span className="min-w-6 text-center text-sm font-bold text-slate-900">{qty}</span>
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Tăng số lượng ${item.name}`}
+                                                                    disabled={outOfStock || atStockLimit}
+                                                                    onClick={() => updateItemQuantity(item, type, 1)}
+                                                                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-lg font-semibold text-slate-600 shadow-sm transition hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                                                                >+</button>
+                                                            </div>
                                                         </div>
-                                                    </div>
+                                                    </article>
                                                 );
                                             })}
+                                            {orderedItems.length > 0 && (
+                                                <div className="flex items-center justify-between rounded-xl bg-blue-50 px-4 py-3 text-sm sm:col-span-2">
+                                                    <span className="font-semibold text-blue-900">Tạm tính sản phẩm & dịch vụ</span>
+                                                    <span className="font-extrabold text-blue-800">{formatCurrency(itemsAmount)}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
-                                </div>
+                                </section>
                             )}
 
                             {/* Summary & Checkout Card */}
@@ -1152,6 +1341,48 @@ export default function PortalBookingVisual() {
                                     )}
                                 </div>
 
+                                {/* Ưu đãi Sinh viên / Cán bộ HUE */}
+                                <div className="mb-4 overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-teal-50 to-white p-4 shadow-sm">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white text-lg shadow-sm">
+                                                🎓
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">
+                                                    Ưu đãi học đường HUE
+                                                </p>
+                                                <p className="text-sm font-black text-slate-900">
+                                                    {isHueMember ? "Đã xác thực Sinh viên HUE" : "Dành cho Sinh viên Trường ĐH Kinh tế Huế"}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        {isHueMember ? (
+                                            <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800">
+                                                -20% tiền sân
+                                            </span>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowHueModal(true)}
+                                                className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-emerald-700 active:scale-95 transition-all"
+                                            >
+                                                Xác thực ngay
+                                            </button>
+                                        )}
+                                    </div>
+                                    {isHueMember ? (
+                                        <div className="mt-3 flex items-center justify-between border-t border-emerald-100 pt-2.5 text-xs text-emerald-800">
+                                            <span>MSSV: <strong>{customerProfile?.studentId || "Chính quy"}</strong> · {customerProfile?.faculty || "ĐH Kinh tế Huế"}</span>
+                                            <span className="font-bold text-emerald-700">Tiết kiệm: -{formatCurrency(hueDiscount)}</span>
+                                        </div>
+                                    ) : (
+                                        <p className="mt-2 text-xs text-slate-600 leading-relaxed">
+                                            Sinh viên và giảng viên HUE được giảm trực tiếp 20% tiền sân cho mọi khung giờ. Bấm xác thực để nhập MSSV/Khoa và nhận ưu đãi.
+                                        </p>
+                                    )}
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">Thanh toán</label>
                                     <div className="grid grid-cols-2 gap-2 sm:gap-3">
@@ -1213,7 +1444,10 @@ export default function PortalBookingVisual() {
                                                             onChange={(e) => {
                                                                 const file = e.target.files?.[0];
                                                                 if (file) {
-                                                                    if (file.size > 5 * 1024 * 1024) return alert('Ảnh < 5MB');
+                                                                    if (file.size > 5 * 1024 * 1024) {
+                                                                        toast({ title: 'Ảnh quá lớn', description: 'Vui lòng chọn ảnh dưới 5MB', variant: 'error' });
+                                                                        return;
+                                                                    }
                                                                     setPaymentProofName(file.name);
                                                                     const reader = new FileReader();
                                                                     reader.onload = (ev) => ev.target?.result && setPaymentProof(ev.target.result as string);
@@ -1292,58 +1526,72 @@ export default function PortalBookingVisual() {
             {/* Pricing Modal */}
             {showPricing && (
                 <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
-                    <div className="bg-white w-full max-w-md sm:rounded-3xl rounded-t-3xl h-[70vh] sm:h-auto flex flex-col shadow-2xl animate-in slide-in-from-bottom-1/2">
-                        <div className="flex justify-between items-center p-5 border-b border-gray-100 shrink-0">
-                            <h2 className="text-xl font-black text-gray-800">Bảng giá thuê sân</h2>
-                            <button onClick={() => setShowPricing(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-500">
+                    <div className="flex max-h-[90dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl animate-in slide-in-from-bottom-1/2 sm:rounded-3xl">
+                        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-100 bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-5 sm:p-6">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">{venue.name}</p>
+                                <h2 className="mt-1 text-xl font-black tracking-tight text-slate-900">Bảng giá thuê sân</h2>
+                                <p className="mt-1 text-sm text-slate-500">Giá được áp dụng theo ngày và khung giờ.</p>
+                            </div>
+                            <button onClick={() => setShowPricing(false)} aria-label="Đóng bảng giá" className="rounded-full p-2 text-slate-500 transition hover:bg-white hover:text-slate-900">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="flex-1 overflow-auto p-5 space-y-4">
+                        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-slate-50/70 p-4 sm:p-5">
                             {venue.pricingRules && venue.pricingRules.length > 0 ? (
                                 venue.pricingRules.map((rule: any) => (
-                                    <div key={rule.id} className="bg-green-50 p-4 rounded-2xl border border-green-100 relative overflow-hidden">
-                                        <div className="absolute top-0 right-0 w-16 h-16 bg-green-500/10 rounded-bl-full" />
-                                        <div className="flex justify-between items-start mb-2 relative">
-                                            <h3 className="font-bold text-green-900 pr-2">{rule.name}</h3>
-                                            <span className="font-black text-green-700 bg-white px-2.5 py-1 rounded-xl shadow-sm whitespace-nowrap">
-                                                {formatCurrency(rule.pricePerHour)}/h
+                                    <article key={rule.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-emerald-200 hover:shadow-md">
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <h3 className="break-words font-bold text-slate-900">{rule.name}</h3>
+                                                <p className="mt-1 text-xs text-slate-500">
+                                                    {rule.dayOfWeek ? PRICING_DAY_LABELS[rule.dayOfWeek] || rule.dayOfWeek : 'Mọi ngày'}
+                                                </p>
+                                            </div>
+                                            <div className="shrink-0 text-right">
+                                                <p className="text-lg font-black leading-tight text-emerald-700">{formatCurrency(rule.pricePerHour)}</p>
+                                                <p className="mt-0.5 text-[11px] font-medium text-slate-500">mỗi giờ</p>
+                                            </div>
+                                        </div>
+                                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                                            <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800">
+                                                <Clock className="h-3.5 w-3.5" />
+                                                {rule.startTime && rule.endTime ? `${rule.startTime} – ${rule.endTime}` : 'Mọi khung giờ'}
+                                            </span>
+                                            <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-medium text-slate-600">
+                                                30 phút · {formatCurrency(rule.pricePerHour / 2)}
                                             </span>
                                         </div>
-                                        {rule.description && <p className="text-xs text-green-800/70 mb-3 relative">{rule.description}</p>}
-                                        <div className="flex flex-wrap gap-1.5 text-[11px] font-bold text-green-700 relative">
-                                            {rule.dayOfWeek ? (
-                                                <span className="bg-green-200/50 px-2.5 py-1 rounded-lg">Thứ {rule.dayOfWeek}</span>
-                                            ) : (
-                                                <span className="bg-green-200/50 px-2.5 py-1 rounded-lg">Mọi ngày</span>
-                                            )}
-                                            {rule.startTime && rule.endTime ? (
-                                                <span className="bg-green-200/50 px-2.5 py-1 rounded-lg">
-                                                    <Clock className="w-3 h-3 inline-block mr-1 -mt-0.5" />
-                                                    {rule.startTime} - {rule.endTime}
-                                                </span>
-                                            ) : (
-                                                <span className="bg-green-200/50 px-2.5 py-1 rounded-lg">Mọi khung giờ</span>
-                                            )}
-                                        </div>
-                                    </div>
+                                        {rule.description && <p className="mt-3 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">{rule.description}</p>}
+                                    </article>
                                 ))
                             ) : (
-                                <div className="flex flex-col items-center justify-center py-10 opacity-60">
-                                    <Info className="w-12 h-12 text-gray-300 mb-3" />
-                                    <p className="text-center text-gray-500 font-medium">Cơ sở chưa cấu hình bảng giá.</p>
-                                    <p className="text-center text-xs text-gray-400 mt-1">Vui lòng chọn giờ để xem tạm tính.</p>
+                                <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center">
+                                    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100"><Info className="h-6 w-6 text-slate-400" /></span>
+                                    <p className="mt-3 font-semibold text-slate-700">Chưa có bảng giá</p>
+                                    <p className="mt-1 text-sm text-slate-500">Chọn giờ trống để xem giá tạm tính.</p>
                                 </div>
                             )}
                         </div>
-                        <div className="p-4 border-t border-gray-100 shrink-0 bg-white sm:rounded-b-3xl pb-8 sm:pb-4">
-                            <button onClick={() => setShowPricing(false)} className="w-full py-3.5 rounded-xl font-bold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors">
+                        <div className="shrink-0 border-t border-slate-100 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                            <button onClick={() => setShowPricing(false)} className="w-full rounded-xl bg-slate-900 py-3 font-bold text-white transition hover:bg-slate-800">
                                 Đóng
                             </button>
                         </div>
                     </div>
                 </div>
             )}
+            {/* Modal Xác thực Sinh viên HUE trên trang đặt sân */}
+            <HueStudentVerifyModal
+                isOpen={showHueModal}
+                onClose={() => setShowHueModal(false)}
+                onSuccess={(updatedProfile) => {
+                    if (updatedProfile) {
+                        setCustomerProfile(updatedProfile);
+                    }
+                }}
+            />
+
         </div>
     );
 }

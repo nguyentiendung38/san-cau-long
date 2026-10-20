@@ -152,7 +152,13 @@ export const courtApi = {
     async delete(id: string): Promise<void> {
         await api.delete(`/courts/${id}`);
     },
-    async createMaintenanceClosure(input: { courtId: string; startAt: string; endAt: string; reason?: string }) {
+    async createMaintenanceClosure(input: {
+        courtId: string;
+        startAt: string;
+        endAt: string;
+        reason?: string;
+        closureType?: 'MAINTENANCE' | 'TOURNAMENT';
+    }) {
         const response = await api.post<ApiResponse<any>>('/courts/maintenance-closures', input);
         return response.data.data!;
     },

@@ -115,6 +115,15 @@ router.get('/', authenticate, async (req: Request, res: Response, next: NextFunc
 });
 
 // Get booking by ID
+router.get('/check-in-info/:token', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        const booking = await bookingService.getCheckInInfo(req.params.token);
+        res.json({ success: true, data: booking });
+    } catch (error) {
+        next(error);
+    }
+});
+
 router.get('/:id/check-in-qr', authenticate, async (req: Request, res: Response, next: NextFunction) => {
     try {
         const qr = await bookingService.getCheckInToken(req.params.id, req.user?.userId, req.user?.role);

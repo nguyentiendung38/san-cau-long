@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { venueApi, Venue, CreateVenueInput } from '@/services/venue.service';
 import { useToast } from '@/hooks/use-toast';
+import { compressImage } from '@/utils/image';
 
 interface VenueFormData {
     name: string;
@@ -77,48 +78,6 @@ const getOperatingStatus = (venue: any) => {
     };
 };
 
-const compressImage = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const MAX_SIZE = 1000;
-                let width = img.width;
-                let height = img.height;
-
-                if (width > height) {
-                    if (width > MAX_SIZE) {
-                        height = Math.round((height * MAX_SIZE) / width);
-                        width = MAX_SIZE;
-                    }
-                } else {
-                    if (height > MAX_SIZE) {
-                        width = Math.round((width * MAX_SIZE) / height);
-                        height = MAX_SIZE;
-                    }
-                }
-
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                if (!ctx) {
-                    resolve(e.target?.result as string);
-                    return;
-                }
-                ctx.drawImage(img, 0, 0, width, height);
-                // Nén sang JPEG chất lượng 0.8 (~50KB-80KB)
-                resolve(canvas.toDataURL('image/jpeg', 0.8));
-            };
-            img.onerror = () => resolve(e.target?.result as string);
-            img.src = e.target?.result as string;
-        };
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(file);
-    });
-};
-
 export default function VenuesPage() {
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -126,6 +85,7 @@ export default function VenuesPage() {
     const [editingVenue, setEditingVenue] = useState<Venue | null>(null);
     const [formData, setFormData] = useState<VenueFormData>(defaultFormData);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    const [isProcessingImages, setIsProcessingImages] = useState(false);
 
     // Fetch venues
     const { data: venuesData, isLoading } = useQuery({
@@ -420,7 +380,7 @@ export default function VenuesPage() {
                                     <Input
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        placeholder="VD: Courtify Phú Nhuận"
+                                        placeholder="VD: Sân cầu lông Trường Đại học Kinh tế, Đại học Huế"
                                         required
                                     />
                                 </div>
@@ -503,13 +463,46 @@ export default function VenuesPage() {
 
                                 <div>
                                     <label className="block text-sm font-medium text-foreground-secondary mb-1.5">
-                                        Ảnh đại diện (Link/URL)
+                                        Ảnh đại diện cơ sở
                                     </label>
                                     <Input
-                                        value={formData.logo}
-                                        onChange={(e) => setFormData({ ...formData, logo: e.target.value })}
-                                        placeholder="VD: https://imgur.com/my-venue.jpg"
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={isProcessingImages}
+                                        onChange={async (event) => {
+                                            const file = event.target.files?.[0];
+                                            if (!file) return;
+                                            setIsProcessingImages(true);
+                                            try {
+                                                const logo = await compressImage(file);
+                                                setFormData((prev) => ({ ...prev, logo }));
+                                            } catch (error) {
+                                                toast({
+                                                    title: 'Không thể tải ảnh đại diện',
+                                                    description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+                                                    variant: 'error',
+                                                });
+                                            } finally {
+                                                setIsProcessingImages(false);
+                                                event.target.value = '';
+                                            }
+                                        }}
                                     />
+                                    <p className="mt-1 text-xs text-foreground-muted">
+                                        {isProcessingImages ? 'Đang xử lý ảnh...' : 'Chọn ảnh từ thiết bị (tối đa 20 MB).'}
+                                    </p>
+                                    {formData.logo && (
+                                        <div className="mt-2 flex items-center gap-3">
+                                            <img src={formData.logo} alt="Ảnh đại diện cơ sở" className="h-16 w-16 rounded-lg border border-border object-cover" />
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData((prev) => ({ ...prev, logo: '' }))}
+                                                className="text-sm text-red-500 hover:text-red-600"
+                                            >
+                                                Xóa ảnh đại diện
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Khu vực quản lý bộ sưu tập ảnh (Gallery) */}
@@ -525,26 +518,34 @@ export default function VenuesPage() {
                                             className="cursor-pointer"
                                             multiple
                                             type="file"
+                                            disabled={isProcessingImages}
                                             onChange={async (e) => {
                                                 const files = e.target.files;
                                                 if (!files || files.length === 0) return;
 
-                                                // Nén và đọc ảnh trực tiếp từ máy tính
-                                                const compressedImages = await Promise.all(
-                                                    Array.from(files).map((file) => compressImage(file))
-                                                );
-                                                const validImages = compressedImages.filter(Boolean);
-
-                                                setFormData((prev) => ({
-                                                    ...prev,
-                                                    images: [...prev.images, ...validImages],
-                                                }));
-
-                                                e.target.value = ''; // Reset input
+                                                setIsProcessingImages(true);
+                                                try {
+                                                    const compressedImages = await Promise.all(
+                                                        Array.from(files).map((file) => compressImage(file))
+                                                    );
+                                                    setFormData((prev) => ({
+                                                        ...prev,
+                                                        images: [...prev.images, ...compressedImages],
+                                                    }));
+                                                } catch (error) {
+                                                    toast({
+                                                        title: 'Không thể tải hình ảnh cơ sở',
+                                                        description: error instanceof Error ? error.message : 'Vui lòng thử lại.',
+                                                        variant: 'error',
+                                                    });
+                                                } finally {
+                                                    setIsProcessingImages(false);
+                                                    e.target.value = '';
+                                                }
                                             }}
                                         />
                                         <p className="text-[11px] text-foreground-muted">
-                                            Chọn ảnh từ máy tính (hệ thống sẽ tự động tối ưu & nén sắc nét) ({formData.images.length} ảnh)
+                                            {isProcessingImages ? 'Đang xử lý ảnh...' : `Chọn ảnh từ thiết bị (tự động tối ưu, tối đa 20 MB/ảnh) (${formData.images.length} ảnh)`}
                                         </p>
                                     </div>
 
@@ -609,7 +610,8 @@ export default function VenuesPage() {
                                 </Button>
                                 <Button
                                     onClick={handleSubmit}
-                                    isLoading={createMutation.isPending || updateMutation.isPending}
+                                    isLoading={createMutation.isPending || updateMutation.isPending || isProcessingImages}
+                                    disabled={isProcessingImages}
                                 >
                                     <Check className="w-4 h-4 mr-2" />
                                     {editingVenue ? 'Cập nhật' : 'Tạo cơ sở'}

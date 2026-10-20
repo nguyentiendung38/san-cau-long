@@ -81,13 +81,16 @@ export default function PrintInvoicePage() {
             <div id="print-invoice" className="max-w-3xl mx-auto p-8 bg-white text-black">
                 {/* Header */}
                 <div className="flex items-start justify-between border-b-2 border-gray-200 pb-6 mb-6">
-                    <div>
-                        <h1 className="text-3xl font-bold text-primary-600">SÂN CẦU LÔNG HUE</h1>
-                        <p className="text-gray-600 mt-1">Quản lý sân cầu lông trường đại học kinh tế Huế</p>
-                        <div className="mt-2 text-sm text-gray-500">
-                            <p>Trường Đại học Kinh tế Huế</p>
-                            <p>Hotline: 028 1234 5678</p>
-                            <p>Email: info@huecourt.vn</p>
+                    <div className="flex items-center gap-4">
+                        <img src="/logo-hue.jpg" alt="Logo HUE" className="w-14 h-14 rounded-full object-contain bg-white p-0.5 border border-gray-200 shadow-xs" />
+                        <div>
+                            <h1 className="text-3xl font-bold text-primary-600">SÂN CẦU LÔNG HUE</h1>
+                            <p className="text-gray-600 mt-1">Quản lý sân cầu lông trường đại học kinh tế Huế</p>
+                            <div className="mt-2 text-sm text-gray-500">
+                                <p>Trường Đại học Kinh tế Huế</p>
+                                <p>Hotline: 028 1234 5678</p>
+                                <p>Email: info@huecourt.vn</p>
+                            </div>
                         </div>
                     </div>
                     <div className="text-right">

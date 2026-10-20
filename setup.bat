@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   Courtify - First Time Setup
+echo   Hệ thống quản lý sân cầu lông - Cài đặt lần đầu
 echo ========================================
 echo.
 

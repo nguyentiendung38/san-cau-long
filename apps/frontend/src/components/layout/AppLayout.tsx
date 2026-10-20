@@ -11,7 +11,7 @@ import {
     Search,
     ChevronDown,
     Package,
-    Building2, ClipboardList, Compass, MessageSquareQuote
+    Building2, ClipboardList, Compass, MessageSquareQuote, ShieldCheck
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
@@ -36,6 +36,7 @@ const navigation = [
     { name: 'Báo cáo', href: '/reports', icon: BarChart3 },
     { name: 'Nội dung Khám phá', href: '/explore-content', icon: Compass },
     { name: 'Đánh giá sân', href: '/venue-reviews', icon: MessageSquareQuote },
+    { name: 'Nhân viên & Phân quyền', href: '/staff', icon: ShieldCheck },
 ]
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -53,9 +54,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <aside className="hidden md:flex w-64 bg-background-secondary border-r border-border flex-col">
                 {/* Logo */}
                 <div className="h-16 flex items-center gap-2 px-6 border-b border-border">
-                    <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                        <span className="text-white font-bold text-lg">H</span>
-                    </div>
+                    <img src="/logo-hue.jpg" alt="Logo HUE" className="w-8 h-8 rounded-full object-contain bg-white p-0.5 shadow-xs" />
                     <span className="text-xl font-bold text-primary-500">HUE</span>
                 </div>
 
@@ -112,9 +111,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                 <header className="h-16 bg-background-secondary border-b border-border flex items-center justify-between px-4 md:px-6">
                     {/* Mobile logo */}
                     <div className="md:hidden flex items-center gap-2">
-                        <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                            <span className="text-white font-bold text-lg">H</span>
-                        </div>
+                        <img src="/logo-hue.jpg" alt="Logo HUE" className="w-8 h-8 rounded-full object-contain bg-white p-0.5 shadow-xs" />
                     </div>
 
                     

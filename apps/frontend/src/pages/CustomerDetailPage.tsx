@@ -112,6 +112,28 @@ export default function CustomerDetailPage() {
 
     const membershipConfig = getMembershipConfig(customer.membershipTier);
 
+    
+    const handleToggleHue = async () => {
+        try {
+            await customerApi.verifyHue(customer.id, !customer.isVerifiedHue, {
+                customerType: !customer.isVerifiedHue ? 'STUDENT' : 'EXTERNAL',
+                studentId: customer.studentId || '21K4080000',
+                faculty: customer.faculty || 'Khoa Quản trị kinh doanh',
+            });
+            toast({
+                title: !customer.isVerifiedHue ? 'Đã xác thực Sinh viên HUE' : 'Đã hủy xác thực HUE',
+                variant: 'success',
+            });
+            queryClient.invalidateQueries({ queryKey: ['customer', id] });
+        } catch (error: any) {
+            toast({
+                title: 'Thao tác thất bại',
+                description: error.response?.data?.message || 'Có lỗi xảy ra',
+                variant: 'error',
+            });
+        }
+    };
+
     const tabs = [
         { id: 'history' as const, label: 'Lịch sử đặt sân' },
         { id: 'points' as const, label: 'Điểm tích lũy' },

@@ -25,7 +25,7 @@ const router = Router();
 router.get('/health', (req, res) => {
     res.json({
         success: true,
-        message: 'Courtify API is running',
+        message: 'Hệ thống quản lý sân cầu lông API đang hoạt động',
         timestamp: new Date().toISOString(),
     });
 });
@@ -53,7 +53,9 @@ router.use('/explore-contents', exploreContentRoutes);
 import momoRoutes from './momo.routes.js';
 import vnpayRoutes from './vnpay.routes.js';
 import portalAuthRoutes from './portal-auth.routes.js';
+import staffRoutes from './staff.routes.js';
 router.use('/portal-auth', portalAuthRoutes);
+router.use('/staff', staffRoutes);
 router.use('/momo', momoRoutes);
 router.use('/vnpay', vnpayRoutes);
 

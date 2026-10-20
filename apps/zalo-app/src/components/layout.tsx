@@ -12,6 +12,7 @@ import HomePage from "@/pages/index";
 import ChatAIPage from "@/pages/chat-ai";
 import HistoryPage from "@/pages/history";
 import AvailabilityPage from "@/pages/availability";
+import { BottomNav } from "@/components/BottomNav";
 
 const Layout = () => {
   return (
@@ -24,6 +25,7 @@ const Layout = () => {
             <Route path="/history" element={<HistoryPage />}></Route>
             <Route path="/availability" element={<AvailabilityPage />}></Route>
           </AnimationRoutes>
+          <BottomNav />
         </ZMPRouter>
       </SnackbarProvider>
     </App>

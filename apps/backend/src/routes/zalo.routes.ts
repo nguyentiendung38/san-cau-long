@@ -20,7 +20,7 @@ setInterval(() => {
 // API GET: Dành cho Zalo verify Webhook (Zalo thỉnh thoảng sẽ gọi để xác thực)
 router.get('/webhook', (req: Request, res: Response) => {
     // Trả về challenge string nếu Zalo yêu cầu
-    return res.status(200).send('Zalo Webhook Courtify OK');
+    return res.status(200).send('Zalo Webhook hệ thống quản lý sân cầu lông OK');
 });
 
 // API POST: Nhận sự kiện từ Zalo khi có người nhắn tin

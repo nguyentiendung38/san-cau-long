@@ -8,6 +8,10 @@ export interface Customer {
     membershipTier?: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
     membershipStart?: string;
     membershipEnd?: string;
+    studentId?: string | null;
+    faculty?: string | null;
+    customerType?: 'STUDENT' | 'FACULTY' | 'EXTERNAL';
+    isVerifiedHue?: boolean;
     totalBookings: number;
     totalSpent: number;
     points: number;
@@ -82,6 +86,13 @@ export const customerApi = {
         return response.data.data!;
     },
 
+    async verifyHue(id: string, isVerifiedHue: boolean, data?: { customerType?: string; studentId?: string; faculty?: string }): Promise<Customer> {
+        const response = await api.patch<ApiResponse<Customer>>(`/customers/${id}/verify-hue`, {
+            isVerifiedHue,
+            ...data,
+        });
+        return response.data.data!;
+    },
     async delete(id: string): Promise<void> {
         await api.delete(`/customers/${id}`);
     },

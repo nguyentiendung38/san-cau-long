@@ -15,6 +15,22 @@ export const api = axios.create({
 // Request interceptor - add auth token
 api.interceptors.request.use(
     (config: InternalAxiosRequestConfig) => {
+        const isPortalCustomerRequest =
+            config.url?.startsWith('/portal-auth/me') ||
+            config.url?.startsWith('/portal-auth/favorites') ||
+            config.url?.startsWith('/venue-reviews/public/eligible') ||
+            config.url === '/venue-reviews/public'
+
+        if (isPortalCustomerRequest) {
+            const portalToken = localStorage.getItem('portalUserToken')
+            if (portalToken) {
+                config.headers.Authorization = `Bearer ${portalToken}`
+            } else {
+                delete config.headers.Authorization
+            }
+            return config
+        }
+
         const token = useAuthStore.getState().accessToken
         if (token && !config.headers.Authorization) {
             config.headers.Authorization = `Bearer ${token}`
@@ -33,7 +49,8 @@ api.interceptors.response.use(
         const isAuthRequest = originalRequest?.url?.includes('/auth/login') ||
             originalRequest?.url?.includes('/auth/register') ||
             originalRequest?.url?.includes('/portal-auth/') ||
-            originalRequest?.url?.includes('/booking-requests/public')
+            originalRequest?.url?.includes('/booking-requests/public') ||
+            originalRequest?.url?.includes('/venue-reviews/public/eligible')
 
         // Refresh once for concurrent requests instead of rotating the same refresh token repeatedly.
         if (
