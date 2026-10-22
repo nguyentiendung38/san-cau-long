@@ -877,7 +877,7 @@ export class BookingService {
                     gte: startDate,
                     lte: endDate,
                 },
-                status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'NO_SHOW'] },
+                status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'NO_SHOW'] },
             },
             include: {
                 customer: {

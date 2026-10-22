@@ -168,6 +168,7 @@ const AvailabilityPage = () => {
           </label>
           <input
             type="date"
+            min={getLocalDate(new Date())}
             className="modern-input"
             value={date}
             onChange={(e) => setDate(e.target.value)}
@@ -321,6 +322,21 @@ const AvailabilityPage = () => {
                   return (
                     <div
                       key={time}
+                      onClick={() => {
+                        if (!passed && !booked) {
+                          localStorage.setItem(
+                            "zalo_preselect_booking",
+                            JSON.stringify({
+                              venueId: selectedVenue,
+                              courtId: court.id,
+                              date,
+                              startTime: time,
+                              endTime: getNextHalfHourStr(nextTime),
+                            })
+                          );
+                          navigate("/");
+                        }
+                      }}
                       style={{
                         backgroundColor: bgColor,
                         color: textColor,

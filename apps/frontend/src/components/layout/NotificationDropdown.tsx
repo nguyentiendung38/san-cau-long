@@ -55,29 +55,70 @@ export function NotificationDropdown() {
     const { data: bookingRequests } = useQuery({
         queryKey: ['booking-requests'],
         queryFn: () => bookingRequestApi.getAll(),
-        refetchInterval: isNotifyEnabled ? 15000 : false,
+        refetchInterval: isNotifyEnabled ? 5000 : false,
         enabled: isNotifyEnabled
     });
 
+    const recentThreshold = Date.now() - 48 * 60 * 60 * 1000;
+
     const notifications: Notification[] = !isNotifyEnabled ? [] : (bookingRequests || [])
-        .filter((req: any) => req.status === 'PENDING' || req.cancellationRequestStatus === 'PENDING')
+        .filter((req: any) => {
+            if (req.status === 'PENDING' || req.cancellationRequestStatus === 'PENDING') return true;
+            // Hiển cả các đơn vừa thanh toán VNPAY tự động duyệt (APPROVED) trong 48h gần nhất để Admin nắm bắt
+            if (req.status === 'APPROVED' && new Date(req.createdAt).getTime() >= recentThreshold) return true;
+            return false;
+        })
         .map((req: any) => {
             const hasCancellation = req.cancellationRequestStatus === 'PENDING';
+            const isReschedule = req.cancellationRequestType === 'RESCHEDULE';
             const hasProof = req.paymentMethod === 'DEPOSIT_TRANSFER' && req.paymentProof && req.paymentStatus === 'PENDING';
+            const isVnpayPaid = req.paymentMethod === 'VNPAY' && req.paymentStatus === 'PAID';
+            const isFromZalo = String(req.notes || '').toLowerCase().includes('zalo');
+            const sourceTag = isFromZalo ? '[Zalo Mini App]' : '[Website]';
+            const courtLabel = req.court?.name ? `${req.court.name} · ` : '';
+
+            const notifId = hasCancellation
+                ? `${req.id}:cancel:${req.cancellationRequestedAt || req.updatedAt}`
+                : isVnpayPaid
+                    ? `${req.id}:vnpay-paid`
+                    : req.id;
+
+            let title = `${sourceTag} Yêu cầu đặt sân mới`;
+            let type: Notification['type'] = 'info';
+            let message = `${req.name} (${req.phone}) đặt ${courtLabel}ngày ${formatDate(req.date)} (${req.startTime}-${req.endTime})`;
+            let link = '/booking-requests?status=PENDING';
+
+            if (hasCancellation) {
+                type = 'warning';
+                title = isReschedule
+                    ? `${sourceTag} Khách yêu cầu đổi lịch`
+                    : `${sourceTag} Khách yêu cầu hủy lịch`;
+                message = isReschedule
+                    ? `${req.name} (${req.phone}) xin đổi lịch ${courtLabel}sang ${req.requestedDate ? formatDate(req.requestedDate) : ''} (${req.requestedStartTime}-${req.requestedEndTime})`
+                    : `${req.name} (${req.phone}) yêu cầu hủy lịch ${courtLabel}ngày ${formatDate(req.date)} (${req.startTime}-${req.endTime})`;
+                link = '/booking-requests?status=CANCEL_REQUESTED';
+            } else if (hasProof) {
+                type = 'warning';
+                title = `${sourceTag} Cần duyệt bill chuyển khoản`;
+                message = `${req.name} (${req.phone}) đặt ${courtLabel}ngày ${formatDate(req.date)} (${req.startTime}-${req.endTime}) · Đã gửi ảnh bill`;
+                link = '/booking-requests?paymentMethod=DEPOSIT_TRANSFER&paymentStatus=PENDING';
+            } else if (isVnpayPaid || req.status === 'APPROVED') {
+                type = 'success';
+                title = isVnpayPaid
+                    ? `${sourceTag} Đặt sân & Đã thanh toán VNPAY`
+                    : `${sourceTag} Lịch đặt sân đã xác nhận`;
+                message = `${req.name} (${req.phone}) đặt ${courtLabel}ngày ${formatDate(req.date)} (${req.startTime}-${req.endTime})`;
+                link = '/booking-requests?status=APPROVED';
+            }
+
             return {
-                id: hasCancellation
-                    ? `${req.id}:cancel:${req.cancellationRequestedAt || req.updatedAt}`
-                    : req.id,
-                type: hasCancellation ? ('warning' as const) : hasProof ? ('warning' as const) : ('info' as const),
-                title: hasCancellation ? 'Khách yêu cầu hủy lịch' : hasProof ? 'Cần duyệt bill chuyển khoản cọc' : 'Yêu cầu đặt sân mới',
-                message: hasCancellation
-                    ? `${req.name} yêu cầu hủy lịch ${formatDate(req.date)} ${req.startTime}-${req.endTime}`
-                    : `${req.name} (${req.phone}) muốn đặt sân ngày ${formatDate(req.date)} từ ${req.startTime}-${req.endTime}${hasProof ? ' · Đã đính kèm ảnh bill' : ''}`,
-                time: new Date(req.createdAt).toLocaleString('vi-VN'),
-                read: readIds.has(req.id),
-                link: hasCancellation
-                    ? '/booking-requests?status=CANCEL_REQUESTED'
-                    : hasProof ? '/booking-requests?paymentMethod=DEPOSIT_TRANSFER&paymentStatus=PENDING' : '/booking-requests?status=PENDING',
+                id: notifId,
+                type,
+                title,
+                message,
+                time: new Date(req.cancellationRequestedAt || req.createdAt).toLocaleString('vi-VN'),
+                read: readIds.has(notifId),
+                link,
             };
         });
 
@@ -229,11 +270,11 @@ export function NotificationDropdown() {
                         <button
                             onClick={() => {
                                 setIsOpen(false);
-                                navigate('/notifications');
+                                navigate('/booking-requests');
                             }}
                             className="w-full py-3 text-sm text-primary-500 hover:bg-background-tertiary transition-colors font-medium flex items-center justify-center gap-1"
                         >
-                            Xem tất cả thông báo
+                            Xem tất cả yêu cầu đặt sân
                             <ChevronRight className="w-4 h-4" />
                         </button>
                     </div>

@@ -184,7 +184,9 @@ export default function HomePage() {
   const [selectedCourt, setSelectedCourt] = useState("");
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [venueDetail, setVenueDetail] = useState<any>(null);
-  const [customerName, setCustomerName] = useState("");
+  const [customerName, setCustomerName] = useState(
+    () => localStorage.getItem("quan-ly-san-cau-long_name") || ""
+  );
   const [customerPhone, setCustomerPhone] = useState(
     () => localStorage.getItem("quan-ly-san-cau-long_phone") || ""
   );
@@ -290,7 +292,40 @@ export default function HomePage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          setVenues(data.data.items || data.data);
+          const loadedVenues = data.data.items || data.data || [];
+          setVenues(loadedVenues);
+
+          // Nếu khách vừa chạm vào khung giờ trống ở trang Availability
+          const preselectRaw = localStorage.getItem("zalo_preselect_booking");
+          if (preselectRaw) {
+            localStorage.removeItem("zalo_preselect_booking");
+            try {
+              const pre = JSON.parse(preselectRaw);
+              const targetVenue =
+                loadedVenues.find((v: any) => v.id === pre.venueId) ||
+                loadedVenues[0];
+              if (targetVenue) {
+                setSelectedVenue(targetVenue);
+                if (pre.date) setBookingDate(pre.date);
+                if (pre.startTime) setBookingTime(pre.startTime);
+                if (pre.endTime) setEndTime(pre.endTime);
+                setShowBookingModal(true);
+                fetch(
+                  `${API_BASE_URL}/venues/${targetVenue.id}/availability?date=${pre.date || bookingDate}`
+                )
+                  .then((r) => r.json())
+                  .then((availData) => {
+                    if (availData.success && availData.data?.courts) {
+                      setCourts(availData.data.courts);
+                      setSelectedCourt(
+                        pre.courtId || availData.data.courts[0]?.id || ""
+                      );
+                    }
+                  })
+                  .catch(() => {});
+              }
+            } catch {}
+          }
         }
       })
       .catch((err) => {
@@ -464,6 +499,7 @@ export default function HomePage() {
       });
 
     localStorage.setItem("quan-ly-san-cau-long_phone", customerPhone);
+    localStorage.setItem("quan-ly-san-cau-long_name", customerName);
     const token = localStorage.getItem("portal_token");
     const headers: any = { "Content-Type": "application/json" };
     if (token) {

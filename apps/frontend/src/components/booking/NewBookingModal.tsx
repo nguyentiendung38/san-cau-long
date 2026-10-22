@@ -112,6 +112,10 @@ export function NewBookingModal({
     const [customerSearch, setCustomerSearch] = useState('');
     const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+    const [showQuickNewCustomer, setShowQuickNewCustomer] = useState(false);
+    const [newCustomerName, setNewCustomerName] = useState('');
+    const [newCustomerPhone, setNewCustomerPhone] = useState('');
+    const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
 
     const [pricing, setPricing] = useState<PricingResult | null>(null);
     const [isLoadingPrice, setIsLoadingPrice] = useState(false);
@@ -172,6 +176,9 @@ export function NewBookingModal({
             setVoucherValid(false);
             setVoucherMessage('');
             setDiscountAmount(0);
+            setShowQuickNewCustomer(false);
+            setNewCustomerName('');
+            setNewCustomerPhone('');
         }
     }, [isOpen, selectedCourtId, selectedDate, selectedTime, courts]);
 
@@ -267,6 +274,8 @@ export function NewBookingModal({
                 startTime: formData.startTime,
                 endTime: formData.endTime,
                 notes: formData.notes || undefined,
+                voucherCode: voucherValid && voucherCode.trim() ? voucherCode.trim() : undefined,
+                discountAmount: voucherValid && discountAmount > 0 ? discountAmount : undefined,
             };
 
             await bookingApi.create(input);
@@ -285,6 +294,36 @@ export function NewBookingModal({
         setFormData(prev => ({ ...prev, customerId: customer.id }));
         setCustomerSearch(customer.name);
         setShowCustomerDropdown(false);
+        setShowQuickNewCustomer(false);
+    };
+
+    const handleQuickCreateCustomer = async () => {
+        if (!newCustomerName.trim() || !newCustomerPhone.trim()) {
+            setErrors(prev => ({ ...prev, customer: 'Vui lòng nhập tên và số điện thoại khách hàng mới' }));
+            return;
+        }
+        setIsCreatingCustomer(true);
+        setErrors(prev => {
+            const { customer: _, ...rest } = prev;
+            return rest;
+        });
+        try {
+            const created = await customerApi.create({
+                name: newCustomerName.trim(),
+                phone: newCustomerPhone.trim(),
+            });
+            setCustomers(prev => [created, ...prev]);
+            selectCustomer(created);
+            setNewCustomerName('');
+            setNewCustomerPhone('');
+        } catch (error: any) {
+            setErrors(prev => ({
+                ...prev,
+                customer: error.response?.data?.message || 'Không thể tạo khách hàng mới (có thể SĐT đã tồn tại)',
+            }));
+        } finally {
+            setIsCreatingCustomer(false);
+        }
     };
 
     const isPast = isPastSlot(formData.date, formData.startTime);
@@ -460,63 +499,136 @@ export function NewBookingModal({
 
                     {/* Customer Selection */}
                     <div className="relative">
-                        <label className="flex items-center gap-2 text-sm font-medium text-foreground mb-2">
-                            <User className="w-4 h-4 text-primary-500" />
-                            Khách hàng (không bắt buộc)
-                        </label>
-                        <input
-                            type="text"
-                            value={customerSearch}
-                            onChange={(e) => {
-                                setCustomerSearch(e.target.value);
-                                setShowCustomerDropdown(true);
-                                if (!e.target.value) {
-                                    setSelectedCustomer(null);
-                                    setFormData(prev => ({ ...prev, customerId: '' }));
-                                }
-                            }}
-                            onFocus={() => setShowCustomerDropdown(true)}
-                            placeholder="Tìm theo tên hoặc số điện thoại..."
-                            className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        />
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                                <User className="w-4 h-4 text-primary-500" />
+                                Khách hàng (không bắt buộc)
+                            </label>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowQuickNewCustomer(prev => !prev);
+                                    setShowCustomerDropdown(false);
+                                }}
+                                className="text-xs font-semibold text-primary-500 hover:underline"
+                            >
+                                {showQuickNewCustomer ? 'Đóng tạo nhanh' : '+ Thêm khách mới nhanh'}
+                            </button>
+                        </div>
 
-                        {/* Customer Dropdown */}
-                        {showCustomerDropdown && customerSearch && (
-                            <div className="absolute z-10 w-full mt-1 bg-background-tertiary border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                                {filteredCustomers.length === 0 ? (
-                                    <div className="p-3 text-center text-foreground-secondary text-sm">
-                                        Không tìm thấy khách hàng
-                                    </div>
-                                ) : (
-                                    filteredCustomers.slice(0, 5).map(customer => (
-                                        <button
-                                            key={customer.id}
-                                            type="button"
-                                            onClick={() => selectCustomer(customer)}
-                                            className="w-full flex items-center gap-3 p-3 hover:bg-background transition-colors text-left"
-                                        >
-                                            <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center text-primary-500 font-medium">
-                                                {customer.name.charAt(0)}
-                                            </div>
-                                            <div>
-                                                <p className="text-sm font-medium text-foreground">{customer.name}</p>
-                                                <p className="text-xs text-foreground-secondary">{customer.phone}</p>
-                                            </div>
-                                            {customer.membershipTier && (
-                                                <span className={cn(
-                                                    "ml-auto text-xs px-2 py-0.5 rounded",
-                                                    customer.membershipTier === 'GOLD' && 'bg-yellow-500/20 text-yellow-400',
-                                                    customer.membershipTier === 'SILVER' && 'bg-gray-400/20 text-gray-300',
-                                                    customer.membershipTier === 'PLATINUM' && 'bg-purple-500/20 text-purple-400',
-                                                    customer.membershipTier === 'BRONZE' && 'bg-orange-500/20 text-orange-400',
-                                                )}>
-                                                    {customer.membershipTier}
-                                                </span>
-                                            )}
-                                        </button>
-                                    ))
+                        {showQuickNewCustomer ? (
+                            <div className="p-3 bg-background-tertiary border border-border rounded-lg space-y-2.5">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <input
+                                        type="text"
+                                        value={newCustomerName}
+                                        onChange={(e) => setNewCustomerName(e.target.value)}
+                                        placeholder="Tên khách hàng *"
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                    <input
+                                        type="tel"
+                                        value={newCustomerPhone}
+                                        onChange={(e) => setNewCustomerPhone(e.target.value)}
+                                        placeholder="Số điện thoại *"
+                                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    />
+                                </div>
+                                {errors.customer && (
+                                    <p className="text-red-400 text-xs">{errors.customer}</p>
                                 )}
+                                <div className="flex justify-end gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setShowQuickNewCustomer(false)}
+                                    >
+                                        Hủy
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        disabled={isCreatingCustomer}
+                                        onClick={handleQuickCreateCustomer}
+                                    >
+                                        {isCreatingCustomer ? 'Đang lưu...' : 'Lưu & Chọn khách'}
+                                    </Button>
+                                </div>
                             </div>
+                        ) : (
+                            <>
+                                <input
+                                    type="text"
+                                    value={customerSearch}
+                                    onChange={(e) => {
+                                        setCustomerSearch(e.target.value);
+                                        setShowCustomerDropdown(true);
+                                        if (!e.target.value) {
+                                            setSelectedCustomer(null);
+                                            setFormData(prev => ({ ...prev, customerId: '' }));
+                                        }
+                                    }}
+                                    onFocus={() => setShowCustomerDropdown(true)}
+                                    placeholder="Tìm theo tên hoặc số điện thoại..."
+                                    className="w-full bg-background-tertiary border border-border rounded-lg px-3 py-2.5 text-foreground focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+
+                                {/* Customer Dropdown */}
+                                {showCustomerDropdown && customerSearch && (
+                                    <div className="absolute z-10 w-full mt-1 bg-background-tertiary border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                                        {filteredCustomers.length === 0 ? (
+                                            <div className="p-3 text-center text-foreground-secondary text-sm space-y-2">
+                                                <p>Không tìm thấy khách hàng</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const isPhone = /^[0-9+\s]{8,15}$/.test(customerSearch.trim());
+                                                        if (isPhone) {
+                                                            setNewCustomerPhone(customerSearch.trim());
+                                                        } else {
+                                                            setNewCustomerName(customerSearch.trim());
+                                                        }
+                                                        setShowQuickNewCustomer(true);
+                                                        setShowCustomerDropdown(false);
+                                                    }}
+                                                    className="text-xs font-semibold text-primary-500 hover:underline"
+                                                >
+                                                    + Tạo khách mới với "{customerSearch}"
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            filteredCustomers.slice(0, 5).map(customer => (
+                                                <button
+                                                    key={customer.id}
+                                                    type="button"
+                                                    onClick={() => selectCustomer(customer)}
+                                                    className="w-full flex items-center gap-3 p-3 hover:bg-background transition-colors text-left"
+                                                >
+                                                    <div className="w-8 h-8 rounded-full bg-primary-500/20 flex items-center justify-center text-primary-500 font-medium">
+                                                        {customer.name.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-medium text-foreground">{customer.name}</p>
+                                                        <p className="text-xs text-foreground-secondary">{customer.phone}</p>
+                                                    </div>
+                                                    {customer.membershipTier && (
+                                                        <span className={cn(
+                                                            "ml-auto text-xs px-2 py-0.5 rounded",
+                                                            customer.membershipTier === 'GOLD' && 'bg-yellow-500/20 text-yellow-400',
+                                                            customer.membershipTier === 'SILVER' && 'bg-gray-400/20 text-gray-300',
+                                                            customer.membershipTier === 'PLATINUM' && 'bg-purple-500/20 text-purple-400',
+                                                            customer.membershipTier === 'BRONZE' && 'bg-orange-500/20 text-orange-400',
+                                                        )}>
+                                                            {customer.membershipTier}
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+                            </>
                         )}
 
                         {selectedCustomer && (

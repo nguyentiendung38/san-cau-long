@@ -519,7 +519,7 @@ export class BookingRequestService {
                 court: { select: { name: true } },
             }
         });
-        return Promise.all(requests.map(async (request) => {
+        const mappedRequests = await Promise.all(requests.map(async (request) => {
             let booking: {
                 id: string;
                 checkInToken: string | null;
@@ -543,8 +543,76 @@ export class BookingRequestService {
                     select: { id: true, checkInToken: true, checkedInAt: true, status: true },
                 });
             }
-            return { ...request, checkIn: booking };
+            return {
+                ...request,
+                status: booking?.status === 'COMPLETED' ? 'COMPLETED' : request.status,
+                checkIn: booking,
+            };
         }));
+
+        // Bổ sung các lịch đặt trực tiếp tại quầy bởi Admin (không qua BookingRequest)
+        const directBookings = await prisma.booking.findMany({
+            where: {
+                customerId,
+                OR: [
+                    { notes: null },
+                    { NOT: { notes: { contains: '[Online Request:' } } },
+                ],
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                court: {
+                    select: {
+                        id: true,
+                        name: true,
+                        venueId: true,
+                        venue: { select: { name: true, address: true, logo: true } },
+                    },
+                },
+                customer: { select: { name: true, phone: true } },
+            },
+        });
+
+        const mappedDirect = await Promise.all(directBookings.map(async (b) => {
+            let checkInToken = b.checkInToken;
+            if (!checkInToken && ['CONFIRMED', 'IN_PROGRESS'].includes(b.status)) {
+                checkInToken = randomBytes(32).toString('base64url');
+                await prisma.booking.updateMany({
+                    where: { id: b.id, checkInToken: null },
+                    data: { checkInToken },
+                });
+            }
+            return {
+                id: b.id,
+                venueId: b.court.venueId,
+                courtId: b.courtId,
+                customerId: b.customerId,
+                name: b.customer?.name || 'Khách đặt tại quầy',
+                phone: b.customer?.phone || '',
+                date: b.date,
+                startTime: b.startTime,
+                endTime: b.endTime,
+                notes: b.notes || 'Đặt trực tiếp tại sân',
+                status: b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS' ? 'APPROVED' : b.status,
+                paymentMethod: b.paymentMethod || 'CASH',
+                paymentStatus: b.paymentStatus || 'PENDING',
+                paymentAmount: b.totalAmount,
+                orderedItems: b.orderedItems,
+                createdAt: b.createdAt,
+                venue: b.court.venue,
+                court: { name: b.court.name },
+                checkIn: {
+                    id: b.id,
+                    checkInToken,
+                    checkedInAt: b.checkedInAt,
+                    status: b.status,
+                },
+            };
+        }));
+
+        return [...mappedRequests, ...mappedDirect].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
     }
 
     async getByPhone(phone: string) {
@@ -558,7 +626,7 @@ export class BookingRequestService {
                 court: { select: { name: true } },
             }
         });
-        return Promise.all(requests.map(async (request) => {
+        const mappedRequests = await Promise.all(requests.map(async (request) => {
             let booking: {
                 id: string;
                 checkInToken: string | null;
@@ -581,8 +649,78 @@ export class BookingRequestService {
                     select: { id: true, checkInToken: true, checkedInAt: true, status: true },
                 });
             }
-            return { ...request, checkIn: booking };
+            return {
+                ...request,
+                status: booking?.status === 'COMPLETED' ? 'COMPLETED' : request.status,
+                checkIn: booking,
+            };
         }));
+
+        // Bổ sung các lịch đặt trực tiếp tại quầy bởi Admin theo SĐT khách hàng
+        const customer = await prisma.customer.findUnique({ where: { phone: cleanPhone } });
+        if (!customer) return mappedRequests;
+
+        const directBookings = await prisma.booking.findMany({
+            where: {
+                customerId: customer.id,
+                OR: [
+                    { notes: null },
+                    { NOT: { notes: { contains: '[Online Request:' } } },
+                ],
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                court: {
+                    select: {
+                        id: true,
+                        name: true,
+                        venueId: true,
+                        venue: { select: { name: true, address: true, logo: true, bankCode: true, bankAccountNumber: true, bankAccountName: true } },
+                    },
+                },
+            },
+        });
+
+        const mappedDirect = await Promise.all(directBookings.map(async (b) => {
+            let checkInToken = b.checkInToken;
+            if (!checkInToken && ['CONFIRMED', 'IN_PROGRESS'].includes(b.status)) {
+                checkInToken = randomBytes(32).toString('base64url');
+                await prisma.booking.updateMany({
+                    where: { id: b.id, checkInToken: null },
+                    data: { checkInToken },
+                });
+            }
+            return {
+                id: b.id,
+                venueId: b.court.venueId,
+                courtId: b.courtId,
+                customerId: b.customerId,
+                name: customer.name,
+                phone: customer.phone,
+                date: b.date,
+                startTime: b.startTime,
+                endTime: b.endTime,
+                notes: b.notes || 'Đặt trực tiếp tại sân',
+                status: b.status === 'CONFIRMED' || b.status === 'IN_PROGRESS' ? 'APPROVED' : b.status,
+                paymentMethod: b.paymentMethod || 'CASH',
+                paymentStatus: b.paymentStatus || 'PENDING',
+                paymentAmount: b.totalAmount,
+                orderedItems: b.orderedItems,
+                createdAt: b.createdAt,
+                venue: b.court.venue,
+                court: { name: b.court.name },
+                checkIn: {
+                    id: b.id,
+                    checkInToken,
+                    checkedInAt: b.checkedInAt,
+                    status: b.status,
+                },
+            };
+        }));
+
+        return [...mappedRequests, ...mappedDirect].sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
     }
 
     async requestCancellation(
