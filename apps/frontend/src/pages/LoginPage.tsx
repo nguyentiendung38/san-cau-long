@@ -72,15 +72,15 @@ export default function LoginPage() {
                     </div>
                 </div>
 
-                {/* Prominent Campus Photo Showcase - 100% rõ nét, không bị che khuất */}
-                <div className="relative z-10 my-2 xl:my-3">
-                    <div className="overflow-hidden rounded-2xl border border-white/30 bg-white/10 p-1.5 shadow-xl backdrop-blur-md">
+                {/* Prominent Campus Photo Showcase - Hiển thị đầy đủ nguyên vẹn trong khung nhỏ gọn */}
+                <div className="relative z-10 my-auto flex justify-center">
+                    <div className="w-full max-w-[330px] xl:max-w-[370px] overflow-hidden rounded-2xl border border-white/30 bg-white/10 p-2 shadow-2xl backdrop-blur-md">
                         <img
                             src="/nha-thi-dau-hue.jpg"
                             alt="Nhà Thi Đấu Đa Năng HUE - Gắn kết để phát triển"
-                            className="w-full h-36 xl:h-44 object-cover rounded-xl shadow-md transition-transform duration-500 hover:scale-[1.01]"
+                            className="w-full h-auto max-h-[52vh] object-contain rounded-xl shadow-md mx-auto transition-transform duration-500 hover:scale-[1.01]"
                         />
-                        <div className="mt-2 px-1.5 flex items-center justify-between text-[11px]">
+                        <div className="mt-2 px-1 flex items-center justify-between text-[11px]">
                             <span className="font-bold text-white flex items-center gap-1">
                                 🏟️ Nhà Thi Đấu Đa Năng HUE
                             </span>
@@ -91,20 +91,9 @@ export default function LoginPage() {
                     </div>
                 </div>
 
-                {/* Bottom System Info & Stats */}
-                <div className="relative z-10 bg-black/35 rounded-2xl p-3.5 xl:p-4 border border-white/20 backdrop-blur-md shadow-lg">
-                    <div className="flex items-center justify-between mb-1.5">
-                        <h2 className="text-sm font-extrabold text-white">
-                            Hệ Thống Quản Lý Sân Cầu Lông HUE
-                        </h2>
-                        <span className="text-[10px] font-bold text-lime-300 bg-white/10 px-2 py-0.5 rounded-full">
-                            Khu Thể Thao Trường
-                        </span>
-                    </div>
-                    <p className="text-[11px] text-emerald-100/85 leading-snug mb-2.5 line-clamp-2">
-                        Quản lý toàn diện đặt sân, thanh toán và vận hành cơ sở thể thao trường Đại học Kinh tế Huế.
-                    </p>
-                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/15 text-center">
+                {/* Bottom Stats */}
+                <div className="relative z-10 bg-black/35 rounded-2xl p-3 border border-white/20 backdrop-blur-md shadow-lg">
+                    <div className="grid grid-cols-3 gap-2 text-center">
                         <div>
                             <p className="text-lg xl:text-xl font-black text-lime-300 leading-tight">500+</p>
                             <p className="text-[10px] text-white/70">Khách hàng</p>
@@ -134,13 +123,13 @@ export default function LoginPage() {
                             </div>
                         </div>
                         {/* Mobile Campus Card */}
-                        <div className="w-full mt-2 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white p-1">
+                        <div className="w-full max-w-[260px] mt-2 overflow-hidden rounded-xl border border-slate-200 shadow-sm bg-white p-1.5">
                             <img
                                 src="/nha-thi-dau-hue.jpg"
                                 alt="Nhà Thi Đấu Đa Năng HUE"
-                                className="w-full h-36 object-cover rounded-lg"
+                                className="w-full h-auto object-contain rounded-lg"
                             />
-                            <p className="text-[11px] text-center text-slate-600 font-semibold py-1">
+                            <p className="text-[11px] text-center text-slate-600 font-semibold pt-1.5 pb-0.5">
                                 🏟️ Nhà Thi Đấu Đa Năng HUE · Gắn kết để phát triển
                             </p>
                         </div>

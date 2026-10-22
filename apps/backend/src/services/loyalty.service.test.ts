@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+    adjustBookingPointRedemption,
     getMaxRedeemPoints,
     getPointsEarned,
     LOYALTY_POINT_VALUE_VND,
 } from './loyalty.service.js';
+import type { Prisma } from '@prisma/client';
 
 describe('loyalty policy', () => {
     it('earns one point for each full 100,000 VND actually paid', () => {
@@ -23,5 +25,60 @@ describe('loyalty policy', () => {
 
     it('converts each point at 100 VND', () => {
         expect(100 * LOYALTY_POINT_VALUE_VND).toBe(10_000);
+    });
+
+    it('releases reserved points when a pending booking uses fewer points after rescheduling', async () => {
+        const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+        const tx = {
+            pointsTransaction: { findUnique: vi.fn().mockResolvedValue(null) },
+            customer: { updateMany },
+        } as unknown as Prisma.TransactionClient;
+
+        await expect(adjustBookingPointRedemption(
+            tx,
+            { id: 'request-1', customerId: 'customer-1', redeemPoints: 40 },
+            20,
+            '2025-01-01T12:00:00.000Z',
+        )).resolves.toBe(true);
+        expect(updateMany).toHaveBeenCalledWith({
+            where: { id: 'customer-1', reservedPoints: { gte: 40 } },
+            data: { reservedPoints: { decrement: 20 } },
+        });
+    });
+
+    it('returns points already spent when an approved booking uses fewer points after rescheduling', async () => {
+        const create = vi.fn().mockResolvedValue({});
+        const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+        const tx = {
+            pointsTransaction: {
+                findUnique: vi.fn()
+                    .mockResolvedValueOnce({ id: 'redeem-1' })
+                    .mockResolvedValueOnce(null),
+                create,
+            },
+            customer: { updateMany },
+        } as unknown as Prisma.TransactionClient;
+
+        await expect(adjustBookingPointRedemption(
+            tx,
+            { id: 'request-1', customerId: 'customer-1', redeemPoints: 40 },
+            20,
+            '2025-01-01T12:00:00.000Z',
+        )).resolves.toBe(true);
+        expect(updateMany).toHaveBeenCalledWith({
+            where: { id: 'customer-1' },
+            data: { points: { increment: 20 } },
+        });
+        expect(create).toHaveBeenCalledWith({
+            data: {
+                customerId: 'customer-1',
+                type: 'REVERSAL',
+                points: 20,
+                reason: 'Hoàn lại điểm chưa sử dụng do giảm giá trị đổi điểm sau khi đổi lịch',
+                referenceType: 'BOOKING_REQUEST',
+                referenceId: 'request-1',
+                idempotencyKey: 'booking-reschedule-refund:request-1:2025-01-01T12:00:00.000Z',
+            },
+        });
     });
 });

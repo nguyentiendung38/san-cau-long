@@ -14,7 +14,7 @@ import {
     RotateCcw,
     Building2
 } from 'lucide-react';
-import { bookingRequestApi, getBookingRequestTotal } from '@/services/booking.service';
+import { bookingRequestApi, getBookingRequestDue, getBookingRequestPaidAmount, getBookingRequestRefundDue, getBookingRequestTotal } from '@/services/booking.service';
 import { venueApi } from '@/services/venue.service';
 import { useToast } from '@/hooks/use-toast';
 import { formatCurrency } from '@/lib/utils';
@@ -44,10 +44,11 @@ export default function BookingRequestsPage() {
 
     // Modals
     const [selectedProof, setSelectedProof] = useState<string | null>(null);
-    const [depositConfirmModal, setDepositConfirmModal] = useState<{ isOpen: boolean; reqId: string; name: string }>({ 
+    const [depositConfirmModal, setDepositConfirmModal] = useState<{ isOpen: boolean; reqId: string; name: string; total: number }>({
         isOpen: false, 
         reqId: '', 
-        name: '' 
+        name: '',
+        total: 0,
     });
     const [depositAmount, setDepositAmount] = useState<string>('');
 
@@ -433,7 +434,23 @@ export default function BookingRequestsPage() {
                                         {getBookingRequestTotal(req) > 0 && (
                                             <span className="font-semibold text-foreground">
                                             Tổng tiền: {formatCurrency(getBookingRequestTotal(req))}
-                                            {req.paymentStatus === 'PAID' && ` · Đã nhận: ${formatCurrency(req.paymentAmount || 0)}`}
+                                            {` · Đã nhận: ${formatCurrency(getBookingRequestPaidAmount(req))}`}
+                                            {getBookingRequestDue(req) > 0 && ` · Còn thiếu: ${formatCurrency(getBookingRequestDue(req))}`}
+                                            {getBookingRequestRefundDue(req) > 0 && ` · Cần hoàn: ${formatCurrency(getBookingRequestRefundDue(req))}`}
+                                            </span>
+                                        )}
+                                        {req.cancellationRequestStatus === 'PENDING' && req.cancellationRequestType === 'RESCHEDULE' && req.orderedItems && (
+                                            <span className="font-semibold text-blue-600">
+                                                {(() => {
+                                                    try {
+                                                        const requestedTotal = JSON.parse(req.orderedItems).requestedTotalAmount;
+                                                        return Number.isFinite(requestedTotal)
+                                                            ? `Tổng dự kiến sau đổi lịch: ${formatCurrency(requestedTotal)}`
+                                                            : '';
+                                                    } catch {
+                                                        return '';
+                                                    }
+                                                })()}
                                             </span>
                                         )}
                                         {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.transferReference && (
@@ -511,15 +528,16 @@ export default function BookingRequestsPage() {
                                             </button>
                                         </>
                                     )}
-                                    {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.paymentStatus !== 'PAID' && ['PENDING', 'EXPIRED'].includes(req.status) && (
+                                    {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.paymentStatus !== 'PAID' && ['PENDING', 'APPROVED', 'EXPIRED'].includes(req.status) && (
                                         <button
                                             onClick={() => {
-                                                setDepositConfirmModal({ isOpen: true, reqId: req.id, name: req.name });
-                                                setDepositAmount('');
+                                                const total = getBookingRequestTotal(req);
+                                                setDepositConfirmModal({ isOpen: true, reqId: req.id, name: req.name, total });
+                                                setDepositAmount(String(total));
                                             }}
                                             className="bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors"
                                         >
-                                            {req.status === 'EXPIRED' ? 'Ghi nhận tiền nhận (đã hết hạn)' : 'Đối soát & xác nhận'}
+                                            {req.status === 'EXPIRED' ? 'Ghi nhận tiền nhận (đã hết hạn)' : req.status === 'APPROVED' ? 'Đối soát khoản còn thiếu' : 'Đối soát & xác nhận'}
                                         </button>
                                     )}
                                     {req.status === 'PENDING' && req.paymentMethod !== 'VNPAY' && (
@@ -588,7 +606,7 @@ export default function BookingRequestsPage() {
                             <div>
                                 <h3 className="text-xl font-bold text-gray-900">Đối soát chuyển khoản</h3>
                                 <p className="text-sm text-gray-500 mt-1">Khách hàng: <span className="font-semibold text-gray-800">{depositConfirmModal.name}</span></p>
-                                <p className="mt-1 text-xs text-amber-700">Chỉ xác nhận sau khi kiểm tra giao dịch thực nhận trong tài khoản ngân hàng.</p>
+                                <p className="mt-1 text-xs text-amber-700">Chỉ xác nhận đã thanh toán khi tổng số tiền đã nhận lũy kế đủ tổng đơn ({formatCurrency(depositConfirmModal.total)}). Nếu khách đổi lịch và đã trả một phần, nhập tổng số tiền đã nhận trước và sau khi đổi.</p>
                             </div>
                             <button onClick={() => setDepositConfirmModal({ ...depositConfirmModal, isOpen: false })} className="p-1 hover:bg-gray-100 rounded-full transition-colors">
                                 <X className="w-5 h-5 text-gray-500" />
@@ -597,7 +615,7 @@ export default function BookingRequestsPage() {
                         
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Số tiền khách đã cọc (VNĐ)</label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Tổng tiền đã nhận lũy kế (VNĐ)</label>
                                 <input 
                                     type="number" 
                                     value={depositAmount} 
@@ -605,7 +623,7 @@ export default function BookingRequestsPage() {
                                     className="w-full border border-gray-300 rounded-xl px-4 py-2.5 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500"
                                     placeholder="Nhập số tiền..."
                                 />
-                                <p className="text-xs text-gray-500 mt-1.5">Nhập đúng số tiền đã đối soát. Ảnh khách tải lên không tự động xác nhận thanh toán.</p>
+                                <p className="text-xs text-gray-500 mt-1.5">Nhập tổng tiền lũy kế sau khi đối soát. Ảnh khách tải lên không tự động xác nhận thanh toán.</p>
                             </div>
                             
                             <div className="flex justify-end gap-3 pt-2">
@@ -618,8 +636,8 @@ export default function BookingRequestsPage() {
                                 <button 
                                     onClick={() => {
                                         const amount = parseFloat(depositAmount);
-                                        if (!Number.isFinite(amount) || amount <= 0) {
-                                            toast({ title: 'Vui lòng nhập số tiền đã nhận hợp lệ', variant: 'error' });
+                                        if (!Number.isFinite(amount) || amount !== depositConfirmModal.total) {
+                                            toast({ title: 'Số tiền xác nhận phải bằng tổng tiền đặt sân', variant: 'error' });
                                             return;
                                         }
                                         confirmDepositMutation.mutate({ id: depositConfirmModal.reqId, amount });

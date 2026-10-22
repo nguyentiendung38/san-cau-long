@@ -69,7 +69,7 @@ router.post('/public', async (req: Request, res: Response, next: NextFunction) =
     }
 });
 
-// Customer / Zalo: Lấy danh sách lịch sử đặt sân của tài khoản hoặc theo SĐT
+// Customer / Zalo: Lịch sử đặt sân (Hỗ trợ cả tài khoản Web Portal đã đăng nhập và khách vãng lai qua SĐT)
 router.get('/public/my-requests', async (req: Request, res: Response, next: NextFunction) => {
     try {
         const authHeader = req.headers.authorization;
@@ -81,35 +81,49 @@ router.get('/public/my-requests', async (req: Request, res: Response, next: Next
                     return res.json({ success: true, data: requests });
                 }
             } catch {
-                // Tiếp tục lấy theo phone
+                // Token không hợp lệ, tiếp tục kiểm tra theo số điện thoại
             }
         }
 
-        const phone = req.query.phone as string;
+        const phone = typeof req.query.phone === 'string' ? req.query.phone.trim() : '';
         if (phone) {
-            const requests = await bookingRequestService.getByPhone(phone.trim());
+            const requests = await bookingRequestService.getByPhone(phone);
             return res.json({ success: true, data: requests });
         }
 
-        res.json({
-            success: true,
-            data: [],
-        });
+        res.json({ success: true, data: [] });
     } catch (error) {
         next(error);
     }
 });
 
-// Customer: Request cancellation; the booking is cancelled only after admin approval.
-router.post('/public/:id/cancel-request', authenticatePortalCustomer, async (req: Request, res: Response, next: NextFunction) => {
+// Customer / Zalo: Gửi yêu cầu hủy lịch đặt
+router.post('/public/:id/cancel-request', async (req: Request, res: Response, next: NextFunction) => {
     try {
+        let customerIdOrPhone = '';
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const decoded: any = jwt.verify(authHeader.slice(7), config.jwt.secret);
+                if (decoded && decoded.role === 'CUSTOMER' && typeof decoded.id === 'string') {
+                    customerIdOrPhone = decoded.id;
+                }
+            } catch {}
+        }
+        if (!customerIdOrPhone && typeof req.body.phone === 'string') {
+            customerIdOrPhone = req.body.phone.trim();
+        }
+        if (!customerIdOrPhone) {
+            return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập hoặc cung cấp số điện thoại để thực hiện' });
+        }
+
         const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
         if (!reason || reason.length > 500) {
             return res.status(400).json({ success: false, message: 'Vui lòng nhập lý do hủy (tối đa 500 ký tự)' });
         }
         const request = await bookingRequestService.requestCancellation(
             req.params.id,
-            req.portalCustomer!.id,
+            customerIdOrPhone,
             reason,
         );
         res.json({
@@ -122,8 +136,26 @@ router.post('/public/:id/cancel-request', authenticatePortalCustomer, async (req
     }
 });
 
-router.post('/public/:id/reschedule-request', authenticatePortalCustomer, async (req: Request, res: Response, next: NextFunction) => {
+// Customer / Zalo: Gửi yêu cầu đổi lịch đặt
+router.post('/public/:id/reschedule-request', async (req: Request, res: Response, next: NextFunction) => {
     try {
+        let customerIdOrPhone = '';
+        const authHeader = req.headers.authorization;
+        if (authHeader?.startsWith('Bearer ')) {
+            try {
+                const decoded: any = jwt.verify(authHeader.slice(7), config.jwt.secret);
+                if (decoded && decoded.role === 'CUSTOMER' && typeof decoded.id === 'string') {
+                    customerIdOrPhone = decoded.id;
+                }
+            } catch {}
+        }
+        if (!customerIdOrPhone && typeof req.body.phone === 'string') {
+            customerIdOrPhone = req.body.phone.trim();
+        }
+        if (!customerIdOrPhone) {
+            return res.status(401).json({ success: false, message: 'Vui lòng đăng nhập hoặc cung cấp số điện thoại để thực hiện' });
+        }
+
         const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
         const date = new Date(req.body.date);
         const startTime = req.body.startTime;
@@ -134,7 +166,7 @@ router.post('/public/:id/reschedule-request', authenticatePortalCustomer, async 
         }
         const request = await bookingRequestService.requestCancellation(
             req.params.id,
-            req.portalCustomer!.id,
+            customerIdOrPhone,
             reason,
             { type: 'RESCHEDULE', date, startTime, endTime },
         );

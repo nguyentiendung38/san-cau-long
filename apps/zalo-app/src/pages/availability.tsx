@@ -1,20 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { Page, Header, Box, Text, Icon, useNavigate } from "zmp-ui";
+import { API_BASE_URL } from "../config/api";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:3005/api";
+const getLocalDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const AvailabilityPage = () => {
   const navigate = useNavigate();
   const [venues, setVenues] = useState<any[]>([]);
   const [selectedVenue, setSelectedVenue] = useState<string>("");
   const [date, setDate] = useState<string>(
-    new Date().toISOString().split("T")[0]
+    getLocalDate(new Date())
   );
   const [availability, setAvailability] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch(`${API_URL}/venues`)
+    fetch(`${API_BASE_URL}/venues`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -29,7 +31,7 @@ const AvailabilityPage = () => {
   useEffect(() => {
     if (!selectedVenue || !date) return;
     setLoading(true);
-    fetch(`${API_URL}/venues/${selectedVenue}/availability?date=${date}`)
+    fetch(`${API_BASE_URL}/venues/${selectedVenue}/availability?date=${date}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) setAvailability(data.data);
@@ -39,12 +41,35 @@ const AvailabilityPage = () => {
   }, [selectedVenue, date]);
 
   const generateTimeSlots = () => {
-    const slots: string[] = [];
-    for (let h = 5; h <= 23; h++) {
-      slots.push(`${h.toString().padStart(2, "0")}:00`);
-      slots.push(`${h.toString().padStart(2, "0")}:30`);
+    const venue = venues.find((item) => item.id === selectedVenue);
+    const operatingHours = venue?.operatingHours || [];
+    const selectedDay = new Date(`${date}T00:00:00`).getDay();
+    const hours = operatingHours.length
+      ? operatingHours.filter((hour: any) => {
+          if (hour.isActive === false) return false;
+          try {
+            const days = Array.isArray(hour.daysOfWeek)
+              ? hour.daysOfWeek
+              : JSON.parse(hour.daysOfWeek || "[]");
+            return days.includes(selectedDay);
+          } catch {
+            return false;
+          }
+        })
+      : [{ startTime: venue?.openTime || "06:00", endTime: venue?.closeTime || "23:00" }];
+    const slots = new Set<string>();
+    for (const hour of hours) {
+      const [startHour, startMinute] = hour.startTime.split(":").map(Number);
+      const [endHour, endMinute] = hour.endTime.split(":").map(Number);
+      const startMinutes = startHour * 60 + startMinute;
+      const endMinutes = endHour * 60 + endMinute;
+      for (let minutes = Math.ceil(startMinutes / 30) * 30; minutes + 30 <= endMinutes; minutes += 30) {
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        slots.add(`${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`);
+      }
     }
-    return slots;
+    return [...slots].sort();
   };
 
   const timeSlots = generateTimeSlots();
@@ -56,7 +81,7 @@ const AvailabilityPage = () => {
   };
 
   const isPassed = (time: string) => {
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate(new Date());
     if (date > today) return false;
     if (date < today) return true;
 

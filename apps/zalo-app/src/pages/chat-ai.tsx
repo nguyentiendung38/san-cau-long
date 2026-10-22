@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Page, Header, Box, Text, useSnackbar } from "zmp-ui";
 import { useNavigate } from "zmp-ui";
-
-// Địa chỉ Backend AI Chatbot - cùng server với web quản lý
-const API_URL = "http://127.0.0.1:3005/api/chatbot";
+import { API_BASE_URL } from "../config/api";
 
 interface Message {
   id: string;
@@ -52,7 +50,7 @@ export default function ChatAIPage() {
       setIsLoading(true);
 
       try {
-        const res = await fetch(`${API_URL}/message`, {
+        const res = await fetch(`${API_BASE_URL}/chatbot/message`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text.trim(), sessionId }),

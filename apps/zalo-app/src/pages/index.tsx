@@ -3,10 +3,11 @@ import logoHue from "../static/logo-hue.jpg";
 import React, { useState, useEffect } from "react";
 import { Page, Box, Text, Button, Icon, Modal, useSnackbar } from "zmp-ui";
 import { useNavigate } from "zmp-ui";
-import { openWebview } from "zmp-sdk";
+import { API_BASE_URL } from "../config/api";
+import { openPaymentLink } from "../utils/payment";
 
-// Cấu hình API Backend
-const API_URL = "http://127.0.0.1:3005/api";
+const getLocalDate = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 const translateDays = (daysStr: string) => {
   if (!daysStr) return "Tất cả các ngày";
@@ -174,7 +175,7 @@ export default function HomePage() {
   const [selectedVenue, setSelectedVenue] = useState<any>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [bookingDate, setBookingDate] = useState(() => {
-    return new Date().toISOString().split("T")[0];
+    return getLocalDate(new Date());
   });
 
   const [bookingTime, setBookingTime] = useState("17:00");
@@ -229,11 +230,11 @@ export default function HomePage() {
     }
     setAuthLoading(true);
     try {
-      const res = await fetch(`${API_URL}/portal-auth/login`, {
+      const res = await fetch(`${API_BASE_URL}/portal-auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          phone: authPhone.trim(),
+          identifier: authPhone.trim(),
           password: authPassword.trim(),
         }),
       });
@@ -285,7 +286,7 @@ export default function HomePage() {
   // Gọi API lấy danh sách sân, sản phẩm & dịch vụ từ Backend
   useEffect(() => {
     // 1. Lấy danh sách sân
-    fetch(`${API_URL}/venues`)
+    fetch(`${API_BASE_URL}/venues`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -294,20 +295,18 @@ export default function HomePage() {
       })
       .catch((err) => {
         console.error("Lỗi lấy dữ liệu sân:", err);
-        setVenues([
-          {
-            id: "1",
-            name: "Sân cầu lông 1 - Trường Đại học Kinh tế, Đại học Huế",
-            address: "Trường Đại học Kinh tế, Đại học Huế",
-          },
-        ]);
+        setVenues([]);
+        openSnackbar({
+          type: "warning",
+          text: "Không thể tải danh sách cơ sở. Vui lòng kiểm tra kết nối rồi thử tải lại.",
+        });
       })
       .finally(() => {
         setLoading(false);
       });
 
     // 2. Lấy danh sách sản phẩm
-    fetch(`${API_URL}/products?isActive=true`)
+    fetch(`${API_BASE_URL}/products?isActive=true`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -317,7 +316,7 @@ export default function HomePage() {
       .catch((err) => console.error("Lỗi lấy sản phẩm:", err));
 
     // 3. Lấy danh sách dịch vụ
-    fetch(`${API_URL}/services?isActive=true`)
+    fetch(`${API_BASE_URL}/services?isActive=true`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -331,7 +330,7 @@ export default function HomePage() {
     setSelectedVenue(venue);
     setShowDetailModal(true);
     setVenueDetail(null);
-    fetch(`${API_URL}/venues/${venue.id}`)
+    fetch(`${API_BASE_URL}/venues/${venue.id}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
@@ -348,7 +347,7 @@ export default function HomePage() {
     setCourts([]);
     setSelectedCourt("");
     fetch(
-      `${API_URL}/venues/${venue.id}/availability?date=${new Date().toISOString()}`
+      `${API_BASE_URL}/venues/${venue.id}/availability?date=${bookingDate}`
     )
       .then((res) => res.json())
       .then((data) => {
@@ -471,7 +470,7 @@ export default function HomePage() {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    fetch(`${API_URL}/booking-requests/public`, {
+    fetch(`${API_BASE_URL}/booking-requests/public`, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -490,12 +489,12 @@ export default function HomePage() {
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
-          if (paymentMethod === "VNPAY" && data.data && data.data.id) {
+          if (paymentMethod === "VNPAY" && data.data && data.data.id && data.data.paymentAmount > 0) {
             openSnackbar({
               type: "success",
-              text: "Đang tạo liên kết thanh toán VNPAY...",
+              text: "Đang tạo liên kết thanh toán VNPAY Sandbox...",
             });
-            fetch(`${API_URL}/vnpay/create-payment`, {
+            fetch(`${API_BASE_URL}/vnpay/create-payment`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -505,34 +504,31 @@ export default function HomePage() {
               }),
             })
               .then((r) => r.json())
-              .then((payData) => {
+              .then(async (payData) => {
                 if (payData.success && payData.payUrl) {
+                  setShowBookingModal(false);
                   openSnackbar({
                     type: "success",
-                    text: "Đang mở cổng thanh toán VNPAY...",
+                    text: "Đang mở cổng thanh toán VNPAY Sandbox...",
                   });
-                  setShowBookingModal(false);
-                  try {
-                    openWebview({ url: payData.payUrl });
-                  } catch (e) {
-                    window.location.assign(payData.payUrl);
-                  }
+                  await openPaymentLink(payData.payUrl);
                 } else {
                   openSnackbar({
                     type: "warning",
-                    text: "Lỗi tạo link thanh toán VNPAY",
+                    text: payData.message || "Không tạo được liên kết thanh toán VNPay Sandbox.",
                   });
                 }
               })
-              .catch(() =>
+              .catch((error) => {
+                console.error("Không thể tạo liên kết thanh toán VNPay:", error);
                 openSnackbar({
                   type: "warning",
-                  text: "Không thể kết nối đến VNPAY",
-                })
-              );
+                  text: error instanceof Error ? error.message : "Không thể kết nối đến VNPay.",
+                });
+              });
           } else {
             setShowBookingModal(false);
-            if (data.data && data.data.transferReference) {
+            if (data.data && data.data.transferReference && data.data.paymentAmount > 0) {
               setTransferDetails({
                 requestId: data.data.id,
                 amount: data.data.paymentAmount || 0,
@@ -551,7 +547,9 @@ export default function HomePage() {
             } else {
               openSnackbar({
                 type: "success",
-                text: "Yêu cầu đặt sân đã được gửi thành công!",
+                text: data.data?.paymentAmount === 0
+                  ? "Yêu cầu không phát sinh thanh toán; đang chờ cơ sở xác nhận."
+                  : "Yêu cầu đặt sân đã được gửi thành công!",
               });
             }
           }
@@ -628,21 +626,20 @@ export default function HomePage() {
               display: "inline-flex",
               alignItems: "center",
               gap: "4px",
-              backgroundColor: "#ECFDF5",
-              border: "1px solid #A7F3D0",
+              backgroundColor: "#F8FAFC",
+              border: "1px solid #CBD5E1",
               padding: "4px 8px",
               borderRadius: "14px",
             }}
           >
-            <span className="live-dot" />
             <span
               style={{
                 fontSize: "10px",
                 fontWeight: "700",
-                color: "#047857",
+                color: "#475569",
               }}
             >
-              05:00-23:00
+              Giờ theo cơ sở
             </span>
           </div>
 
@@ -1083,7 +1080,7 @@ export default function HomePage() {
               marginBottom: "2px",
             }}
           >
-            Ưu đãi 20% cho Sinh viên ĐH Huế
+            Ưu đãi 20% tiền thuê sân
           </div>
           <div
             style={{
@@ -1092,7 +1089,7 @@ export default function HomePage() {
               lineHeight: "1.3",
             }}
           >
-            Tự động giảm 20% tổng hóa đơn khi đăng ký email trường @hce.edu.vn
+            Áp dụng cho tài khoản đăng nhập đã xác thực sinh viên/cán bộ Huế; không áp dụng sản phẩm, dịch vụ.
           </div>
         </div>
       </div>

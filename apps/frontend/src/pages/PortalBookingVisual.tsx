@@ -460,7 +460,7 @@ export default function PortalBookingVisual() {
 
     const itemsAmount = orderedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const courtAmount = Math.max(0, totalAmount - itemsAmount);
-    const isHueMember = Boolean(customerProfile?.isVerifiedHue || customerProfile?.customerType === 'STUDENT' || customerProfile?.customerType === 'FACULTY');
+    const isHueMember = Boolean(customerProfile?.isVerifiedHue);
     const hueDiscount = isHueMember ? Math.round(courtAmount * 0.20) : 0;
     const maxRedeemPoints = Math.max(0, Math.min(
         availableLoyaltyPoints,
@@ -611,7 +611,7 @@ export default function PortalBookingVisual() {
 
             
 
-            if (paymentMethod === 'VNPAY') {
+            if (paymentMethod === 'VNPAY' && finalAmount > 0) {
                 toast({ title: 'Đang chuyển sang trang thanh toán VNPAY...' });
                 const { payUrl } = await bookingRequestApi.createVnpayPayment(bookingRequest.id, finalAmount);
                 if (!payUrl) {
@@ -640,7 +640,12 @@ export default function PortalBookingVisual() {
                 return;
             }
 
-            toast({ title: 'Đã gửi yêu cầu đặt sân thành công!', variant: 'success' });
+            setShowForm(false);
+            toast({
+                title: finalAmount === 0 ? 'Yêu cầu không phát sinh thanh toán' : 'Đã gửi yêu cầu đặt sân thành công!',
+                description: finalAmount === 0 ? 'Yêu cầu đang chờ cơ sở xác nhận.' : undefined,
+                variant: 'success',
+            });
             navigate('/trang-chu');
         } catch (error: any) {
             toast({

@@ -98,6 +98,8 @@ export default function BookingCalendarPage() {
     const [hideCompleted, setHideCompleted] = useState(false);
     const [showRecurringModal, setShowRecurringModal] = useState(false);
     const [showNewBookingModal, setShowNewBookingModal] = useState(false);
+    const [selectedCourtIdForModal, setSelectedCourtIdForModal] = useState<string | undefined>();
+    const [selectedTimeForModal, setSelectedTimeForModal] = useState<string | undefined>();
     const [showEditBookingModal, setShowEditBookingModal] = useState(false);
     const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
     const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -339,7 +341,11 @@ export default function BookingCalendarPage() {
                         <Repeat className="w-4 h-4" />
                         <span className="hidden sm:inline">Lịch cố định</span>
                     </Button>
-                    <Button className="gap-2" onClick={() => setShowNewBookingModal(true)}>
+                    <Button className="gap-2" onClick={() => {
+                        setSelectedCourtIdForModal(undefined);
+                        setSelectedTimeForModal(undefined);
+                        setShowNewBookingModal(true);
+                    }}>
                         <Plus className="w-4 h-4" />
                         <span className="hidden sm:inline">Đặt sân mới</span>
                     </Button>
@@ -711,7 +717,9 @@ export default function BookingCalendarPage() {
                                             ? calendarData?.bookings.filter((b: any) => b.status !== 'COMPLETED') || []
                                             : calendarData?.bookings || []
                                     }
-                                    onSlotClick={(_courtId, date, _time) => {
+                                    onSlotClick={(courtId, date, time) => {
+                                        setSelectedCourtIdForModal(courtId);
+                                        setSelectedTimeForModal(time);
                                         setSelectedDate(date);
                                         setShowNewBookingModal(true);
                                     }}
@@ -771,12 +779,20 @@ export default function BookingCalendarPage() {
             {/* New Booking Modal */}
             <NewBookingModal
                 isOpen={showNewBookingModal}
-                onClose={() => setShowNewBookingModal(false)}
+                onClose={() => {
+                    setShowNewBookingModal(false);
+                    setSelectedCourtIdForModal(undefined);
+                    setSelectedTimeForModal(undefined);
+                }}
                 courts={calendarData?.courts || []}
                 selectedDate={selectedDate}
+                selectedCourtId={selectedCourtIdForModal}
+                selectedTime={selectedTimeForModal}
                 onSuccess={() => {
                     toast({ title: 'Đã tạo lịch đặt sân!' });
                     setShowNewBookingModal(false);
+                    setSelectedCourtIdForModal(undefined);
+                    setSelectedTimeForModal(undefined);
                     queryClient.invalidateQueries({ queryKey: ['calendar'] });
                 }}
             />

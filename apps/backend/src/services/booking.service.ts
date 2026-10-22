@@ -1,6 +1,7 @@
 import prisma from '../config/database.js';
 import { AppError } from '../middleware/error.js';
 import { isWithinOperatingHours, timeToMinutes } from '../utils/booking-rules.js';
+import { isBookingStartInFuture } from '../utils/booking-request-policy.js';
 import { parseBookingOrder, serializeBookingOrder } from '../utils/booking-order.js';
 import { voucherService } from './voucher.service.js';
 import { maintenanceClosureService, bookingInterval } from './maintenance-closure.service.js';
@@ -158,7 +159,23 @@ export class BookingService {
         startTime: string,
         endTime: string,
         excludeBookingId?: string
-    ): Promise<{ available: boolean; conflicts: any[] }> {
+    ): Promise<{ available: boolean; isPast?: boolean; message?: string; conflicts: any[] }> {
+        if (!isBookingStartInFuture(date, startTime)) {
+            return {
+                available: false,
+                isPast: true,
+                message: 'Khung giờ đã qua thời gian hiện tại',
+                conflicts: [
+                    {
+                        id: 'past-slot',
+                        startTime,
+                        endTime,
+                        status: 'EXPIRED',
+                        customer: null,
+                    },
+                ],
+            };
+        }
         const startOfDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
         const endOfDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000 - 1);
 
@@ -447,7 +464,11 @@ export class BookingService {
         await maintenanceClosureService.ensureAvailable(input.courtId, input.date, input.startTime, input.endTime);
 
         // Check availability
-        const { available, conflicts } = await this.checkAvailability(
+        if (!options.bookingRequestId && !isBookingStartInFuture(input.date, input.startTime)) {
+            throw new AppError(400, 'Không thể đặt sân vào ngày hoặc khung giờ đã qua');
+        }
+
+        const { available, isPast, conflicts } = await this.checkAvailability(
             input.courtId,
             input.date,
             input.startTime,
@@ -455,6 +476,9 @@ export class BookingService {
         );
 
         if (!available) {
+            if (isPast) {
+                throw new AppError(400, 'Không thể đặt sân vào ngày hoặc khung giờ đã qua');
+            }
             throw new AppError(409, 'Khung giờ này đã có người đặt', { conflicts });
         }
 
@@ -587,7 +611,11 @@ export class BookingService {
                 throw new AppError(400, 'Khung giờ đặt phải hợp lệ và theo khoảng 30 phút');
             }
 
-            const { available, conflicts } = await this.checkAvailability(
+            if (!isBookingStartInFuture(existing.date, startTime)) {
+                throw new AppError(400, 'Không thể chuyển lịch sang khung giờ đã qua');
+            }
+
+        const { available, isPast, conflicts } = await this.checkAvailability(
                 existing.courtId,
                 existing.date,
                 startTime,
@@ -596,7 +624,10 @@ export class BookingService {
             );
 
             if (!available) {
-                throw new AppError(409, 'Khung giờ này đã có người đặt', { conflicts });
+                if (isPast) {
+                throw new AppError(400, 'Không thể đặt sân vào ngày hoặc khung giờ đã qua');
+            }
+            throw new AppError(409, 'Khung giờ này đã có người đặt', { conflicts });
             }
             await this.ensureNoPendingRequestConflict(existing.courtId, existing.date, startTime, endTime);
 

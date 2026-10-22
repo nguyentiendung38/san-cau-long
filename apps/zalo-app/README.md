@@ -2,6 +2,21 @@
 
 ## Development
 
+The Mini App reads its API base URL from `VITE_API_URL`. For local development it
+defaults to `http://127.0.0.1:3005/api`; for a deployed build, configure this
+variable to the publicly reachable backend URL, including `/api` (for example,
+`https://example.edu.vn/api`). A deployed Mini App must not use a localhost URL.
+
+In production, set `VITE_API_URL` in the build environment to the backend's
+public HTTPS API URL, including `/api`, before building and deploying. The
+production build intentionally fails when this value is missing, invalid, or
+points to localhost. Add the exact Mini App origin to the backend's
+`CORS_ORIGIN` allowlist.
+
+The booking history is private to the signed-in customer account. Customers
+must sign in before viewing their bookings; looking up history by phone number
+is not supported.
+
 ### Using Zalo Mini App Extension
 
 1. Install [Visual Studio Code](https://code.visualstudio.com/download) and [Zalo Mini App Extension](https://mini.zalo.me/docs/dev-tools).

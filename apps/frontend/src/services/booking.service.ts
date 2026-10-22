@@ -101,6 +101,8 @@ export interface PricingResult {
 
 export interface AvailabilityResult {
     available: boolean;
+    isPast?: boolean;
+    message?: string;
     conflicts: Array<{
         id: string;
         startTime: string;
@@ -262,6 +264,36 @@ export function getBookingRequestTotal(request: Pick<BookingRequest, 'orderedIte
         }
     }
     return request.paymentAmount || 0;
+}
+
+export function getBookingRequestPaidAmount(request: Pick<BookingRequest, 'orderedItems' | 'paymentStatus' | 'paymentAmount'>): number {
+    if (request.orderedItems) {
+        try {
+            const parsed = JSON.parse(request.orderedItems);
+            if (typeof parsed?.paidAmount === 'number' && Number.isFinite(parsed.paidAmount)) {
+                return parsed.paidAmount;
+            }
+        } catch {
+            // Older requests store only item arrays; fall back to their payment status.
+        }
+    }
+    return request.paymentStatus === 'PAID' ? request.paymentAmount || 0 : 0;
+}
+
+export function getBookingRequestDue(request: Pick<BookingRequest, 'orderedItems' | 'paymentStatus' | 'paymentAmount'>): number {
+    return Math.max(0, getBookingRequestTotal(request) - getBookingRequestPaidAmount(request));
+}
+
+export function getBookingRequestRefundDue(request: Pick<BookingRequest, 'orderedItems'>): number {
+    if (!request.orderedItems) return 0;
+    try {
+        const parsed = JSON.parse(request.orderedItems);
+        return typeof parsed?.refundDueAmount === 'number' && Number.isFinite(parsed.refundDueAmount)
+            ? Math.max(0, parsed.refundDueAmount)
+            : 0;
+    } catch {
+        return 0;
+    }
 }
 
 export const bookingRequestApi = {

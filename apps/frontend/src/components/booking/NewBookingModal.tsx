@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Calendar, Clock, User, FileText, AlertCircle, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { bookingApi, CreateBookingInput, PricingResult } from '@/services/booking.service';
+import { bookingApi, CreateBookingInput, PricingResult, AvailabilityResult } from '@/services/booking.service';
 import { voucherApi } from '@/services/voucher.service';
 import { customerApi, Customer } from '@/services/customer.service';
 import { Court } from '@/services/booking.service';
@@ -15,6 +15,49 @@ interface NewBookingModalProps {
     selectedCourtId?: string;
     selectedTime?: string;
     onSuccess: () => void;
+}
+
+function getLocalDateString(d = new Date()) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getNextUpcomingSlot() {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const currentMinute = now.getMinutes();
+    let nextHour = currentHour;
+    let nextMinute = currentMinute < 30 ? 30 : 0;
+    if (currentMinute >= 30) {
+        nextHour += 1;
+    }
+    if (nextHour < 6) {
+        nextHour = 6;
+        nextMinute = 0;
+    }
+    if (nextHour >= 23) {
+        nextHour = 22;
+        nextMinute = 0;
+    }
+    const startTime = `${String(nextHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+    const endHour = Math.min(nextHour + 1, 23);
+    const endTime = `${String(endHour).padStart(2, '0')}:${String(nextMinute).padStart(2, '0')}`;
+    return { startTime, endTime };
+}
+
+function isPastSlot(dateStr: string, startTimeStr: string): boolean {
+    if (!dateStr || !startTimeStr) return false;
+    const todayStr = getLocalDateString();
+    if (dateStr < todayStr) return true;
+    if (dateStr > todayStr) return false;
+
+    const now = new Date();
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const [h, m] = startTimeStr.split(':').map(Number);
+    const slotMinutes = (h || 0) * 60 + (m || 0);
+    return slotMinutes <= currentMinutes;
 }
 
 const TIME_OPTIONS = Array.from({ length: 34 }, (_, i) => {
@@ -32,15 +75,37 @@ export function NewBookingModal({
     selectedTime = '',
     onSuccess,
 }: NewBookingModalProps) {
-    const [formData, setFormData] = useState({
-        courtId: selectedCourtId,
-        customerId: '',
-        date: selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`,
-        startTime: selectedTime || '08:00',
-        endTime: selectedTime ?
+    const getInitialDateAndTime = () => {
+        const todayStr = getLocalDateString();
+        const rawDate = selectedDate ? getLocalDateString(selectedDate) : todayStr;
+        const validDate = rawDate < todayStr ? todayStr : rawDate;
+        let validStart = selectedTime;
+        let validEnd = selectedTime ?
             `${String(parseInt(selectedTime.split(':')[0]) + 1).padStart(2, '0')}:${selectedTime.split(':')[1]}`
-            : '09:00',
-        notes: '',
+            : '';
+        if (validDate === todayStr) {
+            if (!validStart || isPastSlot(validDate, validStart)) {
+                const upcoming = getNextUpcomingSlot();
+                validStart = upcoming.startTime;
+                validEnd = upcoming.endTime;
+            }
+        } else if (!validStart) {
+            validStart = '08:00';
+            validEnd = '09:00';
+        }
+        return { validDate, validStart, validEnd };
+    };
+
+    const [formData, setFormData] = useState(() => {
+        const { validDate, validStart, validEnd } = getInitialDateAndTime();
+        return {
+            courtId: selectedCourtId,
+            customerId: '',
+            date: validDate,
+            startTime: validStart,
+            endTime: validEnd,
+            notes: '',
+        };
     });
 
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -50,7 +115,7 @@ export function NewBookingModal({
 
     const [pricing, setPricing] = useState<PricingResult | null>(null);
     const [isLoadingPrice, setIsLoadingPrice] = useState(false);
-    const [availability, setAvailability] = useState<{ available: boolean; conflicts?: Array<{ startTime: string; endTime: string }> } | null>(null);
+    const [availability, setAvailability] = useState<AvailabilityResult | null>(null);
     const [loadingAvailability, setLoadingAvailability] = useState(false);
     const [voucherCode, setVoucherCode] = useState('');
     const [voucherValid, setVoucherValid] = useState(false);
@@ -89,14 +154,13 @@ export function NewBookingModal({
     // Reset form when modal opens
     useEffect(() => {
         if (isOpen) {
+            const { validDate, validStart, validEnd } = getInitialDateAndTime();
             setFormData({
                 courtId: selectedCourtId || courts[0]?.id || '',
                 customerId: '',
-                date: selectedDate ? `${selectedDate.getFullYear()}-${String(selectedDate.getMonth()+1).padStart(2, '0')}-${String(selectedDate.getDate()).padStart(2, '0')}` : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`,
-                startTime: selectedTime || '08:00',
-                endTime: selectedTime ?
-                    `${String(parseInt(selectedTime.split(':')[0]) + 1).padStart(2, '0')}:${selectedTime.split(':')[1]}`
-                    : '09:00',
+                date: validDate,
+                startTime: validStart,
+                endTime: validEnd,
                 notes: '',
             });
             setSelectedCustomer(null);
@@ -168,8 +232,17 @@ export function NewBookingModal({
             newErrors.endTime = 'Giờ kết thúc phải sau giờ bắt đầu';
         }
 
+        const todayStr = getLocalDateString();
+        if (formData.date && formData.date < todayStr) {
+            newErrors.date = 'Không thể đặt sân vào ngày đã qua';
+        } else if (formData.date && formData.startTime && isPastSlot(formData.date, formData.startTime)) {
+            newErrors.startTime = 'Khung giờ này đã qua thời gian hiện tại';
+        }
+
         if (availability && !availability.available) {
-            newErrors.availability = 'Khung giờ này đã có người đặt';
+            newErrors.availability = availability.isPast
+                ? 'Khung giờ đã qua thời gian hiện tại'
+                : 'Khung giờ này đã có người đặt';
         }
 
         if (pricing && pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá') {
@@ -199,8 +272,9 @@ export function NewBookingModal({
             await bookingApi.create(input);
             onSuccess();
             onClose();
-        } catch (error) {
-            setErrors({ submit: 'Không thể tạo lịch đặt. Vui lòng thử lại.' });
+        } catch (error: any) {
+            const message = error.response?.data?.message || 'Không thể tạo lịch đặt. Vui lòng thử lại.';
+            setErrors({ submit: message });
         } finally {
             setIsSubmitting(false);
         }
@@ -212,6 +286,8 @@ export function NewBookingModal({
         setCustomerSearch(customer.name);
         setShowCustomerDropdown(false);
     };
+
+    const isPast = isPastSlot(formData.date, formData.startTime);
 
     if (!isOpen) return null;
 
@@ -273,8 +349,21 @@ export function NewBookingModal({
                         </label>
                         <input
                             type="date"
+                            min={getLocalDateString()}
                             value={formData.date}
-                            onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                            onChange={(e) => {
+                                const newDate = e.target.value;
+                                setFormData(prev => {
+                                    let newStart = prev.startTime;
+                                    let newEnd = prev.endTime;
+                                    if (newDate === getLocalDateString() && isPastSlot(newDate, newStart)) {
+                                        const upcoming = getNextUpcomingSlot();
+                                        newStart = upcoming.startTime;
+                                        newEnd = upcoming.endTime;
+                                    }
+                                    return { ...prev, date: newDate, startTime: newStart, endTime: newEnd };
+                                });
+                            }}
                             className={cn(
                                 "w-full bg-background-tertiary border rounded-lg px-3 py-2.5 text-foreground",
                                 "focus:outline-none focus:ring-2 focus:ring-primary-500",
@@ -326,10 +415,12 @@ export function NewBookingModal({
                     </div>
 
                     {/* Availability Status */}
-                    {formData.courtId && formData.date && (
+                    {formData.courtId && formData.date && formData.startTime && (
                         <div className={cn(
                             "p-3 rounded-lg border flex items-center gap-3",
                             loadingAvailability ? 'border-border bg-background-tertiary' :
+                                isPast ? 'border-amber-500/30 bg-amber-500/10' :
+                                pricing && pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá' ? 'border-red-500/30 bg-red-500/10' :
                                 availability?.available ? 'border-green-500/30 bg-green-500/10' :
                                     'border-red-500/30 bg-red-500/10'
                         )}>
@@ -337,6 +428,11 @@ export function NewBookingModal({
                                 <>
                                     <Loader2 className="w-5 h-5 text-foreground-secondary animate-spin" />
                                     <span className="text-foreground-secondary text-sm">Đang kiểm tra...</span>
+                                </>
+                            ) : isPast ? (
+                                <>
+                                    <AlertCircle className="w-5 h-5 text-amber-500" />
+                                    <span className="text-amber-400 text-sm">Khung giờ đã qua thời gian hiện tại, không thể đặt</span>
                                 </>
                             ) : pricing && pricing.total === 0 && pricing.appliedRule === 'Chưa thiết lập giá' ? (
                                 <>
@@ -354,7 +450,7 @@ export function NewBookingModal({
                                     <span className="text-red-400 text-sm">
                                         Khung giờ đã có người đặt
                                         {availability && availability.conflicts && availability.conflicts.length > 0 && (
-                                            <span> ({availability.conflicts.map(c => `${c.startTime}-${c.endTime}`).join(', ')})</span>
+                                            <span> ({availability.conflicts.filter(c => c.id !== 'past-slot').map(c => `${c.startTime}-${c.endTime}`).join(', ')})</span>
                                         )}
                                     </span>
                                 </>
@@ -530,7 +626,7 @@ export function NewBookingModal({
                     <Button
                         type="submit"
                         onClick={handleSubmit}
-                        disabled={isSubmitting || loadingAvailability || isLoadingPrice || (availability !== null && !availability.available)}
+                        disabled={isSubmitting || loadingAvailability || isLoadingPrice || isPast || (availability !== null && !availability.available)}
                         className="gap-2"
                     >
                         {isSubmitting ? (

@@ -90,6 +90,57 @@ export async function redeemBookingPoints(
     return true;
 }
 
+export async function adjustBookingPointRedemption(
+    tx: Prisma.TransactionClient,
+    request: { id: string; customerId: string | null; redeemPoints: number },
+    nextRedeemPoints: number,
+    operationId: string,
+) {
+    if (!Number.isInteger(nextRedeemPoints) || nextRedeemPoints < 0 || nextRedeemPoints > request.redeemPoints) {
+        throw new AppError(400, 'Số điểm đổi sau khi đổi lịch không hợp lệ');
+    }
+    const pointsToRelease = request.redeemPoints - nextRedeemPoints;
+    if (pointsToRelease === 0) return false;
+    if (!request.customerId) throw new AppError(400, 'Không xác định được tài khoản để điều chỉnh điểm');
+
+    const redemption = await tx.pointsTransaction.findUnique({
+        where: { idempotencyKey: `booking-redeem:${request.id}` },
+        select: { id: true },
+    });
+    if (redemption) {
+        const idempotencyKey = `booking-reschedule-refund:${request.id}:${operationId}`;
+        if (await tx.pointsTransaction.findUnique({ where: { idempotencyKey }, select: { id: true } })) {
+            return false;
+        }
+        const result = await tx.customer.updateMany({
+            where: { id: request.customerId },
+            data: { points: { increment: pointsToRelease } },
+        });
+        if (result.count !== 1) throw new AppError(404, 'Không tìm thấy khách hàng để hoàn điểm');
+        await tx.pointsTransaction.create({
+            data: {
+                customerId: request.customerId,
+                type: 'REVERSAL',
+                points: pointsToRelease,
+                reason: 'Hoàn lại điểm chưa sử dụng do giảm giá trị đổi điểm sau khi đổi lịch',
+                referenceType: 'BOOKING_REQUEST',
+                referenceId: request.id,
+                idempotencyKey,
+            },
+        });
+        return true;
+    }
+
+    const result = await tx.customer.updateMany({
+        where: { id: request.customerId, reservedPoints: { gte: request.redeemPoints } },
+        data: { reservedPoints: { decrement: pointsToRelease } },
+    });
+    if (result.count !== 1) {
+        throw new AppError(409, 'Không thể điều chỉnh số điểm đang giữ; vui lòng kiểm tra hồ sơ khách hàng');
+    }
+    return true;
+}
+
 export async function releaseBookingPointReservation(
     tx: Prisma.TransactionClient,
     request: { id: string; customerId: string | null; redeemPoints: number },

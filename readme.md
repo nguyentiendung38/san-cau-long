@@ -113,6 +113,25 @@ npx prisma migrate dev
 npx prisma db push
 ```
 
+### 4.5 Cấu hình production
+
+Trước khi chạy backend ở production, cấu hình `NODE_ENV=production`,
+`DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET` và `CORS_ORIGIN` trong
+environment của máy chủ. Hai JWT secret phải khác nhau và mỗi secret có ít
+nhất 32 ký tự. `CORS_ORIGIN` phải là danh sách origin chính xác, phân tách
+bằng dấu phẩy; các origin production phải dùng HTTPS. Không dùng secret mẫu
+trong `.env.example` và không commit secret thật vào repository.
+
+Prisma hiện cấu hình SQLite (`provider = "sqlite"`), vì vậy `DATABASE_URL`
+production phải là đường dẫn SQLite tương thích và dữ liệu phải nằm trên vùng
+lưu trữ bền vững được backup; không đặt file database trên ổ đĩa tạm thời của
+container. Nếu triển khai Mini App Zalo, build với `VITE_API_URL` là URL HTTPS
+công khai của backend, bao gồm `/api`, và thêm origin Zalo vào `CORS_ORIGIN`.
+Build production sẽ dừng nếu `VITE_API_URL` thiếu hoặc trỏ tới localhost.
+
+Lịch sử đặt sân trên Mini App yêu cầu khách hàng đăng nhập. API chỉ trả lịch
+đặt thuộc tài khoản trong token, không tra cứu lịch sử bằng số điện thoại.
+
 ---
 
 ## 5. Cách sử dụng hệ thống theo đúng thứ tự

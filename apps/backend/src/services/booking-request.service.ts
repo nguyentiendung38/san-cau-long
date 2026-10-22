@@ -11,6 +11,7 @@ import { notificationService, safelyQueueNotification } from './notification.ser
 import {
     LOYALTY_POINT_VALUE_VND,
     awardInvoicePoints,
+    adjustBookingPointRedemption,
     getMaxRedeemPoints,
     redeemBookingPoints,
     releaseBookingPointReservation,
@@ -25,6 +26,71 @@ interface RequestedOrderItem {
 }
 
 export class BookingRequestService {
+    private getReceivedAmount(request: {
+        paymentStatus: string;
+        paymentAmount: number;
+        orderedItems: string | null;
+    }) {
+        try {
+            const snapshot = request.orderedItems ? JSON.parse(request.orderedItems) : null;
+            if (Number.isFinite(snapshot?.paidAmount) && snapshot.paidAmount >= 0) {
+                return snapshot.paidAmount;
+            }
+        } catch {
+            // Older booking requests do not store a payment snapshot.
+        }
+        return request.paymentStatus === 'PAID' ? request.paymentAmount : 0;
+    }
+
+    private async calculateReschedulePrice(
+        request: {
+            courtId: string | null;
+            customerId: string | null;
+            orderedItems: string | null;
+            discountAmount: number;
+            redeemPoints: number;
+        },
+        date: Date,
+        startTime: string,
+        endTime: string,
+    ) {
+        if (!request.courtId) throw new AppError(400, 'Yêu cầu đặt sân không còn gắn với sân hợp lệ');
+        const { BookingService } = await import('./booking.service.js');
+        const pricing = await new BookingService().calculatePrice(request.courtId, date, startTime, endTime);
+        if (pricing.total <= 0 || pricing.appliedRule?.startsWith('Chưa thiết lập giá')) {
+            throw new AppError(400, 'Khung giờ mới chưa có bảng giá đầy đủ');
+        }
+
+        const order = parseBookingOrder(request.orderedItems);
+        const itemsTotal = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        const subtotal = pricing.total + itemsTotal;
+        const voucherDiscount = Math.min(request.discountAmount || 0, subtotal);
+        const customer = request.customerId
+            ? await prisma.customer.findUnique({
+                where: { id: request.customerId },
+                select: { isVerifiedHue: true },
+            })
+            : null;
+        const hueDiscount = customer?.isVerifiedHue
+            ? Math.min(Math.round(pricing.total * 0.2), Math.max(0, subtotal - voucherDiscount))
+            : 0;
+        const maxRedeemPoints = getMaxRedeemPoints(pricing.total, request.redeemPoints || 0);
+        const availableForPoints = Math.max(0, subtotal - voucherDiscount - hueDiscount);
+        const redeemPoints = Math.min(maxRedeemPoints, Math.floor(availableForPoints / LOYALTY_POINT_VALUE_VND));
+        const loyaltyDiscount = redeemPoints * LOYALTY_POINT_VALUE_VND;
+        const totalAmount = Math.max(0, subtotal - voucherDiscount - loyaltyDiscount - hueDiscount);
+        return {
+            items: order.items,
+            subtotal,
+            totalAmount,
+            discountAmount: voucherDiscount + loyaltyDiscount + hueDiscount,
+            voucherCode: order.voucherCode,
+            hueDiscountAmount: hueDiscount,
+            loyaltyDiscountAmount: loyaltyDiscount,
+            redeemPoints,
+        };
+    }
+
     async expireUnpaidBankTransferRequests(now = new Date()) {
         const expired = await prisma.bookingRequest.findMany({
             where: {
@@ -104,7 +170,13 @@ export class BookingRequestService {
         }
         const customer = await prisma.customer.findUnique({
             where: { id: data.customerId },
-            select: { id: true, phone: true, points: true, reservedPoints: true },
+            select: {
+                id: true,
+                phone: true,
+                points: true,
+                reservedPoints: true,
+                isVerifiedHue: true,
+            },
         });
         if (!customer || customer.phone.trim() !== String(data.phone || '').trim()) {
             throw new AppError(403, 'Số điện thoại đặt sân phải trùng với tài khoản đã đăng nhập');
@@ -289,6 +361,9 @@ export class BookingRequestService {
         const itemsTotal = orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const subtotal = pricing.total + itemsTotal;
         let paymentAmount = subtotal;
+        const hueDiscountAmount = customer.isVerifiedHue
+            ? Math.round(pricing.total * 0.2)
+            : 0;
 
         let discountAmount = 0;
         const redeemPoints = data.redeemPoints ?? 0;
@@ -302,6 +377,7 @@ export class BookingRequestService {
             paymentAmount = Math.max(0, paymentAmount - discountAmount);
             voucherCode = voucherResult.voucher.code;
         }
+        paymentAmount = Math.max(0, paymentAmount - hueDiscountAmount);
 
         const availablePoints = customer.points - customer.reservedPoints;
         const maxRedeemPoints = getMaxRedeemPoints(pricing.total, availablePoints);
@@ -315,10 +391,11 @@ export class BookingRequestService {
         paymentAmount -= loyaltyDiscountAmount;
 
         const createdAt = new Date();
-        const expiresAt = paymentMethod === 'DEPOSIT_TRANSFER'
+        const isFreeBooking = paymentAmount === 0;
+        const expiresAt = paymentMethod === 'DEPOSIT_TRANSFER' && !isFreeBooking
             ? getBankTransferExpiry(createdAt)
             : null;
-        const transferReference = paymentMethod === 'DEPOSIT_TRANSFER'
+        const transferReference = paymentMethod === 'DEPOSIT_TRANSFER' && !isFreeBooking
             ? `HUE${randomBytes(5).toString('hex').toUpperCase()}`
             : null;
         const request = await prisma.$transaction(async (tx) => {
@@ -393,25 +470,28 @@ export class BookingRequestService {
                     notes: data.notes,
                     status: 'PENDING',
                     paymentMethod,
+                    paymentStatus: isFreeBooking ? 'PAID' : 'PENDING',
                     paymentAmount,
                     paymentProof: data.paymentProof,
                     expiresAt,
                     transferReference,
                     redeemPoints,
                     loyaltyDiscountAmount,
+                    hueDiscountAmount,
                     orderedItems: JSON.stringify({
                         items: orderItems,
                         subtotal,
                         totalAmount: paymentAmount,
-                        discountAmount: discountAmount + loyaltyDiscountAmount,
+                        discountAmount: discountAmount + loyaltyDiscountAmount + hueDiscountAmount,
                         voucherCode,
+                        ...(isFreeBooking ? { paidAmount: 0 } : {}),
                     }),
                     voucherCode,
                     discountAmount,
                 },
             });
         });
-        if (paymentMethod === 'DEPOSIT_TRANSFER') {
+        if (paymentMethod === 'DEPOSIT_TRANSFER' && !isFreeBooking) {
             await safelyQueueNotification(notificationService.paymentDeadline(request), 'deadline thanh toán');
         }
         return request;
@@ -469,11 +549,12 @@ export class BookingRequestService {
 
     async getByPhone(phone: string) {
         await this.expireUnpaidBankTransferRequests();
+        const cleanPhone = phone.trim();
         const requests = await prisma.bookingRequest.findMany({
-            where: { phone },
+            where: { phone: cleanPhone },
             orderBy: { createdAt: 'desc' },
             include: {
-                venue: { select: { name: true, address: true, logo: true } },
+                venue: { select: { name: true, address: true, logo: true, bankCode: true, bankAccountNumber: true, bankAccountName: true } },
                 court: { select: { name: true } },
             }
         });
@@ -506,13 +587,14 @@ export class BookingRequestService {
 
     async requestCancellation(
         id: string,
-        customerId: string,
+        customerIdOrPhone: string,
         reason: string,
         change: { type?: 'CANCELLATION' | 'RESCHEDULE'; date?: Date; startTime?: string; endTime?: string } = {},
     ) {
         const request = await prisma.bookingRequest.findUnique({ where: { id } });
         if (!request) throw new AppError(404, 'Không tìm thấy yêu cầu đặt sân');
-        if (request.customerId !== customerId) {
+        const isMatch = request.customerId === customerIdOrPhone || Boolean(request.phone && customerIdOrPhone && request.phone.trim() === customerIdOrPhone.trim());
+        if (!isMatch) {
             throw new AppError(403, 'Bạn không có quyền thao tác yêu cầu đặt sân này');
         }
         if (!['PENDING', 'APPROVED'].includes(request.status)) {
@@ -544,6 +626,41 @@ export class BookingRequestService {
             if (!isWithinOperatingHours(operatingHours, change.date.getUTCDay(), change.startTime, change.endTime)) {
                 throw new AppError(400, 'Khung giờ mới nằm ngoài giờ hoạt động của cơ sở');
             }
+            const quote = await this.calculateReschedulePrice(
+                request,
+                change.date,
+                change.startTime,
+                change.endTime,
+            );
+            let orderSnapshot: Record<string, unknown> = {};
+            try {
+                orderSnapshot = request.orderedItems ? JSON.parse(request.orderedItems) : {};
+            } catch {
+                throw new AppError(400, 'Chi tiết dịch vụ trong lịch đặt không hợp lệ');
+            }
+            const paidAmount = this.getReceivedAmount(request);
+            const updated = await prisma.bookingRequest.update({
+                where: { id },
+                data: {
+                    cancellationRequestStatus: 'PENDING',
+                    cancellationRequestType: 'RESCHEDULE',
+                    cancellationRequestReason: reason,
+                    cancellationRequestedAt: new Date(),
+                    cancellationReviewedAt: null,
+                    requestedDate: change.date,
+                    requestedStartTime: change.startTime,
+                    requestedEndTime: change.endTime,
+                    orderedItems: JSON.stringify({
+                        ...orderSnapshot,
+                        requestedTotalAmount: quote.totalAmount,
+                        requestedRedeemPoints: quote.redeemPoints,
+                        paidAmount,
+                        refundDueAmount: Math.max(0, paidAmount - quote.totalAmount),
+                    }),
+                },
+            });
+            await safelyQueueNotification(notificationService.bookingChangeRequest(updated, 'SUBMITTED'), 'yêu cầu đổi/hủy lịch');
+            return updated;
         }
         const updated = await prisma.bookingRequest.update({
             where: { id },
@@ -563,6 +680,7 @@ export class BookingRequestService {
     }
 
     async reviewCancellationRequest(id: string, status: 'APPROVED' | 'REJECTED', reason?: string) {
+        await this.expireUnpaidBankTransferRequests();
         const updated = await prisma.$transaction(async (tx) => {
             const request = await tx.bookingRequest.findUnique({ where: { id } });
             if (!request) throw new AppError(404, 'Không tìm thấy yêu cầu đặt sân');
@@ -641,15 +759,104 @@ export class BookingRequestService {
                             : 'Sân đang đóng bảo trì trong khung giờ mới',
                     );
                 }
+                const quote = await this.calculateReschedulePrice(
+                    request,
+                    request.requestedDate,
+                    request.requestedStartTime,
+                    request.requestedEndTime,
+                );
+                await adjustBookingPointRedemption(
+                    tx,
+                    request,
+                    quote.redeemPoints,
+                    request.cancellationRequestedAt?.toISOString() || new Date().toISOString(),
+                );
+                const paidAmount = this.getReceivedAmount(request);
+                const paymentStatus = paidAmount >= quote.totalAmount ? 'PAID' : 'PENDING';
+                let orderSnapshot: Record<string, unknown> = {};
+                try {
+                    orderSnapshot = request.orderedItems ? JSON.parse(request.orderedItems) : {};
+                } catch {
+                    throw new AppError(400, 'Chi tiết dịch vụ trong lịch đặt không hợp lệ');
+                }
+                const updatedOrder = JSON.stringify({
+                    ...orderSnapshot,
+                    ...quote,
+                    paidAmount,
+                    refundDueAmount: Math.max(0, paidAmount - quote.totalAmount),
+                    requestedTotalAmount: undefined,
+                    requestedRedeemPoints: undefined,
+                });
+                await tx.bookingRequest.update({
+                    where: { id: request.id },
+                    data: {
+                        paymentAmount: quote.totalAmount,
+                        paymentStatus,
+                        redeemPoints: quote.redeemPoints,
+                        loyaltyDiscountAmount: quote.loyaltyDiscountAmount,
+                        hueDiscountAmount: quote.hueDiscountAmount,
+                        orderedItems: updatedOrder,
+                    },
+                });
                 if (linkedBooking) {
+                    const totalDiscount = quote.discountAmount;
                     await tx.booking.update({
                         where: { id: linkedBooking.id },
                         data: {
                             date: request.requestedDate,
                             startTime: request.requestedStartTime,
                             endTime: request.requestedEndTime,
+                            totalAmount: quote.totalAmount,
+                            orderedItems: JSON.stringify({
+                                items: quote.items,
+                                discountAmount: totalDiscount,
+                                voucherCode: quote.voucherCode,
+                            }),
+                            paymentStatus,
+                            paymentAmount: paidAmount,
                         },
                     });
+                    const invoiceItem = await tx.invoiceItem.findFirst({
+                        where: { bookingId: linkedBooking.id },
+                        include: { invoice: true },
+                    });
+                    if (invoiceItem) {
+                        const invoiceReceived = paidAmount;
+                        const invoiceStatus = invoiceReceived >= quote.totalAmount
+                            ? 'PAID'
+                            : invoiceReceived > 0 ? 'PARTIAL' : 'PENDING';
+                        const countedMatch = invoiceItem.invoice.notes?.match(/\[BookingRequestCountedTotal:(\d+(?:\.\d+)?)\]/);
+                        const countedTotal = countedMatch
+                            ? Number(countedMatch[1])
+                            : invoiceItem.invoice.paymentStatus === 'PAID' ? invoiceItem.invoice.total : 0;
+                        const invoiceNotes = (invoiceItem.invoice.notes || '')
+                            .replace(/\s*\[BookingRequestCountedTotal:\d+(?:\.\d+)?\]/, '')
+                            .replace(/\s*\[Cần Admin xử lý hoàn \d+đ do đổi lịch\]/, '');
+                        const adjustmentNotes = paidAmount > quote.totalAmount
+                            ? ` [Cần Admin xử lý hoàn ${paidAmount - quote.totalAmount}đ do đổi lịch]`
+                            : '';
+                        await tx.invoiceItem.update({
+                            where: { id: invoiceItem.id },
+                            data: {
+                                description: `${invoiceItem.description.split(' - ')[0]} - ${request.requestedStartTime} đến ${request.requestedEndTime}`,
+                                unitPrice: quote.subtotal - quote.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+                                total: quote.subtotal - quote.items.reduce((sum, item) => sum + item.price * item.quantity, 0),
+                            },
+                        });
+                        await tx.invoice.update({
+                            where: { id: invoiceItem.invoiceId },
+                            data: {
+                                subtotal: quote.subtotal,
+                                discount: totalDiscount,
+                                total: quote.totalAmount,
+                                paymentStatus: invoiceStatus,
+                                depositAmount: paidAmount,
+                                paidAmount: 0,
+                                paidAt: invoiceReceived > 0 ? new Date() : null,
+                                notes: `${invoiceNotes} [BookingRequestCountedTotal:${countedTotal}]${adjustmentNotes}`.trim(),
+                            },
+                        });
+                    }
                 }
             }
 
@@ -728,14 +935,22 @@ export class BookingRequestService {
                 where: { id },
                 data: {
                     paymentStatus,
-                    ...(paymentAmount !== undefined ? { paymentAmount } : {}),
-                    ...(requestOrder.totalAmount === undefined
+                    ...(paymentStatus === 'PAID' ? { paymentAmount: requestedTotal } : {}),
+                    ...(paymentStatus === 'PAID' || requestOrder.totalAmount === undefined
                         ? {
                             orderedItems: JSON.stringify({
+                                ...(() => {
+                                    try {
+                                        return existing.orderedItems ? JSON.parse(existing.orderedItems) : {};
+                                    } catch {
+                                        throw new AppError(400, 'Chi tiết dịch vụ trong lịch đặt không hợp lệ');
+                                    }
+                                })(),
                                 items: requestOrder.items,
-                                discountAmount: existing.discountAmount || requestOrder.discountAmount,
+                                discountAmount: requestOrder.discountAmount || existing.discountAmount || 0,
                                 voucherCode: requestOrder.voucherCode || existing.voucherCode || undefined,
                                 totalAmount: requestedTotal,
+                                ...(paymentStatus === 'PAID' ? { paidAmount: amount } : {}),
                             }),
                         }
                         : {}),
@@ -787,6 +1002,7 @@ export class BookingRequestService {
                             data: {
                                 paymentStatus: nextInvoiceStatus,
                                 depositAmount,
+                                paidAmount: 0,
                                 paidAt: receivedAmount > 0 ? new Date() : null,
                             },
                         });
@@ -795,13 +1011,25 @@ export class BookingRequestService {
                             invoiceItem.invoice.paymentStatus !== 'PAID' &&
                             customer
                         ) {
+                            const countedMatch = invoiceItem.invoice.notes?.match(/\[BookingRequestCountedTotal:(\d+(?:\.\d+)?)\]/);
+                            const previouslyCounted = countedMatch
+                                ? Number(countedMatch[1])
+                                : 0;
                             await tx.customer.update({
                                 where: { id: customer.id },
-                                data: { totalSpent: { increment: invoiceItem.invoice.total } },
+                                data: { totalSpent: { increment: Math.max(0, invoiceItem.invoice.total - previouslyCounted) } },
                             });
                         }
                         if (nextInvoiceStatus === 'PAID' && invoiceItem.invoice.paymentStatus !== 'PAID') {
                             await awardInvoicePoints(tx, updatedInvoice);
+                            const invoiceNotes = (invoiceItem.invoice.notes || '')
+                                .replace(/\s*\[BookingRequestCountedTotal:\d+(?:\.\d+)?\]/, '');
+                            await tx.invoice.update({
+                                where: { id: invoiceItem.invoiceId },
+                                data: {
+                                    notes: `${invoiceNotes} [BookingRequestCountedTotal:${invoiceItem.invoice.total}]`.trim(),
+                                },
+                            });
                         }
                     }
                 }
@@ -842,7 +1070,7 @@ export class BookingRequestService {
             const requestMarker = `[Online Request:${request.id}]`;
             const requestOrder = parseBookingOrder(request.orderedItems);
             const requestedTotal = requestOrder.totalAmount ?? request.paymentAmount;
-            const amountReceived = request.paymentStatus === 'PAID' ? request.paymentAmount : 0;
+            const amountReceived = this.getReceivedAmount(request);
             const isFullyPaid = amountReceived >= requestedTotal;
             let booking = await prisma.booking.findFirst({
                 where: {
@@ -882,13 +1110,13 @@ export class BookingRequestService {
                 where: { bookingId: booking.id },
             });
             if (!existingInvoiceItem) {
-                const isPaid = request.paymentStatus === 'PAID' && amountReceived >= requestedTotal;
+                const isPaid = amountReceived >= requestedTotal;
                 await invoiceService.create({
                     customerId: customer.id,
                     bookingIds: [booking.id],
                     paymentMethod: request.paymentMethod,
-                    paymentStatus: isPaid ? 'PAID' : 'PENDING',
-                    paidAmount: isPaid ? amountReceived : 0,
+                    paymentStatus: isPaid ? 'PAID' : amountReceived > 0 ? 'PARTIAL' : 'PENDING',
+                    paidAmount: amountReceived,
                     notes: `Thanh toán ${request.paymentMethod}${request.voucherCode ? ` (Voucher: ${request.voucherCode})` : ''}`,
                 });
             }

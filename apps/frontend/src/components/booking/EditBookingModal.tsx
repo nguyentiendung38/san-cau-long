@@ -59,7 +59,8 @@ export function EditBookingModal({ isOpen, onClose, booking, onSuccess }: EditBo
                 // Filter out current booking from conflicts
                 const filteredConflicts = result.conflicts.filter(c => c.id !== booking.id);
                 setAvailability({
-                    available: filteredConflicts.length === 0,
+                    available: filteredConflicts.length === 0 && !result.isPast,
+                    isPast: result.isPast,
                     conflicts: filteredConflicts
                 });
             } catch {
@@ -198,9 +199,15 @@ export function EditBookingModal({ isOpen, onClose, booking, onSuccess }: EditBo
                                 <>
                                     <AlertCircle className="w-5 h-5 text-red-500" />
                                     <span className="text-red-400 text-sm">
-                                        Khung giờ đã có người đặt
-                                        {availability.conflicts.length > 0 && (
-                                            <span> ({availability.conflicts.map(c => `${c.startTime}-${c.endTime}`).join(', ')})</span>
+                                        {availability.isPast ? (
+                                            'Khung giờ đã qua thời gian hiện tại'
+                                        ) : (
+                                            <>
+                                                Khung giờ đã có người đặt
+                                                {availability.conflicts.filter(c => c.id !== 'past-slot').length > 0 && (
+                                                    <span> ({availability.conflicts.filter(c => c.id !== 'past-slot').map(c => `${c.startTime}-${c.endTime}`).join(', ')})</span>
+                                                )}
+                                            </>
                                         )}
                                     </span>
                                 </>

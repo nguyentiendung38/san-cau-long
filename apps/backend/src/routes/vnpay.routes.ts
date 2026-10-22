@@ -9,21 +9,29 @@ const prisma = new PrismaClient();
 
 const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
 
-// Initialize VNPay instance
-const vnpay = new VNPay({
-    tmnCode: process.env.VNPAY_TMN_CODE?.trim() || 'MX1CF5ZZ',
-    secureSecret: process.env.VNPAY_HASH_SECRET?.trim() || 'TDAQRPYXKBCBJJYUVKECLMCABMVGQCBO',
+const tmnCode = process.env.VNPAY_TMN_CODE?.trim();
+const secureSecret = process.env.VNPAY_HASH_SECRET?.trim();
+const vnpay = tmnCode && secureSecret ? new VNPay({
+    tmnCode,
+    secureSecret,
     vnpayHost: 'https://sandbox.vnpayment.vn',
     testMode: true, 
     hashAlgorithm: 'SHA512' as any, 
     enableLog: false, 
     loggerFn: ignoreLogger, 
-});
+}) : null;
 
 router.post('/create-payment', async (req: Request, res: Response, next: NextFunction) => {
     try {
-        const { amount, orderId, bankCode, source } = req.body;
+        const { orderId, bankCode, source } = req.body;
         
+        if (!vnpay) {
+            return res.status(503).json({
+                success: false,
+                message: 'Chưa cấu hình VNPAY_TMN_CODE và VNPAY_HASH_SECRET của tài khoản Sandbox.',
+            });
+        }
+
         if (!orderId) {
             return res.status(400).json({ success: false, message: 'Thiếu orderId' });
         }
@@ -32,19 +40,45 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
         if (!booking) {
             return res.status(404).json({ success: false, message: 'Không tìm thấy yêu cầu đặt sân' });
         }
-        if (booking.paymentMethod !== 'VNPAY' || booking.paymentStatus === 'PAID' || booking.status !== 'PENDING') {
+        if (booking.paymentMethod !== 'VNPAY' || booking.paymentStatus === 'PAID' || !['PENDING', 'APPROVED'].includes(booking.status)) {
             return res.status(409).json({ success: false, message: 'Yêu cầu không còn ở trạng thái chờ thanh toán VNPay' });
         }
 
-        const realAmount = Number(booking.paymentAmount);
-        const safeAmount = realAmount > 0 ? realAmount : (Number(amount) || 0);
+        let orderSnapshot: { totalAmount?: number; paidAmount?: number } = {};
+        try {
+            orderSnapshot = booking.orderedItems ? JSON.parse(booking.orderedItems) : {};
+        } catch {
+            return res.status(400).json({ success: false, message: 'Chi tiết thanh toán không hợp lệ' });
+        }
+        const totalAmount = Number(orderSnapshot.totalAmount ?? booking.paymentAmount);
+        const paidAmount = Number(orderSnapshot.paidAmount ?? (booking.paymentStatus === 'PAID' ? booking.paymentAmount : 0));
+        const safeAmount = Math.max(0, totalAmount - paidAmount);
 
         if (safeAmount <= 0) {
-            return res.status(400).json({ success: false, message: 'Amount không hợp lệ' });
+            return res.status(409).json({ success: false, message: 'Yêu cầu này không còn khoản tiền cần thanh toán' });
         }
 
-        const baseUrl = process.env.VNPAY_RETURN_URL?.trim() || 'http://localhost:3000/api/vnpay/callback';
-        const vnp_ReturnUrl = source === 'zalo' ? baseUrl.replace('/callback', '/callback/zalo') : baseUrl;
+        const configuredReturnUrl = process.env.VNPAY_RETURN_URL?.trim();
+        let returnUrl: URL;
+        try {
+            if (!configuredReturnUrl) throw new Error('missing');
+            returnUrl = new URL(configuredReturnUrl);
+        } catch {
+            return res.status(503).json({
+                success: false,
+                message: 'VNPAY_RETURN_URL phải là callback đã đăng ký với VNPay Sandbox.',
+            });
+        }
+        returnUrl.pathname = returnUrl.pathname.replace(/\/+$/, '');
+        if (!returnUrl.pathname.endsWith('/callback')) {
+            return res.status(503).json({
+                success: false,
+                message: 'VNPAY_RETURN_URL phải trỏ đến endpoint VNPay /callback.',
+            });
+        }
+        if (source === 'zalo') {
+            returnUrl.searchParams.set('source', 'zalo');
+        }
         
         const ipAddr = '127.0.0.1';
         
@@ -56,7 +90,7 @@ router.post('/create-payment', async (req: Request, res: Response, next: NextFun
             vnp_TxnRef: orderId + '-' + Date.now(),
             vnp_OrderInfo: 'Payment_for_order_' + orderId, 
             vnp_OrderType: 'other' as any,
-            vnp_ReturnUrl: vnp_ReturnUrl,
+            vnp_ReturnUrl: returnUrl.toString(),
             vnp_Locale: 'vn' as any,
             vnp_CreateDate: Number(createDateStr),
             ...(bankCode ? { vnp_BankCode: bankCode } : {})
@@ -131,26 +165,50 @@ const failedHtml = `
 
 router.get(['/callback', '/callback/:source'], async (req: Request, res: Response, next: NextFunction) => {
     try {
+        if (!vnpay) {
+            return res.status(503).send('VNPay callback chưa được cấu hình.');
+        }
         const source = req.params.source || req.query.source;
-        const verify = vnpay.verifyReturnUrl(req.query as any);
+        // Chỉ truyền các tham số vnp_* vào verifyReturnUrl để đảm bảo tính đúng checksum SHA512
+        const vnpParams: Record<string, any> = {};
+        for (const [key, val] of Object.entries(req.query)) {
+            if (key.startsWith('vnp_')) {
+                vnpParams[key] = val;
+            }
+        }
+        const verify = vnpay.verifyReturnUrl(vnpParams as any);
         const transactionReference = typeof req.query.vnp_TxnRef === 'string' ? req.query.vnp_TxnRef : '';
         const orderId = verify.vnp_TxnRef ? verify.vnp_TxnRef.split('-')[0] : '';
         const booking = orderId ? await prisma.bookingRequest.findUnique({ where: { id: orderId } }) : null;
-        const expectedAmount = booking ? Math.round(booking.paymentAmount * 100) : -1;
+        let expectedPaymentAmount = -1;
+        let totalAmount = 0;
+        if (booking) {
+            try {
+                const orderSnapshot = booking.orderedItems ? JSON.parse(booking.orderedItems) : {};
+                totalAmount = Number(orderSnapshot.totalAmount ?? booking.paymentAmount);
+                const paidAmount = Number(orderSnapshot.paidAmount ?? (booking.paymentStatus === 'PAID' ? booking.paymentAmount : 0));
+                expectedPaymentAmount = Math.round(Math.max(0, totalAmount - paidAmount) * 100);
+            } catch {
+                expectedPaymentAmount = -1;
+            }
+        }
         const reportedAmount = Number(req.query.vnp_Amount);
         const validPayment = verify.isVerified &&
             verify.isSuccess &&
             !!booking &&
             booking.paymentMethod === 'VNPAY' &&
-            booking.status === 'PENDING' &&
+            ['PENDING', 'APPROVED'].includes(booking.status) &&
             booking.paymentStatus !== 'PAID' &&
             transactionReference.startsWith(`${booking.id}-`) &&
             Number.isFinite(reportedAmount) &&
-            reportedAmount === expectedAmount;
+            reportedAmount === expectedPaymentAmount &&
+            expectedPaymentAmount > 0;
 
         if (validPayment && booking) {
-            await bookingRequestService.updatePaymentStatus(booking.id, 'PAID', booking.paymentAmount);
-            await bookingRequestService.updateStatus(booking.id, 'APPROVED');
+            await bookingRequestService.updatePaymentStatus(booking.id, 'PAID', totalAmount);
+            if (booking.status === 'PENDING') {
+                await bookingRequestService.updateStatus(booking.id, 'APPROVED');
+            }
             if (source === 'zalo') {
                 res.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-hashes'; style-src 'self' 'unsafe-inline';");
                 return res.send(successHtml);
@@ -161,7 +219,7 @@ router.get(['/callback', '/callback/:source'], async (req: Request, res: Respons
             if (
                 verify.isVerified &&
                 booking?.paymentMethod === 'VNPAY' &&
-                booking.status === 'PENDING' &&
+                ['PENDING', 'APPROVED'].includes(booking.status) &&
                 booking.paymentStatus !== 'PAID'
             ) {
                 await bookingRequestService.updatePaymentStatus(booking.id, 'FAILED');
@@ -174,7 +232,7 @@ router.get(['/callback', '/callback/:source'], async (req: Request, res: Respons
             }
         }
     } catch (error) {
-        return res.redirect(`${frontendUrl}/trang-chu?payment=failed&tab=history`);
+        next(error);
     }
 });
 

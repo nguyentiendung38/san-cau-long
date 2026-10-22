@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget';
-import { bookingRequestApi, getBookingRequestTotal } from '@/services/booking.service';
+import { bookingRequestApi, getBookingRequestDue, getBookingRequestPaidAmount, getBookingRequestRefundDue, getBookingRequestTotal } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
 import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABELS, TYPE_ICONS } from '@/services/explore-content.service';
 import { venueReviewApi } from '@/services/venue-review.service';
@@ -466,7 +466,7 @@ export default function PortalPage() {
 
     const { data: myRequests = [], isLoading: isLoadingRequests, isError: requestsError, refetch: refetchRequests } = useQuery<any[]>({
         queryKey: ['my-requests', portalCustomerId],
-        queryFn: () => bookingRequestApi.getMyRequests().then(data => data.filter((b: any) => !b.notes?.includes('Zalo'))),
+        queryFn: () => bookingRequestApi.getMyRequests(),
         enabled: activeTab === 'history' && !!portalToken,
         refetchInterval: activeTab === 'history' && portalToken ? 30_000 : false,
     });
@@ -1823,7 +1823,9 @@ export default function PortalPage() {
                                                 <span className={`text-right font-semibold ${req.paymentStatus === 'PAID' ? 'text-green-600' : 'text-orange-500'}`}>
                                                     {req.paymentMethod === 'VNPAY' ? 'VNPay' : 'Chuyển khoản'} · {req.paymentStatus === 'PAID' ? 'Đã xác nhận tiền nhận' : req.status === 'EXPIRED' ? 'Đã hết hạn' : 'Chờ xác nhận'}
                                                     {getBookingRequestTotal(req) > 0 && <span className="block text-xs">Tổng: {formatVnd(getBookingRequestTotal(req))}</span>}
-                                                    {req.paymentStatus === 'PAID' && <span className="block text-xs">Đã nhận: {formatVnd(req.paymentAmount || 0)}</span>}
+                                                    <span className="block text-xs">Đã nhận: {formatVnd(getBookingRequestPaidAmount(req))}</span>
+                                                    {getBookingRequestDue(req) > 0 && <span className="block text-xs">Còn phải thanh toán: {formatVnd(getBookingRequestDue(req))}</span>}
+                                                    {getBookingRequestRefundDue(req) > 0 && <span className="block text-xs">Admin cần xử lý hoàn: {formatVnd(getBookingRequestRefundDue(req))}</span>}
                                                 </span>
                                             </div>
                                             {req.paymentMethod === 'DEPOSIT_TRANSFER' && req.transferReference && (
@@ -1882,6 +1884,16 @@ export default function PortalPage() {
                                                     {req.cancellationRequestType === 'RESCHEDULE' && req.requestedDate && (
                                                         <p className="mt-1 font-semibold">Khung giờ đề xuất: {new Date(req.requestedDate).toLocaleDateString('vi-VN')} · {req.requestedStartTime}–{req.requestedEndTime}</p>
                                                     )}
+                                                    {req.cancellationRequestType === 'RESCHEDULE' && req.orderedItems && (() => {
+                                                        try {
+                                                            const requestedTotal = JSON.parse(req.orderedItems).requestedTotalAmount;
+                                                            return Number.isFinite(requestedTotal)
+                                                                ? <p className="mt-1 font-semibold">Tổng dự kiến theo khung giờ mới: {formatVnd(requestedTotal)}</p>
+                                                                : null;
+                                                        } catch {
+                                                            return null;
+                                                        }
+                                                    })()}
                                                 </div>
                                             )}
                                             {req.cancellationRequestStatus === 'REJECTED' && (
@@ -2400,7 +2412,7 @@ export default function PortalPage() {
                                     Chính sách đổi / hủy lịch
                                 </p>
                                 <p>
-                                    Gửi yêu cầu ít nhất 24 giờ trước giờ bắt đầu. Yêu cầu chỉ có hiệu lực sau khi cơ sở duyệt; lịch hiện tại vẫn giữ nguyên trong lúc chờ. Với lịch đã thanh toán, hệ thống không tự hoàn tiền hoặc đổi hóa đơn — khoản tiền được giữ nguyên cho đến khi admin xử lý qua luồng hoàn hóa đơn hiện có.
+                                    Gửi yêu cầu ít nhất 24 giờ trước giờ bắt đầu. Yêu cầu chỉ có hiệu lực sau khi cơ sở duyệt; lịch hiện tại vẫn giữ nguyên trong lúc chờ. Đổi lịch được tính lại theo bảng giá của khung giờ mới; khoản cần trả thêm sẽ hiển thị sau khi duyệt, còn khoản dư (nếu có) do Admin xử lý hoàn riêng.
                                 </p>
                             </div>
 

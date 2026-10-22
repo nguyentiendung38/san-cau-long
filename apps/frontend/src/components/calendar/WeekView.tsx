@@ -73,6 +73,7 @@ export function WeekView({ weekStartDate, courts, bookings, onSlotClick, onBooki
                             const dateKey = `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
                             const dayBookings = bookingsByDateAndCourt[dateKey]?.[court.id] || [];
                             const isToday = date.toDateString() === today.toDateString();
+                            const isPastDate = !isToday && date < today;
 
                             return (
                                 <div
@@ -101,12 +102,18 @@ export function WeekView({ weekStartDate, courts, bookings, onSlotClick, onBooki
                                     {/* Day bookings */}
                                     <div className="space-y-1">
                                         {dayBookings.length === 0 ? (
-                                            <button
-                                                onClick={() => onSlotClick(court.id, date, '08:00')}
-                                                className="w-full text-xs text-foreground-muted py-4 rounded hover:bg-background-hover transition-colors"
-                                            >
-                                                + Đặt sân
-                                            </button>
+                                            isPastDate ? (
+                                                <div className="w-full text-center text-xs text-foreground-muted/40 py-4 select-none">
+                                                    -
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => onSlotClick(court.id, date, '08:00')}
+                                                    className="w-full text-xs text-foreground-muted py-4 rounded hover:bg-background-hover transition-colors"
+                                                >
+                                                    + Đặt sân
+                                                </button>
+                                            )
                                         ) : (
                                             dayBookings.map(booking => (
                                                 <button
