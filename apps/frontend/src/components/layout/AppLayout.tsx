@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+﻿import { NavLink, useNavigate } from 'react-router-dom'
 import {
     LayoutDashboard,
     Calendar,
@@ -24,24 +24,33 @@ interface AppLayoutProps {
     children: React.ReactNode
 }
 
-const navigation = [
-    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-    { name: 'Lịch đặt sân', href: '/calendar', icon: Calendar },
-    { name: 'Yêu cầu đặt sân', href: '/booking-requests', icon: ClipboardList },
-    { name: 'Khách hàng', href: '/customers', icon: Users },
-    { name: 'Quản lý sân', href: '/courts', icon: Grid3X3 },
-    { name: 'Quản lý cơ sở', href: '/venues', icon: Building2 },
-    { name: 'Hóa đơn', href: '/invoices', icon: FileText },
-    { name: 'Kho & Dịch vụ', href: '/inventory', icon: Package },
-    { name: 'Báo cáo', href: '/reports', icon: BarChart3 },
-    { name: 'Nội dung Khám phá', href: '/explore-content', icon: Compass },
-    { name: 'Đánh giá sân', href: '/venue-reviews', icon: MessageSquareQuote },
-    { name: 'Nhân viên & Phân quyền', href: '/staff', icon: ShieldCheck },
+interface NavigationItem {
+    name: string
+    href: string
+    icon: any
+    roles: string[]
+}
+
+const navigation: NavigationItem[] = [
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+    { name: 'Lịch đặt sân', href: '/calendar', icon: Calendar, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'Yêu cầu đặt sân', href: '/booking-requests', icon: ClipboardList, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'Khách hàng', href: '/customers', icon: Users, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'Quản lý sân', href: '/courts', icon: Grid3X3, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+    { name: 'Quản lý cơ sở', href: '/venues', icon: Building2, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    { name: 'Hóa đơn', href: '/invoices', icon: FileText, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'Kho & Dịch vụ', href: '/inventory', icon: Package, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER', 'STAFF'] },
+    { name: 'Báo cáo', href: '/reports', icon: BarChart3, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    { name: 'Nội dung Khám phá', href: '/explore-content', icon: Compass, roles: ['SUPER_ADMIN', 'ADMIN'] },
+    { name: 'Đánh giá sân', href: '/venue-reviews', icon: MessageSquareQuote, roles: ['SUPER_ADMIN', 'ADMIN', 'MANAGER'] },
+    { name: 'Nhân viên & Phân quyền', href: '/staff', icon: ShieldCheck, roles: ['SUPER_ADMIN', 'ADMIN'] },
 ]
 
 export function AppLayout({ children }: AppLayoutProps) {
     const { user, logout } = useAuthStore()
     const navigate = useNavigate()
+    const userRole = user?.role || 'STAFF'
+    const visibleNavigation = navigation.filter((item) => item.roles.includes(userRole))
 
     const handleLogout = () => {
         logout()
@@ -60,7 +69,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
                 {/* Navigation */}
                 <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-                    {navigation.map((item) => (
+                    {visibleNavigation.map((item) => (
                         <NavLink
                             key={item.href}
                             to={item.href}
@@ -81,6 +90,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
                 {/* Settings & Logout */}
                 <div className="p-3 border-t border-border space-y-1">
+                    {(userRole === 'SUPER_ADMIN' || userRole === 'ADMIN') && (
                     <NavLink
                         to="/settings"
                         className={({ isActive }) =>
@@ -95,6 +105,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                         <Settings className="w-5 h-5" />
                         Cài đặt
                     </NavLink>
+                    )}
                     <button
                         onClick={handleLogout}
                         className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-foreground-secondary hover:text-error hover:bg-error/10 transition-colors w-full"
@@ -149,3 +160,4 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
     )
 }
+

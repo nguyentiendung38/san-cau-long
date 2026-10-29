@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
+﻿import { useState, useRef, useEffect, useCallback, KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { MessageCircle, X, Send, RotateCcw, Bot, User, Loader2, Sparkles } from 'lucide-react'
+import { X, Send, RotateCcw, Bot, User, Loader2, Sparkles } from 'lucide-react'
 import { chatbotService } from '@/services/chatbot.service'
 
 interface Message {
@@ -342,18 +342,18 @@ export function ChatBotWidget() {
             {/* ======================== FLOATING BUTTON ======================== */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className={`fixed bottom-[84px] md:bottom-6 right-4 md:right-6 z-[60] w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-110 ${
+                className={`fixed bottom-[84px] md:bottom-6 right-4 md:right-6 z-[60] w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all duration-300 hover:scale-110 ${
                     isOpen
                         ? 'bg-gray-600 hover:bg-gray-700 rotate-0'
-                        : 'bg-gradient-to-br from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700'
+                        : 'bg-transparent'
                 }`}
                 title={isOpen ? 'Đóng chat' : 'Chat với AI'}
             >
                 {isOpen ? (
-                    <X className="w-6 h-6 text-white" />
+                    <X className="w-5 h-5 text-white" />
                 ) : (
                     <>
-                        <MessageCircle className="w-6 h-6 text-white" />
+                        <img src="/icons/chat-ai.svg" alt="Chat AI" className="w-12 h-12 rounded-full" />
                         {hasNewMessage && (
                             <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
                                 <span className="text-[10px] text-white font-bold">!</span>
@@ -367,3 +367,5 @@ export function ChatBotWidget() {
         </>
     )
 }
+
+

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
     Settings,
     Building2,
@@ -28,6 +29,8 @@ import { operatingHourApi, OperatingHour } from '@/services/operating-hour.servi
 import { voucherApi, Voucher } from '@/services/voucher.service';
 import { PricingMatrixView } from '@/components/settings/PricingMatrixView';
 import { useToast } from '@/hooks/use-toast';
+import { authService } from '@/services/auth.service';
+import { useAuthStore } from '@/stores/auth.store';
 
 interface TabProps {
     active: boolean;
@@ -230,6 +233,8 @@ const getOperatingStatus = (venue: any) => {
 };
 
 export default function SettingsPage() {
+    const navigate = useNavigate();
+    const logout = useAuthStore((state) => state.logout);
     const [activeTab, setActiveTab] = useState('venue');
     const [notificationPreferences, setNotificationPreferences] = useState(getNotificationSettings);
     const [isVenueModalOpen, setIsVenueModalOpen] = useState(false);
@@ -274,8 +279,58 @@ export default function SettingsPage() {
         pricePerHour: 150000,
         priority: 0,
     });
+    const [currentPassword, setCurrentPassword] = useState('');
+    const [newPassword, setNewPassword] = useState('');
+    const [confirmNewPassword, setConfirmNewPassword] = useState('');
+    const [isChangingPassword, setIsChangingPassword] = useState(false);
+    const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
     const { toast } = useToast();
     const queryClient = useQueryClient();
+
+    const handleChangePassword = async () => {
+        if (newPassword.length < 8 || new TextEncoder().encode(newPassword).length > 72) {
+            toast({ title: 'Mật khẩu mới phải có ít nhất 8 ký tự và không vượt quá 72 byte', variant: 'error' });
+            return;
+        }
+        if (newPassword !== confirmNewPassword) {
+            toast({ title: 'Mật khẩu xác nhận không khớp', variant: 'error' });
+            return;
+        }
+
+        setIsChangingPassword(true);
+        try {
+            await authService.changePassword(currentPassword, newPassword);
+            toast({ title: 'Đổi mật khẩu thành công', description: 'Vui lòng đăng nhập lại.', variant: 'success' });
+            logout();
+            navigate('/login');
+        } catch (error: any) {
+            toast({
+                title: 'Không thể đổi mật khẩu',
+                description: error.response?.data?.message || 'Vui lòng kiểm tra mật khẩu hiện tại và thử lại.',
+                variant: 'error',
+            });
+        } finally {
+            setIsChangingPassword(false);
+        }
+    };
+
+    const handleLogoutAllDevices = async () => {
+        setIsLoggingOutAll(true);
+        try {
+            await authService.logoutAllDevices();
+            toast({ title: 'Đã đăng xuất khỏi tất cả thiết bị', variant: 'success' });
+            logout();
+            navigate('/login');
+        } catch (error: any) {
+            toast({
+                title: 'Không thể đăng xuất các thiết bị',
+                description: error.response?.data?.message || 'Vui lòng thử lại sau.',
+                variant: 'error',
+            });
+        } finally {
+            setIsLoggingOutAll(false);
+        }
+    };
 
     const updateNotificationPreference = (key: (typeof notificationSettings)[number]['key'], enabled: boolean) => {
         localStorage.setItem(key, String(enabled));
@@ -916,19 +971,46 @@ export default function SettingsPage() {
                                     <div className="space-y-4 max-w-md">
                                         <div>
                                             <label className="block text-sm text-foreground-secondary mb-1">Mật khẩu hiện tại</label>
-                                            <Input type="password" placeholder="••••••••" />
+                                            <Input
+                                                type="password"
+                                                autoComplete="current-password"
+                                                value={currentPassword}
+                                                onChange={(event) => setCurrentPassword(event.target.value)}
+                                                placeholder="••••••••"
+                                                disabled={isChangingPassword}
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-sm text-foreground-secondary mb-1">Mật khẩu mới</label>
-                                            <Input type="password" placeholder="••••••••" />
+                                            <Input
+                                                type="password"
+                                                autoComplete="new-password"
+                                                value={newPassword}
+                                                onChange={(event) => setNewPassword(event.target.value)}
+                                                placeholder="Ít nhất 8 ký tự"
+                                                minLength={8}
+                                                maxLength={72}
+                                                disabled={isChangingPassword}
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-sm text-foreground-secondary mb-1">Xác nhận mật khẩu mới</label>
-                                            <Input type="password" placeholder="••••••••" />
+                                            <Input
+                                                type="password"
+                                                autoComplete="new-password"
+                                                value={confirmNewPassword}
+                                                onChange={(event) => setConfirmNewPassword(event.target.value)}
+                                                placeholder="Nhập lại mật khẩu mới"
+                                                disabled={isChangingPassword}
+                                            />
                                         </div>
-                                        <Button className="gap-2">
+                                        <Button
+                                            className="gap-2"
+                                            onClick={handleChangePassword}
+                                            disabled={isChangingPassword || !currentPassword || !newPassword || !confirmNewPassword}
+                                        >
                                             <Save className="w-4 h-4" />
-                                            Cập nhật mật khẩu
+                                            {isChangingPassword ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
                                         </Button>
                                     </div>
                                 </div>
@@ -936,10 +1018,10 @@ export default function SettingsPage() {
                                 <div className="border-t border-border pt-6">
                                     <h4 className="font-medium text-foreground mb-4">Phiên đăng nhập</h4>
                                     <p className="text-sm text-foreground-secondary mb-4">
-                                        Bạn đang đăng nhập từ 1 thiết bị. Nhấn nút bên dưới để đăng xuất khỏi tất cả thiết bị khác.
+                                        Đăng xuất tài khoản này khỏi mọi thiết bị, bao gồm cả phiên hiện tại.
                                     </p>
-                                    <Button variant="destructive">
-                                        Đăng xuất tất cả thiết bị khác
+                                    <Button variant="destructive" onClick={handleLogoutAllDevices} disabled={isLoggingOutAll}>
+                                        {isLoggingOutAll ? 'Đang đăng xuất...' : 'Đăng xuất tất cả thiết bị'}
                                     </Button>
                                 </div>
                             </div>

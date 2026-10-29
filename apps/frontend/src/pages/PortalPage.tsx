@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { venueApi, courtApi, Venue, Court } from '@/services/venue.service';
 import { ChatBotWidget } from '@/components/chatbot/ChatBotWidget';
+import { ContactButtons } from '@/components/chatbot/ContactButtons';
 import { bookingRequestApi, getBookingRequestDue, getBookingRequestPaidAmount, getBookingRequestRefundDue, getBookingRequestTotal } from '@/services/booking.service';
 import { useToast } from '@/hooks/use-toast';
 import { exploreContentPublicApi, ExploreContent, ExploreContentType, TYPE_LABELS, TYPE_ICONS } from '@/services/explore-content.service';
@@ -2508,6 +2509,7 @@ export default function PortalPage() {
                 onSuccess={() => refetchLoyalty()} 
             />
 
+            <ContactButtons />
             <ChatBotWidget />
         </div>
     );

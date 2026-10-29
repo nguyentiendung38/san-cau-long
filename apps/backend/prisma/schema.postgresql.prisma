@@ -266,30 +266,3 @@ model InvoiceItem {
   @@map("invoice_items")
 }
 
-/// MembershipPlan - Membership tier configuration
-model MembershipPlan {
-  id           String   @id @default(cuid())
-  tier         String   @unique // BRONZE, SILVER, GOLD, PLATINUM
-  name         String
-  description  String?
-  price        Float
-  durationDays Int
-  discount     Int      @default(0)
-  benefits     String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  @@map("membership_plans")
-}
-
-/// SystemConfig - Global configuration
-model SystemConfig {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("system_config")
-}

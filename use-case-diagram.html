@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Biểu đồ Use Case Tổng Quát - Sân Cầu Lông</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f8fafc;
+      text-align: center;
+    }
+    h2 { color: #0f172a; }
+    .toolbar {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    button {
+      background: #059669;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button:hover { background: #047857; }
+    #container {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+      display: inline-block;
+      max-width: 95%;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h2>BIỂU ĐỒ USE CASE TỔNG QUÁT HỆ THỐNG SÂN CẦU LÔNG</h2>
+  <div class="toolbar">
+    <button onclick="downloadPNG()">📥 Tải về ảnh PNG (Khuyên dùng)</button>
+    <button onclick="downloadSVG()">📥 Tải về file SVG</button>
+  </div>
+
+  <div id="container">
+    <pre class="mermaid" id="diagram">
+flowchart LR
+    subgraph ACTORS ["TÁC NHÂN (ACTORS)"]
+        Customer(("👤 Khách hàng\n(Customer)"))
+        Staff(("👔 Nhân viên lễ tân\n(Staff)"))
+        Admin(("👑 Quản trị viên\n(Admin)"))
+        ChatbotAI(("🤖 Trợ lý ảo AI\n(Gemini Chatbot)"))
+    end
+
+    subgraph SYSTEM ["HỆ THỐNG QUẢN LÝ SÂN CẦU LÔNG"]
+        subgraph G_Portal ["1. Cổng Khách hàng (Portal / Zalo App)"]
+            UC_Search["Tra cứu sân trống & Giá"]
+            UC_BookingReq["Đặt sân & Gửi ảnh cọc"]
+            UC_CancelReq["Gửi yêu cầu Hủy / Đổi giờ"]
+            UC_Points["Tích lũy & Đổi điểm thưởng"]
+            UC_Voucher["Áp dụng mã Voucher"]
+            UC_Review["Gửi đánh giá & Số sao cơ sở"]
+            UC_Fav["Yêu thích Sân / Cơ sở"]
+        end
+
+        subgraph G_Staff ["2. Quản lý Đặt sân & Vận hành tại quầy"]
+            UC_Calendar["Xem lịch đặt sân (Calendar)"]
+            UC_ApproveReq["Duyệt / Từ chối yêu cầu đặt"]
+            UC_DirectBooking["Tạo lịch đặt sân tại quầy"]
+            UC_CheckIn["Check-in khách vào sân (Mã QR)"]
+            UC_CheckOut["Check-out & Xuất hóa đơn"]
+            UC_SellItems["Bán nước & Cho thuê phụ kiện"]
+        end
+
+        subgraph G_Admin ["3. Quản trị Hệ thống & Thiết lập"]
+            UC_ManageVenue["Quản lý Cơ sở, Sân & Giờ hoạt động"]
+            UC_Pricing["Thiết lập bảng giá linh động"]
+            UC_Maint["Đặt lịch bảo trì / Đóng sân"]
+            UC_ManageVoucher["Quản lý Khuyến mãi & Voucher"]
+            UC_ManageStaff["Quản lý & Phân quyền nhân viên"]
+            UC_Explore["Quản lý bài viết Khám phá"]
+            UC_Reports["Báo cáo Doanh thu & Thống kê"]
+        end
+
+        subgraph G_AI ["4. Trợ lý Thông minh"]
+            UC_AIChat["Tư vấn lịch trống & Hỏi đáp"]
+            UC_AIBooking["Hỗ trợ tạo đơn đặt sân qua Chat"]
+        end
+    end
+
+    Customer --- UC_Search
+    Customer --- UC_BookingReq
+    Customer --- UC_CancelReq
+    Customer --- UC_Points
+    Customer --- UC_Voucher
+    Customer --- UC_Review
+    Customer --- UC_Fav
+    Customer --- UC_AIChat
+
+    ChatbotAI --- UC_AIChat
+    ChatbotAI --- UC_AIBooking
+    UC_AIBooking -.->|tạo đơn| UC_BookingReq
+
+    Staff --- UC_Calendar
+    Staff --- UC_ApproveReq
+    Staff --- UC_DirectBooking
+    Staff --- UC_CheckIn
+    Staff --- UC_CheckOut
+    Staff --- UC_SellItems
+
+    Admin --- UC_ManageVenue
+    Admin --- UC_Pricing
+    Admin --- UC_Maint
+    Admin --- UC_ManageVoucher
+    Admin --- UC_ManageStaff
+    Admin --- UC_Explore
+    Admin --- UC_Reports
+
+    UC_BookingReq -.->|include| UC_Voucher
+    UC_CheckOut -.->|include| UC_SellItems
+    UC_CheckOut -.->|include| UC_Points
+    UC_ApproveReq -.->|duyệt| UC_Calendar
+    </pre>
+  </div>
+
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+
+    function downloadSVG() {
+      const svg = document.querySelector("#container svg");
+      if (!svg) return alert("Biểu đồ đang tải, vui lòng đợi 1 giây!");
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "use-case-san-cau-long.svg";
+      a.click();
+    }
+
+    function downloadPNG() {
+      const svg = document.querySelector("#container svg");
+      if (!svg) return alert("Biểu đồ đang tải, vui lòng đợi 1 giây!");
+      const svgData = new XMLSerializer().serializeToString(svg);
+      const img = new Image();
+      const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(svgBlob);
+
+      img.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * 2;
+        canvas.height = img.height * 2;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        
+        const a = document.createElement("a");
+        a.href = canvas.toDataURL("image/png");
+        a.download = "use-case-san-cau-long.png";
+        a.click();
+      };
+      img.src = url;
+    }
+  </script>
+</body>
+</html>
+

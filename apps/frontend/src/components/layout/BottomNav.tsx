@@ -1,4 +1,6 @@
 import { NavLink } from 'react-router-dom';
+import { useAuthStore } from '@/stores/auth.store';
+import { Package } from 'lucide-react';
 import {
     LayoutDashboard,
     Calendar,
@@ -17,10 +19,20 @@ const navItems = [
 ];
 
 export function BottomNav() {
+    const { user } = useAuthStore();
+    const role = user?.role || 'STAFF';
+    const items = role === 'STAFF' 
+        ? [
+            { name: 'Lịch', href: '/calendar', icon: Calendar },
+            { name: 'Khách', href: '/customers', icon: Users },
+            { name: 'Hóa đơn', href: '/invoices', icon: FileText },
+            { name: 'Kho', href: '/inventory', icon: Package },
+          ]
+        : navItems;
     return (
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-background-secondary border-t border-border safe-area-inset-bottom">
             <div className="flex items-center justify-around h-16">
-                {navItems.map((item) => (
+                {items.map((item) => (
                     <NavLink
                         key={item.href}
                         to={item.href}

@@ -1,4 +1,4 @@
-// Prisma Schema for TikShop Finance - TikTok Shop E-commerce Financial Management
+// Prisma Schema for Sân Cầu Lông Management System
 // Database: SQLite for development, PostgreSQL for production
 
 generator client {
@@ -14,19 +14,22 @@ datasource db {
 // MODELS (SQLite compatible - no enums, use String instead)
 // ============================================================================
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: users  —  Tài khoản nhân viên / quản trị đăng nhập hệ thống
+// ████████████████████████████████████████████████████████████████████████████
 /// User - Staff/Admin accounts
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String
-  name         String
-  phone        String?
-  avatar       String?
-  role         String    @default("STAFF") // SUPER_ADMIN, ADMIN, MANAGER, STAFF
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id           String    @id @default(cuid()) // Mã định danh duy nhất
+  email        String    @unique // Email đăng nhập (không trùng)
+  passwordHash String // Mật khẩu đã mã hóa
+  name         String // Họ tên
+  phone        String? // Số điện thoại
+  avatar       String? // Ảnh đại diện (URL)
+  role         String    @default("STAFF") // Vai trò: SUPER_ADMIN, ADMIN, MANAGER, STAFF
+  isActive     Boolean   @default(true) // Tài khoản còn hoạt động hay bị khóa
+  lastLoginAt  DateTime? // Lần đăng nhập gần nhất
+  createdAt    DateTime  @default(now()) // Ngày tạo
+  updatedAt    DateTime  @updatedAt // Ngày cập nhật gần nhất
 
   venues        VenueStaff[] //cơ sở, nhân viên cơ sở
   bookings      Booking[]      @relation("CreatedByUser")
@@ -35,38 +38,44 @@ model User {
   @@map("users")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: refresh_tokens  —  Token làm mới phiên đăng nhập (JWT)
+// ████████████████████████████████████████████████████████████████████████████
 /// RefreshToken - JWT refresh tokens
 model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id        String   @id @default(cuid()) // Mã định danh
+  token     String   @unique // Chuỗi refresh token
+  userId    String // Thuộc tài khoản nào (users.id)
+  expiresAt DateTime // Thời điểm hết hạn
+  createdAt DateTime @default(now()) // Ngày tạo
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("refresh_tokens")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: venues  —  Cơ sở / chi nhánh sân cầu lông
+// ████████████████████████████████████████████████████████████████████████████
 /// Venue - Sports facility/location
 model Venue {
-  id                String   @id @default(cuid())
-  name              String
-  address           String
-  phone             String?
-  email             String?
-  description       String?
-  termsAndServices  String?
-  bankCode          String?
-  bankAccountNumber String?
-  bankAccountName   String?
-  logo              String?
-  images            String?
-  openTime          String   @default("06:00")
-  closeTime         String   @default("23:00")
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                String   @id @default(cuid()) // Mã định danh
+  name              String // Tên cơ sở
+  address           String // Địa chỉ
+  phone             String? // Số điện thoại liên hệ
+  email             String? // Email liên hệ
+  description       String? // Mô tả giới thiệu
+  termsAndServices  String? // Điều khoản và dịch vụ của cơ sở
+  bankCode          String? // Mã ngân hàng nhận tiền cọc
+  bankAccountNumber String? // Số tài khoản ngân hàng
+  bankAccountName   String? // Tên chủ tài khoản
+  logo              String? // Logo (URL)
+  images            String? // Danh sách ảnh cơ sở
+  openTime          String   @default("06:00") // Giờ mở cửa mặc định
+  closeTime         String   @default("23:00") // Giờ đóng cửa mặc định
+  isActive          Boolean  @default(true) // Còn hoạt động hay không
+  createdAt         DateTime @default(now()) // Ngày tạo
+  updatedAt         DateTime @updatedAt // Ngày cập nhật
 
   courts            Court[]
   staff             VenueStaff[]
@@ -81,13 +90,16 @@ model Venue {
   @@map("venues")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: venue_staff  —  Nhân viên làm việc ở cơ sở nào (nhiều-nhiều users <-> venues)
+// ████████████████████████████████████████████████████████████████████████████
 /// VenueStaff - Many-to-many User <-> Venue
 model VenueStaff {
-  id        String   @id @default(cuid())
-  userId    String
-  venueId   String
-  role      String   @default("STAFF")
-  createdAt DateTime @default(now())
+  id        String   @id @default(cuid()) // Mã định danh
+  userId    String // Nhân viên (users.id)
+  venueId   String // Cơ sở (venues.id)
+  role      String   @default("STAFF") // Vai trò của nhân viên tại cơ sở này
+  createdAt DateTime @default(now()) // Ngày gán
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
@@ -96,18 +108,21 @@ model VenueStaff {
   @@map("venue_staff")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: courts  —  Từng sân cụ thể trong một cơ sở
+// ████████████████████████████████████████████████████████████████████████████
 /// Court - Individual playing court
 model Court {
-  id          String   @id @default(cuid())
-  venueId     String
-  name        String
-  description String?
-  surfaceType String?
-  isIndoor    Boolean  @default(true)
-  status      String   @default("ACTIVE") // ACTIVE, MAINTENANCE, INACTIVE
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String   @id @default(cuid()) // Mã định danh
+  venueId     String // Thuộc cơ sở nào (venues.id)
+  name        String // Tên sân (VD: Sân 1)
+  description String? // Mô tả
+  surfaceType String? // Loại mặt sân (thảm, gỗ...)
+  isIndoor    Boolean  @default(true) // Sân trong nhà hay ngoài trời
+  status      String   @default("ACTIVE") // Trạng thái: ACTIVE, MAINTENANCE, INACTIVE
+  sortOrder   Int      @default(0) // Thứ tự hiển thị
+  createdAt   DateTime @default(now()) // Ngày tạo
+  updatedAt   DateTime @updatedAt // Ngày cập nhật
 
   venue               Venue                   @relation(fields: [venueId], references: [id], onDelete: Cascade)
   bookings            Booking[]
@@ -118,30 +133,33 @@ model Court {
   @@map("courts")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: customers  —  Khách hàng đặt sân
+// ████████████████████████████████████████████████████████████████████████████
 /// Customer - Court users/clients
 model Customer {
-  id              String    @id @default(cuid())
-  name            String
-  phone           String    @unique
-  email           String?
-  dateOfBirth     DateTime?
-  address         String?
-  notes           String?
-  studentId       String?
-  faculty         String?
-  customerType    String    @default("EXTERNAL")
-  isVerifiedHue   Boolean   @default(false)
-  membershipTier  String? // BRONZE, SILVER, GOLD, PLATINUM
-  membershipStart DateTime?
-  membershipEnd   DateTime?
-  totalBookings   Int       @default(0)
-  totalSpent      Float     @default(0)
-  points          Int       @default(0)
-  reservedPoints  Int       @default(0)
-  passwordHash    String?
-  isActive        Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id              String    @id @default(cuid()) // Mã định danh
+  name            String // Họ tên
+  phone           String    @unique // Số điện thoại (không trùng, dùng để đăng nhập/tra cứu)
+  email           String? // Email
+  dateOfBirth     DateTime? // Ngày sinh
+  address         String? // Địa chỉ
+  notes           String? // Ghi chú về khách
+  studentId       String? // Mã sinh viên (nếu là sinh viên)
+  faculty         String? // Khoa / trường
+  customerType    String    @default("EXTERNAL") // Loại khách (VD: EXTERNAL = khách ngoài, hoặc sinh viên)
+  isVerifiedHue   Boolean   @default(false) // Đã xác minh là sinh viên/đối tượng ưu đãi Huế
+  membershipTier  String? // Hạng thành viên: BRONZE, SILVER, GOLD, PLATINUM
+  membershipStart DateTime? // Ngày bắt đầu hạng thành viên
+  membershipEnd   DateTime? // Ngày hết hạn hạng thành viên
+  totalBookings   Int       @default(0) // Tổng số lần đặt sân
+  totalSpent      Float     @default(0) // Tổng tiền đã chi
+  points          Int       @default(0) // Điểm tích lũy hiện có
+  reservedPoints  Int       @default(0) // Điểm đang bị giữ cho đơn chưa hoàn tất
+  passwordHash    String? // Mật khẩu đã mã hóa (nếu khách có tài khoản)
+  isActive        Boolean   @default(true) // Còn hoạt động hay bị khóa
+  createdAt       DateTime  @default(now()) // Ngày tạo
+  updatedAt       DateTime  @updatedAt // Ngày cập nhật
 
   bookings           Booking[]
   invoices           Invoice[]
@@ -153,49 +171,72 @@ model Customer {
   @@map("customers")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: otp_records  —  Mã OTP xác thực qua email (khách hàng)
+// ████████████████████████████████████████████████████████████████████████████
 /// OTP Record - For authentication
 model OtpRecord {
-  id        String   @id @default(cuid())
-  email     String
-  otp       String
-  createdAt DateTime @default(now())
-  expiresAt DateTime
+  id        String   @id @default(cuid()) // Mã định danh
+  email     String // Email nhận OTP
+  otp       String // Mã OTP
+  createdAt DateTime @default(now()) // Thời điểm tạo
+  expiresAt DateTime // Thời điểm hết hạn
 
   @@map("otp_records")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: admin_auth_otps  —  OTP khi admin đăng ký / quên mật khẩu
+// ████████████████████████████████████████████████████████████████████████████
+/// OTP for admin account registration and password resets
+model AdminAuthOtp {
+  id        String   @id @default(cuid()) // Mã định danh
+  email     String // Email nhận OTP
+  purpose   String // Mục đích: đăng ký hay đặt lại mật khẩu
+  otpHash   String // Mã OTP đã băm (không lưu thô)
+  attempts  Int      @default(0) // Số lần nhập sai
+  createdAt DateTime @default(now()) // Thời điểm tạo
+  expiresAt DateTime // Thời điểm hết hạn
+
+  @@index([email, purpose, createdAt])
+  @@map("admin_auth_otps")
+}
+
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: bookings  —  Lịch đặt sân chính thức
+// ████████████████████████████████████████████████████████████████████████████
 /// Booking - Court reservation
 model Booking {
-  id          String  @id @default(cuid())
-  courtId     String
-  customerId  String?
-  createdById String?
+  id          String  @id @default(cuid()) // Mã định danh
+  courtId     String // Sân được đặt (courts.id)
+  customerId  String? // Khách đặt (customers.id), có thể trống nếu khách vãng lai
+  createdById String? // Nhân viên tạo lịch (users.id)
 
-  date      DateTime
-  startTime String
-  endTime   String
+  date      DateTime // Ngày chơi
+  startTime String // Giờ bắt đầu (HH:mm)
+  endTime   String // Giờ kết thúc (HH:mm)
 
-  status         String  @default("PENDING") // PENDING, APPROVED, REJECTED
-  paymentMethod  String  @default("DEPOSIT_TRANSFER") // MOMO, DEPOSIT_TRANSFER
-  paymentStatus  String  @default("PENDING") // PENDING, PAID, FAILED
-  paymentAmount  Float   @default(0)
-  paymentProof   String?
-  paymentOrderId String?
+  status         String  @default("PENDING") // Trạng thái: PENDING, APPROVED, REJECTED
+  paymentMethod  String  @default("DEPOSIT_TRANSFER") // Cách thanh toán: MOMO, DEPOSIT_TRANSFER
+  paymentStatus  String  @default("PENDING") // Tình trạng thanh toán: PENDING, PAID, FAILED
+  paymentAmount  Float   @default(0) // Số tiền đã thanh toán/cọc
+  paymentProof   String? // Ảnh minh chứng chuyển khoản
+  paymentOrderId String? // Mã giao dịch từ cổng thanh toán
 
-  totalAmount  Float   @default(0)
-  notes        String?
-  orderedItems String?
+  totalAmount  Float   @default(0) // Tổng tiền cần thanh toán
+  notes        String? // Ghi chú
+  orderedItems String? // Sản phẩm/dịch vụ đặt kèm (JSON)
 
-  checkedInAt   DateTime?
-  checkInToken  String?   @unique
-  checkedInById String?
-  checkedOutAt  DateTime?
+  checkedInAt   DateTime? // Thời điểm khách check-in
+  checkInToken  String?   @unique // Mã/QR dùng để check-in
+  checkedInById String? // Nhân viên xác nhận check-in
+  checkedOutAt  DateTime? // Thời điểm check-out
 
-  isRecurring    Boolean @default(false)
-  recurringGroup String?
+  isRecurring    Boolean @default(false) // Có phải lịch đặt cố định lặp lại
+  recurringGroup String? // Mã nhóm các lịch lặp lại cùng nhau
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) // Ngày tạo
+  updatedAt DateTime @updatedAt // Ngày cập nhật
 
   court       Court        @relation(fields: [courtId], references: [id], onDelete: Cascade)
   customer    Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
@@ -206,37 +247,43 @@ model Booking {
   @@map("bookings")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: pricing_rules  —  Quy tắc giá thuê sân theo ngày/khung giờ
+// ████████████████████████████████████████████████████████████████████████████
 /// PricingRule - Dynamic pricing configuration
 model PricingRule {
-  id           String   @id @default(cuid())
-  venueId      String
-  name         String
-  description  String?
-  dayOfWeek    String? // MONDAY, TUESDAY, etc.
-  startTime    String?
-  endTime      String?
-  pricePerHour Float
-  priority     Int      @default(0)
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String   @id @default(cuid()) // Mã định danh
+  venueId      String // Áp dụng cho cơ sở nào
+  name         String // Tên quy tắc (VD: Giờ cao điểm)
+  description  String? // Mô tả
+  dayOfWeek    String? // Ngày trong tuần áp dụng: MONDAY, TUESDAY, etc.
+  startTime    String? // Giờ bắt đầu áp dụng
+  endTime      String? // Giờ kết thúc áp dụng
+  pricePerHour Float // Giá mỗi giờ
+  priority     Int      @default(0) // Độ ưu tiên khi nhiều quy tắc trùng nhau
+  isActive     Boolean  @default(true) // Đang bật hay tắt
+  createdAt    DateTime @default(now()) // Ngày tạo
+  updatedAt    DateTime @updatedAt // Ngày cập nhật
 
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
   @@map("pricing_rules")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: services  —  Dịch vụ đi kèm (thuê vợt, giữ xe...)
+// ████████████████████████████████████████████████████████████████████████████
 /// Service - Additional services
 model Service {
-  id          String   @id @default(cuid())
-  venueId     String
-  name        String
-  description String?
-  price       Float
-  unit        String   @default("lần")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String   @id @default(cuid()) // Mã định danh
+  venueId     String // Thuộc cơ sở nào
+  name        String // Tên dịch vụ
+  description String? // Mô tả
+  price       Float // Đơn giá
+  unit        String   @default("lần") // Đơn vị tính (lần, giờ...)
+  isActive    Boolean  @default(true) // Đang cung cấp hay không
+  createdAt   DateTime @default(now()) // Ngày tạo
+  updatedAt   DateTime @updatedAt // Ngày cập nhật
 
   venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
   invoiceItems InvoiceItem[]
@@ -244,18 +291,21 @@ model Service {
   @@map("services")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: products  —  Sản phẩm bán tại sân (nước, cầu, băng quấn...)
+// ████████████████████████████████████████████████████████████████████████████
 /// Product - Sellable items
 model Product {
-  id          String   @id @default(cuid())
-  venueId     String
-  name        String
-  description String?
-  price       Float
-  stock       Int      @default(0)
-  unit        String   @default("cái")
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String   @id @default(cuid()) // Mã định danh
+  venueId     String // Thuộc cơ sở nào
+  name        String // Tên sản phẩm
+  description String? // Mô tả
+  price       Float // Giá bán
+  stock       Int      @default(0) // Số lượng tồn kho
+  unit        String   @default("cái") // Đơn vị tính
+  isActive    Boolean  @default(true) // Đang bán hay không
+  createdAt   DateTime @default(now()) // Ngày tạo
+  updatedAt   DateTime @updatedAt // Ngày cập nhật
 
   venue        Venue         @relation(fields: [venueId], references: [id], onDelete: Cascade)
   invoiceItems InvoiceItem[]
@@ -263,22 +313,25 @@ model Product {
   @@map("products")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: invoices  —  Hóa đơn thanh toán
+// ████████████████████████████████████████████████████████████████████████████
 /// Invoice - Payment record
 model Invoice {
-  id            String    @id @default(cuid())
-  invoiceNumber String    @unique
-  customerId    String?
-  subtotal      Float
-  discount      Float     @default(0)
-  total         Float
-  paymentStatus String    @default("PENDING") // PENDING, PAID, PARTIAL, REFUNDED
-  paymentMethod String? // CASH, BANK_TRANSFER, MOMO, ZALO_PAY, CARD
-  paidAmount    Float     @default(0)
-  depositAmount Float     @default(0)
-  paidAt        DateTime?
-  notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id            String    @id @default(cuid()) // Mã định danh
+  invoiceNumber String    @unique // Số hóa đơn (không trùng)
+  customerId    String? // Khách hàng (customers.id)
+  subtotal      Float // Tạm tính (trước giảm giá)
+  discount      Float     @default(0) // Số tiền giảm giá
+  total         Float // Tổng thanh toán
+  paymentStatus String    @default("PENDING") // Tình trạng: PENDING, PAID, PARTIAL, REFUNDED
+  paymentMethod String? // Hình thức: CASH, BANK_TRANSFER, MOMO, ZALO_PAY, CARD
+  paidAmount    Float     @default(0) // Số tiền đã thu
+  depositAmount Float     @default(0) // Số tiền đã cọc trước
+  paidAt        DateTime? // Thời điểm thanh toán
+  notes         String? // Ghi chú
+  createdAt     DateTime  @default(now()) // Ngày tạo
+  updatedAt     DateTime  @updatedAt // Ngày cập nhật
 
   customer           Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
   items              InvoiceItem[]
@@ -287,17 +340,20 @@ model Invoice {
   @@map("invoices")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: points_transactions  —  Lịch sử cộng/trừ điểm tích lũy của khách
+// ████████████████████████████████████████████████████████████████████████████
 model PointsTransaction {
-  id             String   @id @default(cuid())
-  customerId     String
-  invoiceId      String?
-  type           String
-  points         Int
-  reason         String
-  referenceType  String?
-  referenceId    String?
-  idempotencyKey String   @unique
-  createdAt      DateTime @default(now())
+  id             String   @id @default(cuid()) // Mã định danh
+  customerId     String // Khách hàng (customers.id)
+  invoiceId      String? // Hóa đơn liên quan (invoices.id)
+  type           String // Loại giao dịch điểm (cộng, trừ, giữ, hoàn...)
+  points         Int // Số điểm thay đổi
+  reason         String // Lý do
+  referenceType  String? // Loại đối tượng tham chiếu (VD: booking)
+  referenceId    String? // Mã đối tượng tham chiếu
+  idempotencyKey String   @unique // Khóa chống ghi trùng cùng một giao dịch
+  createdAt      DateTime @default(now()) // Thời điểm phát sinh
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   invoice  Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
@@ -306,17 +362,20 @@ model PointsTransaction {
   @@map("points_transactions")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: invoice_items  —  Từng dòng chi tiết trong hóa đơn
+// ████████████████████████████████████████████████████████████████████████████
 /// InvoiceItem - Line items in invoice
 model InvoiceItem {
-  id          String  @id @default(cuid())
-  invoiceId   String
-  bookingId   String? @unique
-  serviceId   String?
-  productId   String?
-  description String
-  quantity    Int     @default(1)
-  unitPrice   Float
-  total       Float
+  id          String  @id @default(cuid()) // Mã định danh
+  invoiceId   String // Thuộc hóa đơn nào (invoices.id)
+  bookingId   String? @unique // Dòng này là tiền đặt sân nào (bookings.id)
+  serviceId   String? // Hoặc là dịch vụ nào (services.id)
+  productId   String? // Hoặc là sản phẩm nào (products.id)
+  description String // Mô tả dòng hàng
+  quantity    Int     @default(1) // Số lượng
+  unitPrice   Float // Đơn giá
+  total       Float // Thành tiền = quantity * unitPrice
 
   invoice Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
@@ -326,193 +385,46 @@ model InvoiceItem {
   @@map("invoice_items")
 }
 
-/// MembershipPlan - Membership tier configuration
-model MembershipPlan {
-  id           String   @id @default(cuid())
-  tier         String   @unique // BRONZE, SILVER, GOLD, PLATINUM
-  name         String
-  description  String?
-  price        Float
-  durationDays Int
-  discount     Int      @default(0)
-  benefits     String?
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
 
-  @@map("membership_plans")
-}
-
-/// SystemConfig - Global configuration
-model SystemConfig {
-  id        String   @id @default(cuid())
-  key       String   @unique
-  value     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("system_config")
-}
-
-// ============================================================================
-// TIKSHOP FINANCE MODELS — TikTok Shop E-commerce Financial Management
-// ============================================================================
-
-/// TikOrder - Orders from TikTok Shop
-model TikOrder {
-  id        String @id @default(cuid())
-  orderCode String @unique // Mã đơn hàng TikTok
-  platform  String @default("TIKTOK_SHOP") // TIKTOK_SHOP
-  status    String @default("PENDING")
-  // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED, RETURNED
-
-  customerName    String
-  customerPhone   String?
-  shippingAddress String?
-
-  productName  String // Tên sản phẩm chính
-  quantity     Int    @default(1)
-  sellingPrice Float // Giá bán cho khách
-  costPrice    Float  @default(0) // Giá vốn/nhập hàng
-
-  shippingFee  Float @default(0) // Phí ship thu của khách
-  shippingCost Float @default(0) // Phí ship thực tế trả cho đơn vị vận chuyển
-  tikTokFee    Float @default(0) // Hoa hồng TikTok Shop (%)
-  tikTokFeeAmt Float @default(0) // Hoa hồng TikTok Shop (số tiền)
-  adsCost      Float @default(0) // Chi phí quảng cáo phân bổ cho đơn này
-
-  grossRevenue Float @default(0) // Doanh thu gộp = sellingPrice * quantity
-  netRevenue   Float @default(0) // Doanh thu sau hoa hồng
-  grossProfit  Float @default(0) // Lợi nhuận gộp = netRevenue - costPrice - shippingCost
-  netProfit    Float @default(0) // Lợi nhuận ròng sau ads
-
-  paymentMethod String? // COD, ONLINE
-  paidAt        DateTime?
-  shippedAt     DateTime?
-  deliveredAt   DateTime?
-
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  tikProductId String?
-  tikProduct   TikProduct? @relation(fields: [tikProductId], references: [id], onDelete: SetNull)
-
-  @@map("tik_orders")
-}
-
-/// TikExpense - Operating expenses for e-commerce
-model TikExpense {
-  id       String @id @default(cuid())
-  category String
-  // ADS (Quảng cáo), SHIPPING (Vận chuyển), COMMISSION (Hoa hồng TikTok),
-  // IMPORT (Nhập hàng), PACKAGING (Đóng gói), SALARY (Nhân sự),
-  // PLATFORM (Phí sàn), OTHER (Khác)
-
-  title    String // Tên khoản chi
-  amount   Float // Số tiền
-  currency String @default("VND")
-
-  periodFrom  DateTime? // Kỳ áp dụng từ
-  periodTo    DateTime? // Kỳ áp dụng đến
-  expenseDate DateTime  @default(now())
-
-  description String? // Ghi chú chi tiết
-  reference   String? // Số hóa đơn / mã tham chiếu
-  isPaid      Boolean   @default(true)
-  paidAt      DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("tik_expenses")
-}
-
-/// TikProduct - Products sold on TikTok Shop
-model TikProduct {
-  id          String  @id @default(cuid())
-  sku         String? @unique
-  name        String
-  description String?
-  category    String?
-
-  sellingPrice Float // Giá bán
-  costPrice    Float  @default(0) // Giá vốn
-  weight       Float? // Trọng lượng (gram)
-
-  stock     Int @default(0) // Tồn kho hiện tại
-  minStock  Int @default(5) // Cảnh báo khi dưới mức này
-  soldCount Int @default(0) // Tổng đã bán
-
-  imageUrl String?
-  tikTokId String? // ID sản phẩm trên TikTok Shop
-  isActive Boolean @default(true)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  orders         TikOrder[]
-  warehouseItems TikWarehouse[]
-
-  @@map("tik_products")
-}
-
-/// TikWarehouse - Warehouse/inventory management
-model TikWarehouse {
-  id           String @id @default(cuid())
-  tikProductId String
-  type         String
-  // IN (nhập kho), OUT (xuất kho), ADJUST (điều chỉnh), RETURN (hoàn trả)
-
-  quantity  Int // Số lượng (dương = nhập, âm = xuất)
-  unitCost  Float @default(0) // Đơn giá nhập
-  totalCost Float @default(0) // Thành tiền
-
-  note      String?
-  reference String? // Mã tham chiếu (đơn hàng, hóa đơn nhập...)
-  createdAt DateTime @default(now())
-
-  tikProduct TikProduct @relation(fields: [tikProductId], references: [id], onDelete: Cascade)
-
-  @@map("tik_warehouse")
-}
-
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: booking_requests  —  Yêu cầu đặt sân online từ cổng khách hàng (chờ duyệt)
+// ████████████████████████████████████████████████████████████████████████████
 /// BookingRequest - Online booking requests from Portal
 model BookingRequest {
-  id                        String    @id @default(cuid())
-  customerId                String?
-  venueId                   String
-  courtId                   String?
-  name                      String
-  phone                     String
-  date                      DateTime
-  startTime                 String
-  endTime                   String
-  notes                     String?
-  status                    String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  id                        String    @id @default(cuid()) // Mã định danh
+  customerId                String? // Khách gửi yêu cầu (customers.id)
+  venueId                   String // Cơ sở muốn đặt
+  courtId                   String? // Sân muốn đặt
+  name                      String // Tên người đặt
+  phone                     String // SĐT người đặt
+  date                      DateTime // Ngày muốn chơi
+  startTime                 String // Giờ bắt đầu
+  endTime                   String // Giờ kết thúc
+  notes                     String? // Ghi chú của khách
+  status                    String    @default("PENDING") // Trạng thái: PENDING, APPROVED, REJECTED
   paymentMethod             String    @default("DEPOSIT_TRANSFER") // MOMO, DEPOSIT_TRANSFER
   paymentStatus             String    @default("PENDING") // PENDING, PAID, FAILED
-  paymentAmount             Float     @default(0)
-  paymentProof              String?
-  paymentOrderId            String?
+  paymentAmount             Float     @default(0) // Số tiền cần thanh toán/cọc
+  paymentProof              String? // Ảnh minh chứng chuyển khoản
+  paymentOrderId            String? // Mã giao dịch cổng thanh toán
   orderedItems              String? // JSON string storing requested products/services
-  voucherCode               String?
-  discountAmount            Float     @default(0)
-  redeemPoints              Int       @default(0)
-  loyaltyDiscountAmount     Float     @default(0)
-  hueDiscountAmount         Float     @default(0)
-  expiresAt                 DateTime?
-  transferReference         String?   @unique
-  cancellationRequestStatus String?
-  cancellationRequestType   String?
-  cancellationRequestReason String?
-  requestedDate             DateTime?
-  requestedStartTime        String?
-  requestedEndTime          String?
-  cancellationRequestedAt   DateTime?
-  cancellationReviewedAt    DateTime?
-  createdAt                 DateTime  @default(now())
-  updatedAt                 DateTime  @updatedAt
+  voucherCode               String? // Mã giảm giá đã áp dụng
+  discountAmount            Float     @default(0) // Số tiền giảm từ voucher
+  redeemPoints              Int       @default(0) // Số điểm khách dùng để giảm giá
+  loyaltyDiscountAmount     Float     @default(0) // Số tiền giảm tương ứng từ điểm
+  hueDiscountAmount         Float     @default(0) // Số tiền giảm ưu đãi đối tượng Huế/sinh viên
+  expiresAt                 DateTime? // Hạn giữ chỗ, quá hạn chưa thanh toán sẽ tự hủy
+  transferReference         String?   @unique // Nội dung/mã tham chiếu chuyển khoản
+  cancellationRequestStatus String? // Trạng thái yêu cầu hủy/đổi lịch
+  cancellationRequestType   String? // Loại yêu cầu (hủy hoặc đổi lịch)
+  cancellationRequestReason String? // Lý do hủy/đổi
+  requestedDate             DateTime? // Ngày mới khách muốn đổi sang
+  requestedStartTime        String? // Giờ bắt đầu mới
+  requestedEndTime          String? // Giờ kết thúc mới
+  cancellationRequestedAt   DateTime? // Thời điểm khách gửi yêu cầu hủy/đổi
+  cancellationReviewedAt    DateTime? // Thời điểm nhân viên xử lý yêu cầu
+  createdAt                 DateTime  @default(now()) // Ngày tạo
+  updatedAt                 DateTime  @updatedAt // Ngày cập nhật
 
   venue    Venue     @relation(fields: [venueId], references: [id])
   court    Court?    @relation(fields: [courtId], references: [id])
@@ -522,10 +434,13 @@ model BookingRequest {
   @@map("booking_requests")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: customer_favorite_venues  —  Cơ sở khách đã yêu thích
+// ████████████████████████████████████████████████████████████████████████████
 model CustomerFavoriteVenue {
-  customerId String
-  venueId    String
-  createdAt  DateTime @default(now())
+  customerId String // Khách hàng
+  venueId    String // Cơ sở được yêu thích
+  createdAt  DateTime @default(now()) // Thời điểm thêm vào yêu thích
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   venue    Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
@@ -534,10 +449,13 @@ model CustomerFavoriteVenue {
   @@map("customer_favorite_venues")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: customer_favorite_courts  —  Sân khách đã yêu thích
+// ████████████████████████████████████████████████████████████████████████████
 model CustomerFavoriteCourt {
-  customerId String
-  courtId    String
-  createdAt  DateTime @default(now())
+  customerId String // Khách hàng
+  courtId    String // Sân được yêu thích
+  createdAt  DateTime @default(now()) // Thời điểm thêm vào yêu thích
 
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   court    Court    @relation(fields: [courtId], references: [id], onDelete: Cascade)
@@ -546,14 +464,17 @@ model CustomerFavoriteCourt {
   @@map("customer_favorite_courts")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: maintenance_closures  —  Lịch đóng sân (bảo trì, sự kiện...)
+// ████████████████████████████████████████████████████████████████████████████
 model MaintenanceClosure {
-  id           String   @id @default(cuid())
-  courtId      String
-  startAt      DateTime
-  endAt        DateTime
-  reason       String?
-  closureType  String   @default("MAINTENANCE")
-  createdAt    DateTime @default(now())
+  id           String   @id @default(cuid()) // Mã định danh
+  courtId      String // Sân bị đóng
+  startAt      DateTime // Bắt đầu đóng
+  endAt        DateTime // Kết thúc đóng
+  reason       String? // Lý do
+  closureType  String   @default("MAINTENANCE") // Loại đóng sân (mặc định: bảo trì)
+  createdAt    DateTime @default(now()) // Ngày tạo
 
   court Court @relation(fields: [courtId], references: [id], onDelete: Cascade)
 
@@ -561,92 +482,107 @@ model MaintenanceClosure {
   @@map("maintenance_closures")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: email_notifications  —  Hàng đợi / nhật ký email thông báo
+// ████████████████████████████████████████████████████████████████████████████
 model EmailNotification {
-  id            String    @id @default(cuid())
-  dedupeKey     String    @unique
-  toEmail       String
-  subject       String
-  text          String
-  html          String
-  status        String    @default("PENDING")
-  attempts      Int       @default(0)
-  scheduledAt   DateTime  @default(now())
-  nextAttemptAt DateTime  @default(now())
-  lockedAt      DateTime?
-  sentAt        DateTime?
-  lastError     String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id            String    @id @default(cuid()) // Mã định danh
+  dedupeKey     String    @unique // Khóa chống gửi trùng cùng một email
+  toEmail       String // Email người nhận
+  subject       String // Tiêu đề
+  text          String // Nội dung dạng văn bản thuần
+  html          String // Nội dung dạng HTML
+  status        String    @default("PENDING") // Trạng thái gửi: PENDING, SENT, FAILED...
+  attempts      Int       @default(0) // Số lần đã thử gửi
+  scheduledAt   DateTime  @default(now()) // Thời điểm hẹn gửi
+  nextAttemptAt DateTime  @default(now()) // Lần thử gửi tiếp theo
+  lockedAt      DateTime? // Thời điểm tiến trình đang xử lý giữ khóa
+  sentAt        DateTime? // Thời điểm gửi thành công
+  lastError     String? // Lỗi gần nhất khi gửi
+  createdAt     DateTime  @default(now()) // Ngày tạo
+  updatedAt     DateTime  @updatedAt // Ngày cập nhật
 
   @@index([status, nextAttemptAt])
   @@map("email_notifications")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: explore_contents  —  Nội dung trang "Khám phá" của cổng khách hàng
+// ████████████████████████████████████████████████████████████████████████████
 /// ExploreContent - Quản lý nội dung trang Khám phá (Portal)
 model ExploreContent {
-  id          String    @id @default(cuid())
-  type        String // EVENT, MEMBERSHIP, COURSE, NEWS, DEAL, PASS
-  title       String
-  description String?
-  imageUrl    String?
+  id          String    @id @default(cuid()) // Mã định danh
+  type        String // Loại: EVENT, MEMBERSHIP, COURSE, NEWS, DEAL, PASS
+  title       String // Tiêu đề
+  description String? // Mô tả
+  imageUrl    String? // Ảnh minh họa (URL)
   price       String? // Giá tiền (text để linh hoạt)
   badge       String? // Tag hiển thị ("Phổ biến", "HOT"...)
   metadata    String? // JSON string cho các field đặc thù theo type
-  isActive    Boolean   @default(true)
-  sortOrder   Int       @default(0)
-  startDate   DateTime?
-  endDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  isActive    Boolean   @default(true) // Đang hiển thị hay ẩn
+  sortOrder   Int       @default(0) // Thứ tự hiển thị
+  startDate   DateTime? // Ngày bắt đầu hiển thị/diễn ra
+  endDate     DateTime? // Ngày kết thúc
+  createdAt   DateTime  @default(now()) // Ngày tạo
+  updatedAt   DateTime  @updatedAt // Ngày cập nhật
 
   @@map("explore_contents")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: Voucher  —  Mã giảm giá  (lưu ý: bảng này tên "Voucher", không đổi tên thành vouchers)
+// ████████████████████████████████████████████████████████████████████████████
 model Voucher {
-  id            String    @id @default(cuid())
-  code          String    @unique
-  discountType  String    @default("PERCENTAGE")
-  discountValue Float
-  minOrderValue Float?
-  maxDiscount   Float?
-  usageLimit    Int?
-  usageCount    Int       @default(0)
-  startDate     DateTime?
-  endDate       DateTime?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id            String    @id @default(cuid()) // Mã định danh
+  code          String    @unique // Mã voucher khách nhập (không trùng)
+  discountType  String    @default("PERCENTAGE") // Kiểu giảm: PERCENTAGE (theo %) hoặc số tiền cố định
+  discountValue Float // Giá trị giảm (% hoặc số tiền)
+  minOrderValue Float? // Giá trị đơn tối thiểu để áp dụng
+  maxDiscount   Float? // Mức giảm tối đa (khi giảm theo %)
+  usageLimit    Int? // Số lượt dùng tối đa
+  usageCount    Int       @default(0) // Số lượt đã dùng
+  startDate     DateTime? // Ngày bắt đầu hiệu lực
+  endDate       DateTime? // Ngày hết hiệu lực
+  isActive      Boolean   @default(true) // Đang bật hay tắt
+  createdAt     DateTime  @default(now()) // Ngày tạo
+  updatedAt     DateTime  @updatedAt // Ngày cập nhật
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: operating_hours  —  Khung giờ hoạt động của cơ sở theo ngày trong tuần
+// ████████████████████████████████████████████████████████████████████████████
 model OperatingHour {
-  id         String   @id @default(cuid())
-  venueId    String
-  startTime  String
-  endTime    String
-  daysOfWeek String // JSON array of integers [0,1,2,3,4,5,6]
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id         String   @id @default(cuid()) // Mã định danh
+  venueId    String // Thuộc cơ sở nào
+  startTime  String // Giờ mở
+  endTime    String // Giờ đóng
+  daysOfWeek String // JSON array of integers [0,1,2,3,4,5,6] — các ngày áp dụng
+  isActive   Boolean  @default(true) // Đang bật hay tắt
+  createdAt  DateTime @default(now()) // Ngày tạo
+  updatedAt  DateTime @updatedAt // Ngày cập nhật
 
   venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
 
   @@map("operating_hours")
 }
 
+// ████████████████████████████████████████████████████████████████████████████
+// BẢNG: venue_reviews  —  Đánh giá cơ sở do khách gửi từ cổng khách hàng
+// ████████████████████████████████████████████████████████████████████████████
 /// VenueReview - Customer reviews submitted from the public portal
 model VenueReview {
-  id            String   @id @default(cuid())
-  venueId       String
-  customerId    String?
-  bookingId     String?  @unique
-  customerName  String
-  customerPhone String
-  rating        Int
-  content       String
-  images        String?
-  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id            String   @id @default(cuid()) // Mã định danh
+  venueId       String // Cơ sở được đánh giá
+  customerId    String? // Khách đánh giá (nếu có tài khoản)
+  bookingId     String?  @unique // Lịch đặt liên quan (mỗi lịch chỉ đánh giá 1 lần, xác thực đã chơi)
+  customerName  String // Tên hiển thị người đánh giá
+  customerPhone String // SĐT người đánh giá
+  rating        Int // Số sao
+  content       String // Nội dung đánh giá
+  images        String? // Ảnh đính kèm
+  status        String   @default("PENDING") // Kiểm duyệt: PENDING, APPROVED, REJECTED
+  createdAt     DateTime @default(now()) // Ngày gửi
+  updatedAt     DateTime @updatedAt // Ngày cập nhật
 
   venue   Venue    @relation(fields: [venueId], references: [id], onDelete: Cascade)
   booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)

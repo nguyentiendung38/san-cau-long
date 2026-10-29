@@ -192,6 +192,12 @@ export default function LoginPage() {
                             Đăng nhập
                         </Button>
                     </form>
+                    <p className="text-center text-sm text-foreground-secondary mt-5">
+                        Chưa có tài khoản?{' '}
+                        <Link to="/admin-register" className="text-primary-500 hover:underline">
+                            Đăng ký
+                        </Link>
+                    </p>
 
                 </div>
             </div>

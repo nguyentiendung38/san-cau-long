@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth.store'
 // Pages
 import LoginPage from '@/pages/LoginPage'
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage'
+import AdminRegisterPage from '@/pages/AdminRegisterPage'
 import DashboardPage from '@/pages/DashboardPage'
 import BookingCalendarPage from '@/pages/BookingCalendarPage'
 import CustomersPage from '@/pages/CustomersPage'
@@ -35,6 +36,16 @@ import StaffPage from '@/pages/StaffPage'
 import PortalLayout from '@/components/portal/PortalLayout'
 import CheckInPage from '@/pages/CheckInPage'
 
+
+function RoleGuard({ allowedRoles, children }: { allowedRoles: string[]; children: React.ReactNode }) {
+    const { user } = useAuthStore()
+    const role = user?.role || 'STAFF'
+    if (!allowedRoles.includes(role)) {
+        return <Navigate to={role === 'STAFF' ? '/calendar' : '/'} replace />
+    }
+    return <>{children}</>
+}
+
 function App() {
     const { isAuthenticated } = useAuthStore()
 
@@ -49,6 +60,10 @@ function App() {
                 <Route
                     path="/forgot-password"
                     element={isAuthenticated ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
+                />
+                <Route
+                    path="/admin-register"
+                    element={isAuthenticated ? <Navigate to="/" replace /> : <AdminRegisterPage />}
                 />
 
                 {/* Print routes - no layout */}
@@ -98,20 +113,20 @@ function App() {
                         isAuthenticated ? (
                             <AppLayout>
                                 <Routes>
-                                    <Route path="/" element={<DashboardPage />} />
+                                    <Route path="/" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER']}><DashboardPage /></RoleGuard>} />
                                     <Route path="/calendar" element={<BookingCalendarPage />} />
                                     <Route path="/booking-requests" element={<BookingRequestsPage />} />
                                     <Route path="/customers" element={<CustomersPage />} />
                                     <Route path="/customers/:id" element={<CustomerDetailPage />} />
-                                    <Route path="/courts" element={<CourtsPage />} />
+                                    <Route path="/courts" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER']}><CourtsPage /></RoleGuard>} />
                                     <Route path="/invoices" element={<InvoicesPage />} />
                                     <Route path="/inventory" element={<InventoryPage />} />
-                                    <Route path="/venues" element={<VenuesPage />} />
-                                    <Route path="/reports" element={<ReportsPage />} />
-                                    <Route path="/staff" element={<StaffPage />} />
-                                    <Route path="/settings" element={<SettingsPage />} />
-                                    <Route path="/explore-content" element={<ExploreContentPage />} />
-                                    <Route path="/venue-reviews" element={<VenueReviewsPage />} />
+                                    <Route path="/venues" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']}><VenuesPage /></RoleGuard>} />
+                                    <Route path="/reports" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']}><ReportsPage /></RoleGuard>} />
+                                    <Route path="/staff" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']}><StaffPage /></RoleGuard>} />
+                                    <Route path="/settings" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']}><SettingsPage /></RoleGuard>} />
+                                    <Route path="/explore-content" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN']}><ExploreContentPage /></RoleGuard>} />
+                                    <Route path="/venue-reviews" element={<RoleGuard allowedRoles={['SUPER_ADMIN', 'ADMIN', 'MANAGER']}><VenueReviewsPage /></RoleGuard>} />
                                     <Route path="*" element={<Navigate to="/" replace />} />
                                 </Routes>
                             </AppLayout>

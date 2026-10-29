@@ -38,20 +38,24 @@ export const mailService = {
         await transporter.sendMail({ from, to, subject, text, html });
     },
 
-    async sendOTP(to: string, otp: string): Promise<void> {
+    async sendOTP(to: string, otp: string, purpose: 'verification' | 'password-reset' = 'verification'): Promise<void> {
         const from = process.env.SMTP_FROM || process.env.GMAIL_USER || process.env.SMTP_USER;
         if (!from) {
             throw new AppError(503, 'Chưa cấu hình địa chỉ email gửi SMTP (SMTP_FROM)');
         }
         const transporter = getTransporter();
+        const subject = purpose === 'password-reset'
+            ? 'Mã đặt lại mật khẩu tài khoản quản trị'
+            : 'Mã xác nhận tài khoản quản trị';
+        const heading = purpose === 'password-reset' ? 'Mã đặt lại mật khẩu' : 'Mã xác nhận tài khoản';
 
         try {
             await transporter.sendMail({
                 from,
                 to,
-                subject: 'Mã xác nhận tài khoản quản lý sân cầu lông',
+                subject,
                 textEncoding: 'base64',
-                text: `Mã xác nhận của bạn là ${otp}. Mã có hiệu lực trong 5 phút. Không chia sẻ mã này với bất kỳ ai.`,
+                text: `${heading} của bạn là ${otp}. Mã có hiệu lực trong 5 phút. Không chia sẻ mã này với bất kỳ ai.`,
                 html: `
                     <!doctype html>
                     <html lang="vi">
@@ -59,14 +63,14 @@ export const mailService = {
                         <meta charset="UTF-8">
                         <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
                         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                        <title>Mã xác nhận tài khoản quản lý sân cầu lông</title>
+                        <title>${heading} tài khoản quản lý sân cầu lông</title>
                     </head>
                     <body style="margin:0;padding:32px 16px;background-color:#f1f5f9;font-family:Arial,'Helvetica Neue',Helvetica,Tahoma,sans-serif;color:#172033;-webkit-text-size-adjust:100%">
                         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;background-color:#ffffff;border:1px solid #e2e8f0;border-radius:20px">
                             <tr>
                                 <td style="padding:36px 32px">
                                     <div style="font-size:13px;font-weight:700;letter-spacing:2px;color:#15803d">QUẢN LÝ SÂN CẦU LÔNG</div>
-                                    <h1 style="margin:24px 0 8px;font-size:26px;line-height:1.3;color:#0f172a">Mã xác nhận của bạn</h1>
+                                    <h1 style="margin:24px 0 8px;font-size:26px;line-height:1.3;color:#0f172a">${heading} của bạn</h1>
                                     <p style="margin:0;color:#475569;font-size:15px;line-height:1.7">Nhập mã bên dưới để tiếp tục. Mã có hiệu lực trong <strong>5 phút</strong>.</p>
                                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:28px 0">
                                         <tr>
