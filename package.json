@@ -11,6 +11,8 @@
         "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
         "dev:backend": "npm run dev --workspace=@san-cau-long/backend",
         "dev:frontend": "npm run dev --workspace=@san-cau-long/frontend",
+        "dev:zalo": "npm start --prefix apps/zalo-app",
+        "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:zalo\"",
         "build": "npm run build --workspaces",
         "build:backend": "npm run build --workspace=@san-cau-long/backend",
         "build:frontend": "npm run build --workspace=@san-cau-long/frontend",

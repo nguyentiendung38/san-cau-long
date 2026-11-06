@@ -39,6 +39,10 @@ npm install
 npm run dev
 ```
 
+Khi chạy ở chế độ development, backend tự đồng bộ schema Prisma vào SQLite trước
+khi khởi động. Có thể chạy `npm run db:push` riêng nếu cần khởi tạo database
+trước đó.
+
 Backend chạy ở:
 
 - http://localhost:3000
