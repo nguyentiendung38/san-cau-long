@@ -101,6 +101,13 @@ Dự án dùng SQLite trong môi trường phát triển, file database được
 
 - apps/backend/prisma/dev.db
 
+DB Browser for SQLite cũng cần mở đúng file này để xem dữ liệu do website cập
+nhật. Trên Windows, chạy `apps/backend/open-database.bat` để mở thẳng database
+đúng, không cần chọn lại file mỗi lần. Sau khi website cập nhật dữ liệu, dùng
+Refresh/Reload trong DB Browser để tải lại nội dung đang hiển thị. Nếu chỉnh dữ
+liệu trong DB Browser, bấm Write Changes để lưu và tránh chỉnh cùng lúc từ cả
+hai nơi.
+
 ### 4.3 Khởi tạo database Prisma
 
 ```bash
